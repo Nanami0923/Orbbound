@@ -1,0 +1,23 @@
+# Dependencies and local tooling
+node_modules/
+.npm/
+.vite/
+
+# Generated web and Windows builds
+dist/
+release/
+release-win/
+最终交付/
+
+# Local preview and test captures
+.chrome-check*/
+.edge-check*/
+preview-*.png
+*.log
+npm-debug.log*
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
