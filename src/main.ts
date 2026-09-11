@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { createGameState, getDifficulty, shotsUntilDescent } from './core/engine';
+import { createGameState, DANGER_MAX, getDifficulty, shotsUntilDescent } from './core/engine';
 import { PHASER_CONFIG, PlayScene } from './game/PlayScene';
 import { getOrbTheme } from './content/theme';
 import { clearGame, getHighScore, hasLegacySave, loadGame, loadSettings, saveGame, saveSettings, setHighScore, type Settings } from './storage/storage';
@@ -26,6 +26,7 @@ const continueButton = document.querySelector<HTMLButtonElement>('#continue-butt
 const launchButton = document.querySelector<HTMLButtonElement>('#launch-button');
 const scoreValue = document.querySelector<HTMLElement>('#score-value');
 const dangerValue = document.querySelector<HTMLElement>('#danger-value');
+const dangerFill = document.querySelector<HTMLElement>('#danger-fill');
 
 const difficultyLabel = document.querySelector<HTMLElement>('#difficulty-label');
 const gameStatusLabel = document.querySelector<HTMLElement>('#game-status-label');
@@ -103,6 +104,12 @@ function updateGameState(detail: SceneStateDetail): void {
   if (dangerValue) {
     dangerValue.textContent = detail.status !== 'READY' ? '本局结束' : remaining === 1 ? '下一发后下降' : `再发射 ${remaining} 次`;
     dangerValue.style.color = remaining <= 2 ? 'var(--coral)' : 'var(--cream)';
+  }
+  if (dangerFill) {
+    const progress = Math.max(0, Math.min(100, detail.danger / DANGER_MAX * 100));
+    dangerFill.style.width = `${progress}%`;
+    dangerFill.parentElement?.setAttribute('aria-valuenow', String(progress));
+    dangerFill.parentElement?.setAttribute('aria-valuetext', dangerValue?.textContent ?? '');
   }
   if (difficultyLabel) difficultyLabel.textContent = `${getDifficulty(detail.difficultyId).label} · 已发射 ${detail.step} 次`;
   if (gameStatusLabel) gameStatusLabel.textContent = statusLabel(detail.phase, detail.status);

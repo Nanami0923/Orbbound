@@ -37,8 +37,8 @@
             <div class="home-actions">
               <button id="start-button" class="primary-button" type="button"><span>开始游戏</span><b>↗</b></button>
               <button id="continue-button" class="quiet-button" type="button" disabled>继续上局</button>
-              <p id="save-note" hidden></p>
             </div>
+            <p id="save-note" hidden></p>
             <div class="difficulty-picker">
               <span>选择节奏</span>
               <div class="difficulty-options" role="group" aria-label="选择难度">
@@ -66,7 +66,7 @@
         <header class="game-header">
           <div class="header-brand"><span class="brand-mark small" aria-hidden="true"><i></i><i></i><i></i></span><span>ORBBOUND</span></div>
           <div class="header-stat score-stat"><small>SCORE</small><strong id="score-value">00000</strong></div>
-          <div class="header-stat danger-stat"><small>距离棋盘下降</small><strong id="danger-value">再发射 10 次</strong></div>
+          <div class="header-stat danger-stat"><small>距离棋盘下降</small><div class="danger-meter" role="progressbar" aria-label="棋盘下降进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="danger-fill"></span></div><strong id="danger-value">再发射 10 次</strong></div>
           <button id="pause-button" class="icon-button" type="button" aria-label="暂停">Ⅱ</button>
           <div class="header-stat"><small>本局用时</small><strong id="round-clock">00:00</strong></div>
           <div class="current-card"><small>当前发射</small><div id="current-orb-preview" class="dom-orb"></div><p>← → 微调 · 空格发射</p></div>

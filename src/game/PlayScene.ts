@@ -263,7 +263,9 @@ export class PlayScene extends Phaser.Scene {
 
   private drawAim(): void {
     this.aimGraphics.clear();
-    this.game.canvas.style.cursor = !this.settings.aimAssist && this.phase === 'READY' ? 'none' : 'auto';
+    // Keep the cursor hidden for the entire shot, including flight and resolution.
+    const playing = this.phase === 'READY' || this.phase === 'FLYING' || this.phase === 'RESOLVING';
+    this.input.setDefaultCursor(!this.settings.aimAssist && playing ? 'none' : 'auto');
     if (this.phase !== 'READY') return;
     if (!this.settings.aimAssist) {
       const x = BOARD_GEOMETRY.launcherX, y = BOARD_GEOMETRY.launcherY - BOARD_GEOMETRY.radius - 3;

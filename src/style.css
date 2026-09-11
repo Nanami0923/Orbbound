@@ -132,7 +132,9 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
 .card-caption { position: relative; z-index: 1; margin-bottom: 22px; }
 .card-caption span { display: block; color: var(--gold); font-size: 10px; font-weight: 800; letter-spacing: 0.18em; margin-bottom: 9px; }
 .card-caption strong { display: block; font-size: clamp(28px, 3vw, 40px); letter-spacing: -0.06em; }
-.home-actions { display: flex; gap: 10px; position: relative; z-index: 1; }
+.home-actions { display: flex; flex-wrap: wrap; gap: 10px; position: relative; z-index: 1; }
+.home-actions > button { white-space: nowrap; flex-shrink: 0; }
+.home-actions > .primary-button { flex-basis: 150px; gap: 16px; }
 
 .primary-button,
 .quiet-button,
@@ -167,7 +169,7 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
 .header-stat { min-width: 150px; padding: 0 16px; border-left: 1px solid var(--line); display: flex; flex-direction: column; gap: 3px; }
 .header-stat small { color: var(--soft); font-size: 9px; font-weight: 800; letter-spacing: 0.16em; }
 .header-stat strong { font-size: 18px; letter-spacing: 0.05em; }
-.danger-stat { min-width: 210px; display: grid; grid-template-columns: auto 1fr; align-items: center; column-gap: 10px; }
+.danger-stat { min-width: 210px; display: grid; grid-template-columns: minmax(0, 1fr); align-items: center; gap: 6px; }
 .danger-stat small { grid-column: 1 / -1; }
 .danger-meter { height: 7px; width: 100%; overflow: hidden; background: #2a3550; border-radius: 99px; }
 .danger-meter span { display: block; width: 0; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--mint), var(--gold), var(--coral)); transition: width 240ms ease; }
@@ -302,7 +304,10 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
 .current-card { display: grid; justify-items: center; gap: 16px; color: var(--soft); }
 .current-card p { font-size: 11px; }
 #save-note, #difficulty-description { color: var(--muted); font-size: 12px; line-height: 1.6; margin: 12px 0 0; }
-.danger-stat #danger-value { font-size: 19px; font-weight: 700; margin-top: 8px; }
+.danger-stat #danger-value { font-size: 19px; font-weight: 700; margin-top: 2px; white-space: nowrap; }
+@media (max-width: 620px) {
+  .danger-stat #danger-value { font-size: 11px; }
+}
 .game-screen.independent-launch .mobile-launch-row { display: flex; }
 .history-card { width: min(880px, 94vw); max-width: 880px; }
 .history-tabs { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 16px 0; }

@@ -3,6 +3,25 @@ vi.mock('phaser', () => ({default:{Scene:class {},AUTO:0,Scale:{FIT:0,CENTER_BOT
 import { PlayScene } from '../src/game/PlayScene';
 import { createGameState } from '../src/core/engine';
 
+it('keeps the cursor hidden through flight and resolution, and restores it on pause or game over', () => {
+  const scene = new PlayScene();
+  const setDefaultCursor = vi.fn();
+  Object.assign(scene, {
+    input: {setDefaultCursor}, settings: {aimAssist:false},
+    aimGraphics: {clear:vi.fn(), lineStyle:vi.fn(), lineBetween:vi.fn()},
+  });
+  const runtime = scene as unknown as {phase:string; drawAim():void; settings:{aimAssist:boolean}};
+  for (const phase of ['READY', 'FLYING', 'RESOLVING', 'PAUSED', 'FLYING', 'READY', 'WON', 'LOST']) {
+    runtime.phase = phase;
+    runtime.drawAim();
+    expect(setDefaultCursor).toHaveBeenLastCalledWith(['READY','FLYING','RESOLVING'].includes(phase) ? 'none' : 'auto');
+  }
+  runtime.settings.aimAssist = true;
+  runtime.phase = 'FLYING';
+  runtime.drawAim();
+  expect(setDefaultCursor).toHaveBeenLastCalledWith('auto');
+});
+
 it('resumes the animation manager and clock when starting easy mode from a paused scene', () => {
   const scene = new PlayScene();
   const tweens = {paused:true,killAll:vi.fn(),resumeAll(){this.paused=false;}};
