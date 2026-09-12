@@ -68,12 +68,15 @@ export class PlayScene extends Phaser.Scene {
   }
 
   public create(): void {
+    // Render at twice the pixel density while retaining the original game coordinates.
+    this.cameras.main.setZoom(2).centerOn(GAME_WIDTH / 2, GAME_HEIGHT / 2);
     this.cameras.main.setBackgroundColor(UI_COLORS.panel);
     this.createArena();
     this.boardGroup = this.add.container(0, 0);
     this.aimGraphics = this.add.graphics();
     this.launcherBase = this.add.graphics();
     this.statusText = this.add.text(0, 0, '', {
+      resolution: 2,
       color: '#98a1b8',
       fontFamily: 'Segoe UI, Microsoft YaHei, sans-serif',
       fontSize: '13px',
@@ -210,6 +213,7 @@ export class PlayScene extends Phaser.Scene {
     }
 
     const floorLabel = this.add.text(GAME_WIDTH / 2, 623, '触底线 · 小球到达这里即失败', {
+      resolution: 2,
       color: '#64718d',
       fontFamily: 'Segoe UI, Microsoft YaHei, sans-serif',
       fontSize: '11px',
@@ -279,14 +283,15 @@ export class PlayScene extends Phaser.Scene {
     const key = `orb-shared-${colorId}`;
     if (!this.textures.exists(key)) {
       const theme = getOrbTheme(colorId);
-      const texture = this.textures.createCanvas(key, 96, 96)!;
+      const texture = this.textures.createCanvas(key, 192, 192)!;
       const ctx = texture.context;
-      ctx.scale(2, 2);
+      ctx.scale(4, 4);
       const circle = (x: number, y: number, radius: number, color: string) => {
         ctx.beginPath(); ctx.arc(x,y,radius,0,Math.PI*2); ctx.fillStyle=color; ctx.fill();
       };
-      circle(26,28,18,'rgba(6,10,20,.45)');
-      circle(24,24,18,theme.cssColor);
+      // Keep every painted pixel inside the ball; no cast shadow can cover a neighbour.
+      ctx.beginPath(); ctx.arc(24,24,17.5,0,Math.PI*2); ctx.clip();
+      circle(24,24,17.5,theme.cssColor);
       ctx.strokeStyle='rgba(255,255,255,.28)'; ctx.lineWidth=1.5; ctx.stroke();
       ctx.beginPath(); ctx.ellipse(18,17,5.5,3,0,0,Math.PI*2); ctx.fillStyle='rgba(255,255,255,.24)'; ctx.fill();
       ctx.fillStyle=theme.ink; ctx.font='bold 17px "Segoe UI Symbol", "Segoe UI", sans-serif';
@@ -341,7 +346,7 @@ export class PlayScene extends Phaser.Scene {
   private handlePointerMove(pointer: Phaser.Input.Pointer): void {
     if (usesButtonControls()) return;
     if (this.phase !== 'READY') return;
-    if (pointer.isDown || this.pointerActive || pointer.y < BOARD_GEOMETRY.launcherY) this.updateAim(pointer);
+    if (pointer.isDown || this.pointerActive || pointer.worldY < BOARD_GEOMETRY.launcherY) this.updateAim(pointer);
   }
 
   private handlePointerUp(): void {
@@ -521,6 +526,7 @@ export class PlayScene extends Phaser.Scene {
 
   private showScorePopup(points: number, label: string): void {
     const text = this.add.text(BOARD_GEOMETRY.launcherX, 590, `+${points}  ${label}`, {
+      resolution: 2,
       color: '#f5f2eb',
       fontFamily: 'Segoe UI, Microsoft YaHei, sans-serif',
       fontSize: '16px',
@@ -568,20 +574,20 @@ export class PlayScene extends Phaser.Scene {
 export const PHASER_CONFIG: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
   fps: { target: 60, limit: 60 },
-  width: GAME_WIDTH,
-  height: GAME_HEIGHT,
+  width: GAME_WIDTH * 2,
+  height: GAME_HEIGHT * 2,
   parent: 'game-container',
   backgroundColor: '#18223a',
   render: {
     antialias: true,
     pixelArt: false,
-    roundPixels: true,
+    roundPixels: false,
   },
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
-    width: GAME_WIDTH,
-    height: GAME_HEIGHT,
+    width: GAME_WIDTH * 2,
+    height: GAME_HEIGHT * 2,
   },
   input: {
     activePointers: 3,
