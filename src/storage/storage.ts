@@ -32,7 +32,7 @@ export function loadSettings(): Settings {
       sound: record.sound !== false,
       aimAssist: record.aimAssist !== false,
       reducedMotion: record.reducedMotion === true,
-      independentLaunch: record.independentLaunch === true,
+      independentLaunch: false,
     };
   } catch {
     return { ...DEFAULT_SETTINGS };

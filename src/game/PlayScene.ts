@@ -8,6 +8,7 @@ import { getOrbTheme } from '../content/theme';
 import { DEFAULT_SETTINGS, type Settings } from '../storage/storage';
 import { GameAudio } from './audio';
 import { recordRound } from '../storage/history';
+import { usesButtonControls } from './input-mode';
 
 type ScenePhase = 'READY' | 'FLYING' | 'RESOLVING' | 'PAUSED' | 'WON' | 'LOST';
 
@@ -97,7 +98,7 @@ export class PlayScene extends Phaser.Scene {
     this.phase = state.status;
     if (state.status === 'READY') this.phase = 'READY';
     this.angle = 0;
-    this.statusText.setText(this.settings.independentLaunch ? '移动瞄准 · 空格或发射按钮确认' : '移动瞄准 · 点击发射');
+    this.statusText.setText(usesButtonControls() ? '底部按钮转向 · 中间按钮发射' : '移动瞄准 · 点击发射');
     this.renderBoard();
     this.renderLauncher();
     this.drawAim();
@@ -135,7 +136,7 @@ export class PlayScene extends Phaser.Scene {
   public resumeGame(): void {
     if (this.phase !== 'PAUSED') return;
     this.phase = this.pausedFrom;
-    this.statusText.setText(this.phase === 'READY' ? '选择角度 · 点击或松手发射' : '等待本次发射结算');
+    this.statusText.setText(this.phase === 'READY' ? (usesButtonControls() ? '底部按钮转向 · 中间按钮发射' : '选择角度 · 点击发射') : '等待本次发射结算');
     this.tweens.resumeAll();
     this.time.paused = false;
     this.drawAim();
@@ -149,6 +150,13 @@ export class PlayScene extends Phaser.Scene {
 
   public launchFromButton(): void {
     this.launch();
+  }
+
+  public rotateLauncher(direction: -1 | 1): void {
+    if (this.phase !== 'READY') return;
+    const limit = 78 * Math.PI / 180;
+    this.angle = Math.max(-limit, Math.min(limit, this.angle + direction * Math.PI / 180));
+    this.drawAim();
   }
 
   private createArena(): void {
@@ -296,17 +304,20 @@ export class PlayScene extends Phaser.Scene {
   }
 
   private handlePointerDown(pointer: Phaser.Input.Pointer): void {
+    if (usesButtonControls()) return;
     if (this.phase !== 'READY') return;
     this.pointerActive = true;
     this.updateAim(pointer);
   }
 
   private handlePointerMove(pointer: Phaser.Input.Pointer): void {
+    if (usesButtonControls()) return;
     if (this.phase !== 'READY') return;
     if (pointer.isDown || this.pointerActive || pointer.y < BOARD_GEOMETRY.launcherY) this.updateAim(pointer);
   }
 
   private handlePointerUp(): void {
+    if (usesButtonControls()) { this.pointerActive = false; return; }
     if (!this.pointerActive) return;
     this.pointerActive = false;
     if (!this.settings.independentLaunch) this.launch();
@@ -440,7 +451,7 @@ export class PlayScene extends Phaser.Scene {
         this.statusText.setText('触底 · 再试一次');
       } else {
         this.phase = 'READY';
-        this.statusText.setText(this.settings.independentLaunch ? '移动瞄准 · 空格或发射按钮确认' : '移动瞄准 · 点击发射');
+        this.statusText.setText(usesButtonControls() ? '底部按钮转向 · 中间按钮发射' : '移动瞄准 · 点击发射');
       }
       this.drawAim();
       this.emitState();
@@ -496,7 +507,7 @@ export class PlayScene extends Phaser.Scene {
     this.time.delayedCall(1000, () => {
       if (this.phase === 'READY') {
         this.statusText.setColor('#98a1b8');
-        this.statusText.setText('选择角度 · 点击或松手发射');
+        this.statusText.setText((usesButtonControls() ? '底部按钮转向 · 中间按钮发射' : '选择角度 · 点击发射'));
       }
     });
   }

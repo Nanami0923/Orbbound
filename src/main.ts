@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { Capacitor } from '@capacitor/core';
 import { App } from '@capacitor/app';
+import { usesButtonControls } from './game/input-mode';
 import { createGameState, DANGER_MAX, getDifficulty, shotsUntilDescent } from './core/engine';
 import { PHASER_CONFIG, PlayScene } from './game/PlayScene';
 import { getOrbTheme } from './content/theme';
@@ -41,6 +42,12 @@ let selectedDifficulty = 'normal';
 let game: Phaser.Game | null = null;
 let toastTimer: number | undefined;
 let resumeAfterModal = false;
+
+function syncMobileLayout(): void {
+  document.documentElement.classList.toggle('mobile-ui', usesButtonControls());
+}
+syncMobileLayout();
+window.addEventListener('resize', syncMobileLayout);
 
 function getScene(): PlayScene | null {
   if (!game) return null;
@@ -116,6 +123,8 @@ function updateGameState(detail: SceneStateDetail): void {
   if (difficultyLabel) difficultyLabel.textContent = `${getDifficulty(detail.difficultyId).label} · 已发射 ${detail.step} 次`;
   if (gameStatusLabel) gameStatusLabel.textContent = statusLabel(detail.phase, detail.status);
   if (pauseButton) pauseButton.textContent = detail.phase === 'PAUSED' ? '▶' : 'Ⅱ';
+  const mobilePause = document.querySelector('#mobile-pause-button');
+  if (mobilePause) mobilePause.textContent = detail.phase === 'PAUSED' ? '▶' : 'Ⅱ';
   if (nextOrbPreview) updateOrbPreview(nextOrbPreview, detail.nextColor);
   const current = document.querySelector<HTMLElement>('#current-orb-preview');
   if (current) updateOrbPreview(current, detail.currentColor);
@@ -197,9 +206,9 @@ function showTutorial(): void {
     <h2>三步读懂棋盘</h2>
     <p>你不需要追赶时间，真正的节奏来自每一次选择：落在哪里、先断哪一片、要不要承担下一次下降。</p>
     <div class="tutorial-steps">
-      <div class="tutorial-step"><b>01</b><div><strong>拖动或移动瞄准</strong><span>鼠标移动、触屏按住拖动，或用左右方向键微调角度。点击 / 松手发射。</span></div></div>
+      <div class="tutorial-step"><b>01</b><div><strong>调整炮口方向</strong><span>手机版使用底部 ↶ / ↷ 调整方向，可长按连续转动；中间按钮发射。电脑版使用鼠标或方向键瞄准。</span></div></div>
       <div class="tutorial-step"><b>02</b><div><strong>三个同类连在一起</strong><span>命中后，同色连通区域达到 3 枚就会消失；每枚 10 分。</span></div></div>
-      <div class="tutorial-step"><b>03</b><div><strong>让悬空小球掉落</strong><span>消除支撑后，不再与顶部相连的小球会掉落，不分颜色，每枚 20 分。左侧显示还可发射几次，归零后棋盘下降一行。</span></div></div>
+      <div class="tutorial-step"><b>03</b><div><strong>让悬空小球掉落</strong><span>消除支撑后，不再与顶部相连的小球会掉落，不分颜色，每枚 20 分。顶部显示还可发射几次，归零后棋盘下降一行。</span></div></div>
     </div>
     <div class="modal-footer"><button class="primary-button" data-close-modal type="button"><span>知道了，开始</span><b>↗</b></button></div>
   `);
@@ -214,14 +223,12 @@ function showSettings(): void {
     <div class="setting-row"><div><strong>音效</strong><small>发射、消除、棋盘下降和结算提示</small></div><label class="switch"><input id="setting-sound" type="checkbox" ${settings.sound ? 'checked' : ''} /><span></span></label></div>
     <div class="setting-row"><div><strong>瞄准辅助</strong><small>显示反弹轨迹与预计落点</small></div><label class="switch"><input id="setting-aim" type="checkbox" ${settings.aimAssist ? 'checked' : ''} /><span></span></label></div>
     <div class="setting-row"><div><strong>减少动态效果</strong><small>缩短动画，关闭大幅反馈</small></div><label class="switch"><input id="setting-motion" type="checkbox" ${settings.reducedMotion ? 'checked' : ''} /><span></span></label></div>
-    <div class="setting-row"><div><strong>独立发射按钮</strong><small>鼠标和触屏仅瞄准，按空格或点击发射按钮确认</small></div><label class="switch"><input id="setting-launch" type="checkbox" ${settings.independentLaunch ? 'checked' : ''} /><span></span></label></div>
     <div class="modal-footer"><button class="primary-button" data-close-modal type="button"><span>保存设置</span><b>✓</b></button></div>
   `);
   const fields: Array<[keyof Settings, string]> = [
     ['sound', 'setting-sound'],
     ['aimAssist', 'setting-aim'],
     ['reducedMotion', 'setting-motion'],
-    ['independentLaunch', 'setting-launch'],
   ];
   for (const [key, id] of fields) {
     modalRoot?.querySelector<HTMLInputElement>(`#${id}`)?.addEventListener('change', (event) => {
@@ -287,6 +294,33 @@ document.querySelector<HTMLButtonElement>('#settings-button')?.addEventListener(
 document.querySelector<HTMLButtonElement>('#game-settings-button')?.addEventListener('click', showSettings);
 document.querySelector<HTMLButtonElement>('#pause-button')?.addEventListener('click', () => getScene()?.togglePause());
 launchButton?.addEventListener('click', () => getScene()?.launchFromButton());
+document.querySelector('#mobile-fire')?.addEventListener('click', () => getScene()?.launchFromButton());
+document.querySelector('#mobile-pause-button')?.addEventListener('click', () => getScene()?.togglePause());
+document.querySelector('#mobile-help-button')?.addEventListener('click', showTutorial);
+document.querySelector('#mobile-menu-button')?.addEventListener('click', () => {
+  openModal(`<button class="modal-close" data-close-modal type="button">继续游戏</button><h2>游戏菜单</h2>
+    <div class="mobile-menu-actions"><button id="menu-settings" class="quiet-button">设置</button><button id="menu-history" class="quiet-button">历史与排行</button><button id="menu-restart" class="quiet-button">重新开始</button><button id="menu-home" class="quiet-button">返回首页</button></div>`);
+  document.querySelector('#menu-settings')?.addEventListener('click', showSettings);
+  document.querySelector('#menu-history')?.addEventListener('click', () => showHistory());
+  document.querySelector('#menu-restart')?.addEventListener('click', () => { closeModal(); getScene()?.restartGame(); });
+  document.querySelector('#menu-home')?.addEventListener('click', () => { resumeAfterModal = false; closeModal(); showHome(); });
+});
+
+let rotationTimer: number | undefined;
+function stopRotation(): void { window.clearInterval(rotationTimer); rotationTimer = undefined; }
+for (const [id, direction] of [['rotate-left', -1], ['rotate-right', 1]] as const) {
+  const button = document.getElementById(id)!;
+  button.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0) return;
+    event.preventDefault(); stopRotation(); button.setPointerCapture(event.pointerId);
+    getScene()?.rotateLauncher(direction);
+    rotationTimer = window.setInterval(() => getScene()?.rotateLauncher(direction), 40);
+  });
+  for (const name of ['pointerup', 'pointercancel', 'lostpointercapture']) button.addEventListener(name, stopRotation);
+  button.addEventListener('click', (event) => { if (event.detail === 0) getScene()?.rotateLauncher(direction); });
+}
+window.addEventListener('blur', stopRotation);
+document.addEventListener('visibilitychange', stopRotation);
 document.querySelector<HTMLButtonElement>('#restart-button')?.addEventListener('click', () => {
   getScene()?.restartGame();
   showToast('新回合已开始');

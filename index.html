@@ -63,6 +63,10 @@
       </section>
 
       <section id="game-screen" class="screen game-screen" hidden>
+        <div class="mobile-topbar">
+          <div class="mobile-menu"><button id="mobile-menu-button" class="icon-button" aria-label="游戏菜单" type="button">☰</button><button id="mobile-pause-button" class="icon-button" aria-label="暂停或继续" type="button">Ⅱ</button></div>
+          <button id="mobile-help-button" class="quiet-button" type="button">玩法提示</button>
+        </div>
         <header class="game-header">
           <div class="header-brand"><span class="brand-mark small" aria-hidden="true"><i></i><i></i><i></i></span><span>ORBBOUND</span></div>
           <div class="header-stat score-stat"><small>SCORE</small><strong id="score-value">00000</strong></div>
@@ -99,6 +103,11 @@
             </div>
           </aside>
         </main>
+        <div class="mobile-controls" role="group" aria-label="炮口控制">
+          <button id="rotate-left" class="rotate-button" type="button" aria-label="炮口逆时针旋转">↶<small>逆时针</small></button>
+          <button id="mobile-fire" class="primary-button" type="button">发射 ↑</button>
+          <button id="rotate-right" class="rotate-button" type="button" aria-label="炮口顺时针旋转">↷<small>顺时针</small></button>
+        </div>
       </section>
 
       <div id="modal-root" class="modal-root" hidden></div>
