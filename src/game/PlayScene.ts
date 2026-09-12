@@ -287,7 +287,7 @@ export class PlayScene extends Phaser.Scene {
       letterSpacing: 1,
     }).setOrigin(0.5);
     floorLabel.setAlpha(0.85);
-    this.add.text(478, 649, '下一球', {
+    this.add.text(478, 649, import.meta.env.MODE === 'windows' ? '当前球' : '下一球', {
       resolution: 2, color: '#98a1b8', fontFamily: 'Segoe UI, Microsoft YaHei, sans-serif', fontSize: '14px',
     }).setOrigin(0.5);
 
@@ -327,7 +327,7 @@ export class PlayScene extends Phaser.Scene {
     this.nextOrb?.destroy();
 
     this.launcherBase.clear();
-    this.nextOrb = this.createOrb(this.gameState.nextColor, { x: 478, y: 698 });
+    this.nextOrb = this.createOrb(import.meta.env.MODE === 'windows' ? this.gameState.currentColor : this.gameState.nextColor, { x: 478, y: 698 });
     this.nextOrb.setScale(1.35);
     if (!this.settings.aimAssist) return;
     this.launcherBase.fillStyle(0x0b1120, 0.95);

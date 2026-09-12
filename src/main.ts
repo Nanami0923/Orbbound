@@ -54,6 +54,9 @@ const homeHighScore = document.querySelector<HTMLElement>('#home-high-score');
 const versionPill = document.querySelector('.version-pill');
 if (versionPill) versionPill.textContent = `${import.meta.env.VITE_APP_VERSION} / ${import.meta.env.MODE === 'windows' ? 'WINDOWS' : 'LOCAL'}`;
 
+const sideOrbLabel = document.querySelector('#side-orb-label');
+if (sideOrbLabel && import.meta.env.MODE === 'windows') sideOrbLabel.textContent = '下一球';
+
 let settings: Settings = loadSettings();
 let selectedDifficulty = 'normal';
 let selectedMode: GameMode = 'endless';
@@ -178,7 +181,7 @@ function updateGameState(detail: SceneStateDetail): void {
   }
   if (nextOrbPreview) updateOrbPreview(nextOrbPreview, detail.nextColor);
   const current = document.querySelector<HTMLElement>('#current-orb-preview');
-  if (current) updateOrbPreview(current, detail.currentColor);
+  if (current) updateOrbPreview(current, import.meta.env.MODE === 'windows' ? detail.nextColor : detail.currentColor);
   const clock = document.querySelector<HTMLElement>('#round-clock');
   if (clock) {
     const clockText = formatDuration(detail.mode === 'timed' ? Math.max(0, detail.durationMs! - detail.elapsedMs + 999) : detail.elapsedMs);
@@ -406,7 +409,7 @@ document.querySelector('#mobile-menu-button')?.addEventListener('click', () => {
 });
 
 function stopRotation(): void { getScene()?.stopRotation(); }
-for (const [id, direction] of [['rotate-left', -1], ['rotate-right', 1], ['desktop-left', -1], ['desktop-right', 1]] as const) {
+for (const [id, direction] of [['rotate-left', -1], ['rotate-right', 1]] as const) {
   const button = document.getElementById(id)!;
   button.addEventListener('pointerdown', (event) => {
     if (event.button !== 0) return;
@@ -416,7 +419,7 @@ for (const [id, direction] of [['rotate-left', -1], ['rotate-right', 1], ['deskt
   for (const name of ['pointerup', 'pointercancel', 'lostpointercapture']) button.addEventListener(name, stopRotation);
   button.addEventListener('click', (event) => { if (event.detail === 0) getScene()?.rotateLauncher(direction); });
 }
-for (const [id, direction] of [['quick-left', -1], ['quick-right', 1], ['desktop-quick-left', -1], ['desktop-quick-right', 1]] as const) {
+for (const [id, direction] of [['quick-left', -1], ['quick-right', 1]] as const) {
   document.getElementById(id)?.addEventListener('click', () => getScene()?.quickRotate(direction));
 }
 window.addEventListener('blur', stopRotation);

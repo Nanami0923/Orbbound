@@ -597,11 +597,7 @@ html.mobile-ui, .mobile-ui body, .mobile-ui #app { width: 100%; height: 100%; mi
 .mobile-ui .mobile-controls > button:active { transform: scale(.97); filter: brightness(1.15); }
 
 /* Windows 1.4: desktop actions alongside the board, with independent time bars. */
-.desktop-steering { display: none; }
 @media (min-width: 900px) {
-  html:not(.mobile-ui) .desktop-steering { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-  html:not(.mobile-ui) .desktop-steering button { padding: 8px 4px; min-height: 38px; font-size: 12px; border-radius: 12px; }
-  .desktop-steering small { font-size: 10px; color: var(--muted); }
   html:not(.mobile-ui) .game-header { gap: 16px; }
   html:not(.mobile-ui) .game-header .mobile-launch-row { display: flex; margin-top: 0; }
   html:not(.mobile-ui) #launch-button { width: 100%; min-height: 42px; }
@@ -617,5 +613,5 @@ html.mobile-ui, .mobile-ui body, .mobile-ui #app { width: 100%; height: 100%; mi
   html:not(.mobile-ui) .game-header { gap: 9px; }
   html:not(.mobile-ui) .header-brand { margin-bottom: 0; }
   html:not(.mobile-ui) .current-card .dom-orb { width: 38px; height: 38px; }
-  html:not(.mobile-ui) .current-card { display: none; }
+  html:not(.mobile-ui) .current-card { display: grid; gap: 5px; }
 }
