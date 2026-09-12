@@ -513,6 +513,26 @@ html.mobile-ui, .mobile-ui body, .mobile-ui #app { width: 100%; height: 100%; mi
 .save-actions #continue-button { grid-column: auto; }
 .mode-continue { width: 100%; margin-top: 10px; }
 .clock-urgent { color: var(--coral); }
+.countdown-label { display: flex; justify-content: space-between; align-items: center; gap: 4px; width: 100%; }
+.countdown-label small { color: var(--muted); letter-spacing: .06em; }
+#descent-time-row .countdown-label strong { color: var(--gold); }
+.timed-mode .danger-stat { gap: 4px; }
+.timed-mode #danger-fill { background: var(--mint); }
+#descent-time-row { width: 100%; margin-top: 3px; }
+.timed-mode .danger-stat > .danger-meter { order: 0; }
+.timed-mode #descent-time-row { order: 1; }
+#descent-time-row .countdown-label { margin-bottom: 4px; }
+#descent-time-fill { width: 100%; background: var(--gold); transform-origin: left center; transition: transform 100ms linear; }
+#descent-time-row.urgent strong { color: var(--coral); }
+#descent-time-row.urgent #descent-time-fill { background: var(--coral); }
+.timed-mode .danger-stat .countdown-label strong { font-size: 13px; margin: 0; }
+.mobile-ui .game-screen.timed-mode { --grip-board-height: min(calc((100vw - 28px) * 760 / 640), max(128px, calc(72dvh - 174px - env(safe-area-inset-top)))); grid-template-rows: 44px 64px auto 84px minmax(0, 1fr); }
+.mobile-ui .timed-mode .game-header { grid-template-columns: minmax(50px, .8fr) minmax(100px, 1.7fr) minmax(54px, .8fr); }
+.mobile-ui .timed-mode .danger-stat .countdown-label strong { font-size: 11px; }
+.mobile-ui .timed-mode .danger-stat { gap: 3px; }
+@media (orientation: landscape) and (max-height: 550px) {
+  .mobile-ui .game-screen.timed-mode { --grip-board-height: max(80px, calc(100dvh - 266px - env(safe-area-inset-top) - env(safe-area-inset-bottom))); }
+}
 .mobile-ui #mobile-pause-button { font-size: 12px; }
 .mobile-ui .game-sidebar { display: none; }
 .mobile-ui .save-actions .quiet-button { min-height: 44px; font-size: 11px; padding: 8px 4px; }

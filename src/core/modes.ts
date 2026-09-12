@@ -5,7 +5,7 @@ export type GameMode = 'endless' | 'timed';
 export const scoreMultiplier = (id: string): number => id === 'hard' ? 2 : id === 'normal' ? 1.5 : 1;
 export const weightedScore = (state: GameState): number => Math.round(state.score * scoreMultiplier(state.difficultyId));
 export function descentInterval(id: string, elapsed: number, duration: number): number {
-  const [start, end] = id === 'hard' ? [18000, 8000] : id === 'easy' ? [30000, 14000] : [24000, 11000];
+  const [start, end] = id === 'hard' ? [24000, 12000] : id === 'easy' ? [36000, 18000] : [30000, 15000];
   return Math.round(start + (end - start) * Math.max(0, Math.min(1, elapsed / duration)));
 }
 export function createRound(id: string, mode: GameMode, durationMs = 300000, now = Date.now()): GameState {
@@ -16,14 +16,15 @@ export function createRound(id: string, mode: GameMode, durationMs = 300000, now
   if (mode === 'timed') {
     state.durationMs = durationMs === 600000 ? 600000 : 300000;
     state.deadlineAt = now + state.durationMs;
-    state.nextDescentAt = now + descentInterval(id, 0, state.durationMs);
+    resetDescent(state, now);
   }
   return state;
 }
 export function resetDescent(state: GameState, now: number): void {
   if (state.mode !== 'timed') return;
   state.danger = 0;
-  state.nextDescentAt = now + descentInterval(state.difficultyId, state.elapsedMs ?? 0, state.durationMs!);
+  state.descentIntervalMs = descentInterval(state.difficultyId, state.elapsedMs ?? 0, state.durationMs!);
+  state.nextDescentAt = now + state.descentIntervalMs;
 }
 // Save a frozen snapshot; active gameplay keeps its own running deadlines.
 export function freezeTimed(input: GameState, now = Date.now()): GameState {
@@ -48,7 +49,8 @@ export function advanceTimed(input: GameState, now: number, allowDescent = true)
     while (state.nextDescentAt! <= until && state.status === 'READY') {
       const at = state.nextDescentAt!;
       state = forceDescent(state).state;
-      state.nextDescentAt = at + descentInterval(state.difficultyId, at - (state.deadlineAt! - state.durationMs!), state.durationMs!);
+      state.descentIntervalMs = descentInterval(state.difficultyId, at - (state.deadlineAt! - state.durationMs!), state.durationMs!);
+      state.nextDescentAt = at + state.descentIntervalMs;
     }
   }
   if (now >= state.deadlineAt! && state.status === 'READY') {

@@ -2,6 +2,8 @@ import { expect, it, vi } from 'vitest';
 vi.mock('phaser', () => ({ default: { Scene: class {}, AUTO: 0, Scale: { FIT: 0, CENTER_BOTH: 0 } } }));
 vi.mock('../src/game/input-mode', () => ({ usesButtonControls: () => true }));
 import { PlayScene } from '../src/game/PlayScene';
+import { createRound } from '../src/core/modes';
+import { heldRotationDegrees } from '../src/game/rotation';
 
 function setup() {
   const scene = new PlayScene();
@@ -25,14 +27,27 @@ it('rotates counterclockwise and clockwise in one-degree steps, clamped to playa
   expect(runtime.angle).toBeCloseTo(-78 * Math.PI / 180);
 });
 
-it('starts immediately and integrates the same held angle at 30, 60, and 120 FPS', () => {
+it.each(['endless','timed'] as const)('starts gently and integrates the same held angle at 30, 60, and 120 FPS in %s', mode => {
   for (const fps of [30, 60, 120]) {
     const { scene, runtime } = setup();
+    Object.assign(scene,{gameState:createRound('normal',mode)});
     scene.startRotation(1);
     expect(runtime.angle).toBeCloseTo(Math.PI / 180);
     for (let frame = 0; frame < fps; frame++) scene.update(0, 1000 / fps);
-    expect(runtime.angle).toBeCloseTo(49 * Math.PI / 180);
+    expect(runtime.angle).toBeCloseTo((1 + heldRotationDegrees(1)) * Math.PI / 180);
   }
+});
+
+it('increases held speed smoothly up to its cap without a speed jump', () => {
+  const velocity = (t:number) => (heldRotationDegrees(t+0.0001)-heldRotationDegrees(t))/0.0001;
+  expect(velocity(0)).toBeCloseTo(12,3);
+  expect(velocity(.3)).toBeLessThan(velocity(.6));
+  expect(velocity(.6)).toBeLessThan(velocity(1.2));
+  expect(velocity(1.2)).toBeLessThan(velocity(1.8));
+  expect(velocity(1.8)).toBeCloseTo(96,3);
+  expect(velocity(3)).toBeCloseTo(96,3);
+  expect(velocity(1.7999)).toBeCloseTo(velocity(1.8),3);
+  expect(heldRotationDegrees(-1)).toBe(0);
 });
 
 it('stops on release and resets acceleration when the direction changes', () => {

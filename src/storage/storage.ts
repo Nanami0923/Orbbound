@@ -94,6 +94,7 @@ function isGameState(value: unknown): value is GameState {
   if (candidate.mode === 'timed' && (![300000,600000].includes(candidate.durationMs!)
     || !Number.isFinite(candidate.deadlineAt) || !Number.isFinite(candidate.nextDescentAt))) return false;
   if (candidate.timedSavedAt !== undefined && !Number.isFinite(candidate.timedSavedAt)) return false;
+  if (candidate.descentIntervalMs !== undefined && (!Number.isFinite(candidate.descentIntervalMs) || candidate.descentIntervalMs <= 0)) return false;
   if (candidate.schemaVersion !== 1 || candidate.rulesVersion !== 'classic-v2') return false;
   if (candidate.rowOffset !== 0 && candidate.rowOffset !== 1) return false;
   if (!Array.isArray(candidate.board) || candidate.board.length !== 19) return false;

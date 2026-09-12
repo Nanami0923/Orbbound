@@ -15,24 +15,24 @@ function storage() {
 describe('2.0 modes', () => {
   it('uses shorter intervals for harder difficulty and later progress, with a playable floor', () => {
     for (const duration of [300000,600000]) {
-      expect(descentInterval('easy',0,duration)).toBe(30000);
-      expect(descentInterval('normal',0,duration)).toBe(24000);
-      expect(descentInterval('hard',0,duration)).toBe(18000);
-      expect(descentInterval('hard',duration*2,duration)).toBe(8000);
-      expect(descentInterval('easy',duration/2,duration)).toBe(22000);
+      expect(descentInterval('easy',0,duration)).toBe(36000);
+      expect(descentInterval('normal',0,duration)).toBe(30000);
+      expect(descentInterval('hard',0,duration)).toBe(24000);
+      expect(descentInterval('hard',duration*2,duration)).toBe(12000);
+      expect(descentInterval('easy',duration/2,duration)).toBe(27000);
     }
   });
   it('forces descent with no shots and resets its shot counter without mutating the saved board', () => {
     const initial = createRound('easy','timed',300000,1000);
     initial.danger = 48;
-    const next = advanceTimed(initial,31000);
+    const next = advanceTimed(initial,37000);
     expect(next.rowOffset).toBe(1); expect(next.danger).toBe(0); expect(next.step).toBe(0);
     expect(next.board[1]).toEqual(initial.board[0]); expect(initial.rowOffset).toBe(0);
-    expect(next.nextDescentAt).toBeGreaterThan(31000);
+    expect(next.nextDescentAt).toBeGreaterThan(37000);
   });
   it('catches up multiple delayed active frames', () => {
     const initial = createRound('hard','timed',600000,1000);
-    const next = advanceTimed(initial,181000);
+    const next = advanceTimed(initial,301000);
     expect(next.status).toBe('LOST'); expect(next.endReason).toBeUndefined();
     expect(advanceTimed(initial,361000).status).toBe('LOST');
   });
@@ -45,9 +45,9 @@ describe('2.0 modes', () => {
   });
   it('defers forced descent during a shot and catches up at the next safe boundary', () => {
     const initial = createRound('normal','timed',300000,1000);
-    const flying = advanceTimed(initial,25001,false);
+    const flying = advanceTimed(initial,31001,false);
     expect(flying.board).toBe(initial.board);
-    expect(advanceTimed(flying,25500).board).not.toBe(initial.board);
+    expect(advanceTimed(flying,31500).board).not.toBe(initial.board);
   });
   it('resets the time budget when shot count triggers descent', () => {
     const initial = createRound('easy','timed',300000,1000);
@@ -105,16 +105,17 @@ describe('2.0 modes', () => {
     expect(freezeTimed(frozen,86400000)).toBe(frozen);
     const resumed = resumeTimed(frozen,86400000);
     expect(resumed.deadlineAt!-86400000).toBe(290000);
-    expect(resumed.nextDescentAt!-86400000).toBe(20000);
+    expect(resumed.nextDescentAt!-86400000).toBe(26000);
     expect(resumed.danger).toBe(48); expect(resumed.score).toBe(600); expect(resumed.sessionId).toBe('saved');
     const again = resumeTimed(freezeTimed(resumed,86405000),172800000);
     expect(again.elapsedMs).toBe(15000);
-    expect(again.nextDescentAt!-172800000).toBe(15000);
+    expect(again.nextDescentAt!-172800000).toBe(21000);
     expect(again.deadlineAt!-172800000).toBe(285000);
   });
   it('upgrades a 2.0 timed checkpoint without background catch-up', () => {
     const local = storage();
     const old = createRound('normal','timed',300000,1000); old.elapsedMs=12000; old.danger=40;
+    old.nextDescentAt=25000; delete old.descentIntervalMs;
     local.setItem('orbbound-timed-active-v2',JSON.stringify(old));
     const recovered = resumeTimed(loadGame('timed')!,999000000);
     expect(recovered.elapsedMs).toBe(12000);

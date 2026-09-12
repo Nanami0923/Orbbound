@@ -105,7 +105,7 @@ it('freezes timed gameplay and resumes both clocks with the same remaining budge
     expect(scene.activeState.elapsedMs).toBe(10000);
     scene.resumeGame(); expect(scene.isPaused).toBe(false);
     expect(scene.activeState.deadlineAt!-86400000).toBe(290000);
-    expect(scene.activeState.nextDescentAt!-86400000).toBe(14000);
+    expect(scene.activeState.nextDescentAt!-86400000).toBe(20000);
   } finally { now.mockRestore(); }
 });
 

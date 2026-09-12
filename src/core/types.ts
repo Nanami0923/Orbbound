@@ -19,6 +19,7 @@ export interface GameState {
   durationMs?: number;
   deadlineAt?: number;
   nextDescentAt?: number;
+  descentIntervalMs?: number;
   timedSavedAt?: number;
   endReason?: 'timeout' | 'settled';
   rowOffset?: number;

@@ -10,7 +10,7 @@ import { GameAudio } from './audio';
 import { recordRound } from '../storage/history';
 import { usesButtonControls } from './input-mode';
 import { heldRotationDegrees } from './rotation';
-import { advanceTimed, createRound, freezeTimed, resumeTimed, resetDescent } from '../core/modes';
+import { advanceTimed, createRound, descentInterval, freezeTimed, resumeTimed, resetDescent } from '../core/modes';
 
 type ScenePhase = 'READY' | 'FLYING' | 'RESOLVING' | 'PAUSED' | 'WON' | 'LOST';
 
@@ -96,7 +96,7 @@ export class PlayScene extends Phaser.Scene {
     if (['READY', 'FLYING', 'RESOLVING'].includes(this.phase)) {
       if (!this.isTimed) this.gameState.elapsedMs = (this.gameState.elapsedMs ?? 0) + delta;
       this.clockTick += delta;
-      if (this.clockTick >= 1000) { this.clockTick = 0; this.emitState(); }
+      if (this.clockTick >= (this.isTimed ? 100 : 1000)) { this.clockTick = 0; this.emitState(); }
     }
   }
 
@@ -617,6 +617,7 @@ export class PlayScene extends Phaser.Scene {
       endReason: this.gameState.endReason,
       durationMs: this.gameState.durationMs,
       descentRemainingMs: Math.max(0, (this.gameState.nextDescentAt ?? 0) - (this.gameState.timedSavedAt ?? Date.now())),
+      descentIntervalMs: this.gameState.descentIntervalMs ?? descentInterval(this.gameState.difficultyId, this.gameState.elapsedMs ?? 0, this.gameState.durationMs ?? 300000),
     });
   }
 }

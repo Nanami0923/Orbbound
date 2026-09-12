@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { Capacitor } from '@capacitor/core';
 import { App } from '@capacitor/app';
 import { usesButtonControls } from './game/input-mode';
+import { countdownProgress } from './game/countdown';
 import { DANGER_MAX, getDifficulty, shotsUntilDescent } from './core/engine';
 import { createRound, scoreMultiplier, weightedScore, type GameMode } from './core/modes';
 import type { GameState } from './core/types';
@@ -16,6 +17,7 @@ interface SceneStateDetail {
   mode: GameMode;
   durationMs?: number;
   descentRemainingMs: number;
+  descentIntervalMs: number;
   phase: 'READY' | 'FLYING' | 'RESOLVING' | 'PAUSED' | 'WON' | 'LOST';
   status: 'READY' | 'WON' | 'LOST';
   score: number;
@@ -37,6 +39,11 @@ const launchButton = document.querySelector<HTMLButtonElement>('#launch-button')
 const scoreValue = document.querySelector<HTMLElement>('#score-value');
 const dangerValue = document.querySelector<HTMLElement>('#danger-value');
 const dangerFill = document.querySelector<HTMLElement>('#danger-fill');
+const descentTimeRow = document.querySelector<HTMLElement>('#descent-time-row');
+const descentTimeValue = document.querySelector<HTMLElement>('#descent-time-value');
+const descentTimeFill = document.querySelector<HTMLElement>('#descent-time-fill');
+const descentCaption = document.querySelector<HTMLElement>('#descent-caption');
+const shotCountdownLabel = document.querySelector<HTMLElement>('#shot-countdown-label');
 
 const difficultyLabel = document.querySelector<HTMLElement>('#difficulty-label');
 const gameStatusLabel = document.querySelector<HTMLElement>('#game-status-label');
@@ -128,24 +135,41 @@ function formatScore(score: number): string {
 }
 
 function updateGameState(detail: SceneStateDetail): void {
-  if (scoreValue) scoreValue.textContent = formatScore(detail.score);
+  if (scoreValue && scoreValue.textContent !== formatScore(detail.score)) scoreValue.textContent = formatScore(detail.score);
+  const timed = detail.mode === 'timed';
+  gameScreen?.classList.toggle('timed-mode', timed);
+  if (descentTimeRow) descentTimeRow.hidden = !timed;
+  if (descentCaption) descentCaption.hidden = timed;
+  if (shotCountdownLabel) shotCountdownLabel.hidden = !timed;
+  const bars = countdownProgress(detail.difficultyId, detail.danger, detail.descentRemainingMs, detail.descentIntervalMs);
   const remaining = shotsUntilDescent(detail.difficultyId, detail.danger);
   if (dangerValue) {
-    dangerValue.textContent = detail.status !== 'READY' ? '本局结束' : remaining === 1 ? '下一发后下降' : `再发射 ${remaining} 次`;
+    const label = detail.status !== 'READY' ? '本局结束' : timed ? `${remaining} 次` : remaining === 1 ? '下一发后下降' : `再发射 ${remaining} 次`;
+    if (dangerValue.textContent !== label) dangerValue.textContent = label;
     dangerValue.style.color = remaining <= 2 ? 'var(--coral)' : 'var(--cream)';
-    if (detail.mode === 'timed' && detail.status === 'READY') dangerValue.textContent = `${remaining} 发 / ${Math.ceil(detail.descentRemainingMs / 1000)} 秒`;
   }
   if (dangerFill) {
-    const progress = Math.max(0, Math.min(100, detail.danger / DANGER_MAX * 100));
+    const progress = timed ? (detail.status === 'READY' ? bars.shotPercent : 0) : Math.max(0, Math.min(100, detail.danger / DANGER_MAX * 100));
     dangerFill.style.width = `${progress}%`;
     dangerFill.parentElement?.setAttribute('aria-valuenow', String(progress));
     dangerFill.parentElement?.setAttribute('aria-valuetext', dangerValue?.textContent ?? '');
   }
-  if (difficultyLabel) difficultyLabel.textContent = `${detail.mode === 'timed' ? '限时' : '无尽'} · ${getDifficulty(detail.difficultyId).label} ×${scoreMultiplier(detail.difficultyId)}`;
-  if (gameStatusLabel) gameStatusLabel.textContent = detail.endReason ? (detail.endReason === 'timeout' ? '时间到' : '已结算') : statusLabel(detail.phase, detail.status);
+  if (timed && descentTimeFill && descentTimeValue) {
+    const label = detail.status === 'READY' ? `${Math.ceil(detail.descentRemainingMs / 1000)} 秒` : '本局结束';
+    if (descentTimeValue.textContent !== label) descentTimeValue.textContent = label;
+    const progress = detail.status === 'READY' ? bars.timePercent : 0;
+    descentTimeFill.style.transform = `scaleX(${progress / 100})`;
+    descentTimeFill.parentElement?.setAttribute('aria-valuenow', String(Math.round(progress)));
+    descentTimeFill.parentElement?.setAttribute('aria-valuetext', label);
+    descentTimeRow?.classList.toggle('urgent', detail.status === 'READY' && detail.descentRemainingMs <= 5000);
+  }
+  const difficultyText = `${detail.mode === 'timed' ? '限时' : '无尽'} · ${getDifficulty(detail.difficultyId).label} ×${scoreMultiplier(detail.difficultyId)}`;
+  if (difficultyLabel && difficultyLabel.textContent !== difficultyText) difficultyLabel.textContent = difficultyText;
+  const phaseText = detail.endReason ? (detail.endReason === 'timeout' ? '时间到' : '已结算') : statusLabel(detail.phase, detail.status);
+  if (gameStatusLabel && gameStatusLabel.textContent !== phaseText) gameStatusLabel.textContent = phaseText;
   for (const button of [pauseButton, document.querySelector<HTMLButtonElement>('#mobile-pause-button')]) {
     if (!button) continue;
-    button.textContent = '存档';
+    if (button.textContent !== '存档') button.textContent = '存档';
     button.disabled = detail.status !== 'READY';
     button.setAttribute('aria-label', '存档并返回首页');
   }
@@ -154,8 +178,10 @@ function updateGameState(detail: SceneStateDetail): void {
   if (current) updateOrbPreview(current, detail.currentColor);
   const clock = document.querySelector<HTMLElement>('#round-clock');
   if (clock) {
-    clock.textContent = formatDuration(detail.mode === 'timed' ? Math.max(0, detail.durationMs! - detail.elapsedMs + 999) : detail.elapsedMs);
-    clock.previousElementSibling!.textContent = detail.mode === 'timed' ? '剩余时间' : '本局用时';
+    const clockText = formatDuration(detail.mode === 'timed' ? Math.max(0, detail.durationMs! - detail.elapsedMs + 999) : detail.elapsedMs);
+    if (clock.textContent !== clockText) clock.textContent = clockText;
+    const clockLabel = detail.mode === 'timed' ? '整局剩余' : '本局用时';
+    if (clock.previousElementSibling!.textContent !== clockLabel) clock.previousElementSibling!.textContent = clockLabel;
     clock.classList.toggle('clock-urgent', detail.mode === 'timed' && detail.durationMs! - detail.elapsedMs <= 30000);
   }
   if (launchButton) launchButton.disabled = detail.phase !== 'READY';
@@ -171,6 +197,8 @@ function statusLabel(phase: SceneStateDetail['phase'], status: SceneStateDetail[
 }
 
 function updateOrbPreview(element: HTMLElement, colorId: number): void {
+  if (element.dataset.colorId === String(colorId)) return;
+  element.dataset.colorId = String(colorId);
   const orb = getOrbTheme(colorId);
   element.dataset.symbol = orb.symbol;
   element.style.backgroundColor = orb.cssColor;
@@ -302,7 +330,7 @@ function showModeSetup(mode: GameMode): void {
     <h2>${mode === 'timed' ? '限时模式' : '无尽模式'}</h2>
     <p>${mode === 'timed' ? '选择 5 或 10 分钟。次数或时间先到就下降，两项同时重置。可独立存档退出，读取后继续计时，仅结算成绩入榜。新开限时局会替换限时存档。' : '按自己的节奏消除。可存档退出、跨次续玩，也可随时结算计入排行榜。新开无尽局会替换现有存档。'}</p>
     <div class="mode-tabs">${['easy','normal','hard'].map(id => `<button class="quiet-button ${id === selectedDifficulty ? 'active' : ''}" data-setup-difficulty="${id}">${getDifficulty(id).label.split(' · ')[0]} ×${scoreMultiplier(id)}</button>`).join('')}</div>
-    ${mode === 'timed' ? `<div class="mode-tabs"><button data-duration="300000" class="quiet-button ${selectedDuration === 300000 ? 'active' : ''}">5 分钟</button><button data-duration="600000" class="quiet-button ${selectedDuration === 600000 ? 'active' : ''}">10 分钟</button></div><p class="mode-note">下落间隔随进度缩短：简单 30→14 秒，普通 24→11 秒，困难 18→8 秒。</p>` : ''}
+    ${mode === 'timed' ? `<div class="mode-tabs"><button data-duration="300000" class="quiet-button ${selectedDuration === 300000 ? 'active' : ''}">5 分钟</button><button data-duration="600000" class="quiet-button ${selectedDuration === 600000 ? 'active' : ''}">10 分钟</button></div><p class="mode-note">下落间隔随进度缩短：简单 36→18 秒，普通 30→15 秒，困难 24→12 秒。两条倒计时任一归零就下降。</p>` : ''}
     ${loadGame(mode) ? '<button id="mode-continue" class="quiet-button mode-continue">读取此模式存档</button>' : ''}
     <div class="modal-footer"><button id="mode-begin" class="primary-button">开始挑战 ↗</button><button id="mode-ranking" class="quiet-button">查看排行榜</button></div>`);
   document.querySelector('#mode-continue')?.addEventListener('click', () => { closeModal(); continueSaved(mode); });
