@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { advanceTimed, createRound, descentInterval, resetDescent, weightedScore } from '../src/core/modes';
-import { resolveShot } from '../src/core/engine';
+import { advanceTimed, createRound, descentInterval, freezeTimed, resumeTimed, resetDescent, weightedScore } from '../src/core/modes';
+import { resolveShot, shotsUntilDescent } from '../src/core/engine';
 import { clearGame, loadGame, saveGame } from '../src/storage/storage';
 import { loadHistory, mergeRecord, rankingKey, recordRound, type HistoryData } from '../src/storage/history';
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 function storage() {
   const map = new Map<string,string>();
   const localStorage = { getItem:(key:string) => map.get(key) ?? null, setItem:(key:string,value:string) => map.set(key,value), removeItem:(key:string) => map.delete(key) };
@@ -30,7 +30,7 @@ describe('2.0 modes', () => {
     expect(next.board[1]).toEqual(initial.board[0]); expect(initial.rowOffset).toBe(0);
     expect(next.nextDescentAt).toBeGreaterThan(31000);
   });
-  it('catches up multiple missed descents and can lose while backgrounded', () => {
+  it('catches up multiple delayed active frames', () => {
     const initial = createRound('hard','timed',600000,1000);
     const next = advanceTimed(initial,181000);
     expect(next.status).toBe('LOST'); expect(next.endReason).toBeUndefined();
@@ -67,11 +67,73 @@ describe('2.0 modes', () => {
   });
   it('keeps endless and timed saves independent and round-trips the complete state', () => {
     storage();
+    vi.spyOn(Date,'now').mockReturnValue(1000);
     const endless = createRound('normal','endless'); endless.score = 240; endless.rngState = 42;
     const timed = createRound('hard','timed',600000);
     saveGame(endless); saveGame(timed);
-    expect(loadGame()).toEqual(endless); expect(loadGame('timed')).toEqual(timed);
+    expect(loadGame()).toEqual(endless); expect(resumeTimed(loadGame('timed')!,1000)).toEqual(timed);
     clearGame('timed'); expect(loadGame()).toEqual(endless); expect(loadGame('timed')).toBeNull();
+  });
+  it.each(['easy','normal','hard'])('resets both descent budgets when shots finish first: %s', id => {
+    const state = createRound(id,'timed',300000,1000);
+    state.board.forEach(row => row.fill(null)); state.board[0][0]=1; state.currentColor=2;
+    state.danger = id === 'normal' ? 90 : 96;
+    state.elapsedMs = 10000;
+    const result = resolveShot(state,{row:0,col:2});
+    expect(result.events.some(e=>e.type==='board-drop')).toBe(true);
+    expect(result.state.danger).toBe(0);
+    resetDescent(result.state,11000);
+    expect(result.state.nextDescentAt).toBe(11000+descentInterval(id,10000,300000));
+    expect(shotsUntilDescent(id,result.state.danger)).toBe(shotsUntilDescent(id,0));
+    expect(advanceTimed(result.state,state.nextDescentAt!).board).toBe(result.state.board);
+  });
+  it.each(['easy','normal','hard'])('resets both descent budgets when time finishes first: %s', id => {
+    const state = createRound(id,'timed',600000,1000); state.danger=72;
+    const at = state.nextDescentAt!;
+    const result = advanceTimed(state,at);
+    expect(result.danger).toBe(0);
+    expect(result.nextDescentAt).toBe(at+descentInterval(id,at-1000,600000));
+    expect(result.step).toBe(0);
+    expect(shotsUntilDescent(id,result.danger)).toBe(shotsUntilDescent(id,0));
+  });
+  it('freezes both clocks across days, including repeated saves and resumes', () => {
+    const state = createRound('easy','timed',300000,1000);
+    state.danger=48; state.score=600; state.sessionId='saved';
+    const frozen = freezeTimed(state,11000);
+    expect(frozen.elapsedMs).toBe(10000); expect(frozen.timedSavedAt).toBe(11000);
+    expect(advanceTimed(frozen,86400000)).toBe(frozen);
+    expect(freezeTimed(frozen,86400000)).toBe(frozen);
+    const resumed = resumeTimed(frozen,86400000);
+    expect(resumed.deadlineAt!-86400000).toBe(290000);
+    expect(resumed.nextDescentAt!-86400000).toBe(20000);
+    expect(resumed.danger).toBe(48); expect(resumed.score).toBe(600); expect(resumed.sessionId).toBe('saved');
+    const again = resumeTimed(freezeTimed(resumed,86405000),172800000);
+    expect(again.elapsedMs).toBe(15000);
+    expect(again.nextDescentAt!-172800000).toBe(15000);
+    expect(again.deadlineAt!-172800000).toBe(285000);
+  });
+  it('upgrades a 2.0 timed checkpoint without background catch-up', () => {
+    const local = storage();
+    const old = createRound('normal','timed',300000,1000); old.elapsedMs=12000; old.danger=40;
+    local.setItem('orbbound-timed-active-v2',JSON.stringify(old));
+    const recovered = resumeTimed(loadGame('timed')!,999000000);
+    expect(recovered.elapsedMs).toBe(12000);
+    expect(recovered.deadlineAt!-999000000).toBe(288000);
+    expect(recovered.nextDescentAt!-999000000).toBe(12000);
+    expect(recovered.danger).toBe(40);
+  });
+  it('never ranks a temporary save; settles its resumed session once', () => {
+    storage(); vi.spyOn(Date,'now').mockReturnValue(11000);
+    const state = createRound('hard','timed',300000,1000);
+    state.sessionId='timed-save'; state.score=350; state.step=2;
+    saveGame(state); recordRound(state);
+    expect(loadHistory()).toEqual({recent:[],top:[]});
+    const resumed = resumeTimed(loadGame('timed')!,1000000);
+    recordRound(resumed); expect(loadHistory().top).toHaveLength(0);
+    resumed.status='WON'; resumed.endReason='settled';
+    recordRound(resumed); recordRound(resumed); clearGame('timed');
+    expect(loadHistory().top).toHaveLength(1);
+    expect(loadHistory().top[0]).toMatchObject({id:'timed-save',score:700,result:'SETTLED',mode:'timed'});
   });
   it('retains independent all-time top tens and counts forced settlements exactly once', () => {
     storage();

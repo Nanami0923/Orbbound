@@ -93,12 +93,31 @@ it('keeps input locked until the descent tween completes', () => {
   expect(runtime.phase).toBe('READY');
 });
 
-it('does not pause timed mode when a menu or background lifecycle asks to pause', () => {
+it('freezes timed gameplay and resumes both clocks with the same remaining budgets', () => {
   const scene = new PlayScene();
-  const pauseAll = vi.fn(), persistGame = vi.fn();
-  Object.assign(scene, {gameState:createRound('normal','timed'),phase:'READY',persistGame,tweens:{pauseAll}});
-  scene.pauseGame();
-  expect(scene.isPaused).toBe(false); expect(pauseAll).not.toHaveBeenCalled(); expect(persistGame).toHaveBeenCalledOnce();
+  const now=vi.spyOn(Date,'now').mockReturnValue(11000);
+  try {
+    const pauseAll = vi.fn(), persistGame = vi.fn();
+    Object.assign(scene, {ready:true,gameState:createRound('normal','timed',300000,1000),phase:'READY',persistGame,
+      tweens:{pauseAll,resumeAll:vi.fn()},time:{paused:false},drawAim:vi.fn(),emitState:vi.fn(),statusText:{setText:vi.fn()}});
+    scene.pauseGame(); now.mockReturnValue(86400000); scene.pauseGame(); scene.update(0,60000);
+    expect(scene.isPaused).toBe(true); expect(pauseAll).toHaveBeenCalledOnce(); expect(persistGame).toHaveBeenCalledOnce();
+    expect(scene.activeState.elapsedMs).toBe(10000);
+    scene.resumeGame(); expect(scene.isPaused).toBe(false);
+    expect(scene.activeState.deadlineAt!-86400000).toBe(290000);
+    expect(scene.activeState.nextDescentAt!-86400000).toBe(14000);
+  } finally { now.mockRestore(); }
+});
+
+it.each([true,false])('shows the enlarged next orb even with aim assist %s', aimAssist => {
+  const scene = new PlayScene();
+  const next = {setScale:vi.fn()};
+  const createOrb=vi.fn(()=>next);
+  const graphics={clear:vi.fn(),fillStyle:vi.fn(),fillCircle:vi.fn(),lineStyle:vi.fn(),strokeCircle:vi.fn()};
+  Object.assign(scene,{settings:{aimAssist},createOrb,launcherBase:graphics});
+  (scene as unknown as {renderLauncher():void}).renderLauncher();
+  expect(createOrb).toHaveBeenCalledWith(scene.activeState.nextColor,{x:478,y:698});
+  expect(next.setScale).toHaveBeenCalledWith(1.35);
 });
 
 it('cancels a pending animation and finishes only once when the timed deadline passes', () => {

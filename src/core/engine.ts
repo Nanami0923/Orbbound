@@ -185,7 +185,7 @@ export function resolveShot(input: GameState, landing: Cell): ResolveResult {
 
   state.danger += config.dangerPerShot;
   if (state.danger >= DANGER_MAX) {
-    state.danger -= DANGER_MAX;
+    state.danger = state.mode === 'timed' ? 0 : state.danger - DANGER_MAX;
     const lostByDrop = shiftBoardDown(state.board, random, config);
     // Moving a hex grid one row must flip its stagger origin, preserving every existing x coordinate and edge.
     state.rowOffset = 1 - (state.rowOffset ?? 0);

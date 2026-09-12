@@ -22,11 +22,25 @@ export function createRound(id: string, mode: GameMode, durationMs = 300000, now
 }
 export function resetDescent(state: GameState, now: number): void {
   if (state.mode !== 'timed') return;
+  state.danger = 0;
   state.nextDescentAt = now + descentInterval(state.difficultyId, state.elapsedMs ?? 0, state.durationMs!);
 }
-// Catch up against absolute deadlines, including time spent in the background.
+// Save a frozen snapshot; active gameplay keeps its own running deadlines.
+export function freezeTimed(input: GameState, now = Date.now()): GameState {
+  if (input.mode !== 'timed' || input.status !== 'READY' || input.timedSavedAt !== undefined) return input;
+  return { ...input, timedSavedAt: now,
+    elapsedMs: Math.min(input.durationMs!, Math.max(input.elapsedMs ?? 0, now - (input.deadlineAt! - input.durationMs!))) };
+}
+export function resumeTimed(input: GameState, now = Date.now()): GameState {
+  if (input.mode !== 'timed' || input.timedSavedAt === undefined) return input;
+  const shift = now - input.timedSavedAt;
+  const state = { ...input, deadlineAt: input.deadlineAt! + shift, nextDescentAt: input.nextDescentAt! + shift };
+  delete state.timedSavedAt;
+  return state;
+}
+// Catch up delayed active frames; frozen saves never advance or settle themselves.
 export function advanceTimed(input: GameState, now: number, allowDescent = true): GameState {
-  if (input.mode !== 'timed' || input.status !== 'READY') return input;
+  if (input.mode !== 'timed' || input.status !== 'READY' || input.timedSavedAt !== undefined) return input;
   let state = { ...input };
   state.elapsedMs = Math.min(state.durationMs!, Math.max(state.elapsedMs ?? 0, now - (state.deadlineAt! - state.durationMs!)));
   const until = Math.min(now, state.deadlineAt!);

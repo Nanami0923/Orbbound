@@ -10,7 +10,7 @@ import { GameAudio } from './audio';
 import { recordRound } from '../storage/history';
 import { usesButtonControls } from './input-mode';
 import { heldRotationDegrees } from './rotation';
-import { advanceTimed, createRound, resetDescent } from '../core/modes';
+import { advanceTimed, createRound, freezeTimed, resumeTimed, resetDescent } from '../core/modes';
 
 type ScenePhase = 'READY' | 'FLYING' | 'RESOLVING' | 'PAUSED' | 'WON' | 'LOST';
 
@@ -66,7 +66,7 @@ export class PlayScene extends Phaser.Scene {
     sendWindowEvent('snood-finished', this.gameState);
   }
   public syncTimedClock(): void {
-    if (!this.ready || !this.isTimed || this.gameState.status !== 'READY') return;
+    if (!this.ready || !this.isTimed || this.isPaused || this.gameState.status !== 'READY') return;
     const previous = this.gameState;
     const now = Date.now();
     this.gameState = advanceTimed(previous, now, this.phase === 'READY' || now >= previous.deadlineAt!);
@@ -133,6 +133,7 @@ export class PlayScene extends Phaser.Scene {
   }
 
   public begin(state: GameState): void {
+    state = resumeTimed(state);
     this.stopRotation();
     this.tweens.killAll();
     this.tweens.resumeAll();
@@ -175,8 +176,9 @@ export class PlayScene extends Phaser.Scene {
 
   public pauseGame(): void {
     this.stopRotation();
-    if (this.isTimed) { this.persistGame(); return; }
+    this.syncTimedClock();
     if (this.phase === 'PAUSED' || this.phase === 'WON' || this.phase === 'LOST') return;
+    this.gameState = freezeTimed(this.gameState);
     this.pausedFrom = this.phase;
     this.phase = 'PAUSED';
     this.tweens.pauseAll();
@@ -190,6 +192,7 @@ export class PlayScene extends Phaser.Scene {
 
   public resumeGame(): void {
     if (this.phase !== 'PAUSED') return;
+    this.gameState = resumeTimed(this.gameState);
     this.phase = this.pausedFrom;
     this.statusText.setText(this.phase === 'READY' ? (usesButtonControls() ? '底部按钮转向 · 中间按钮发射' : '选择角度 · 点击发射') : '等待本次发射结算');
     this.tweens.resumeAll();
@@ -199,7 +202,6 @@ export class PlayScene extends Phaser.Scene {
   }
 
   public togglePause(): void {
-    if (this.isTimed) return;
     if (this.phase === 'PAUSED') this.resumeGame();
     else this.pauseGame();
   }
@@ -263,6 +265,9 @@ export class PlayScene extends Phaser.Scene {
       letterSpacing: 1,
     }).setOrigin(0.5);
     floorLabel.setAlpha(0.85);
+    this.add.text(478, 649, '下一球', {
+      resolution: 2, color: '#98a1b8', fontFamily: 'Segoe UI, Microsoft YaHei, sans-serif', fontSize: '14px',
+    }).setOrigin(0.5);
 
   }
 
@@ -300,6 +305,8 @@ export class PlayScene extends Phaser.Scene {
     this.nextOrb?.destroy();
 
     this.launcherBase.clear();
+    this.nextOrb = this.createOrb(this.gameState.nextColor, { x: 478, y: 698 });
+    this.nextOrb.setScale(1.35);
     if (!this.settings.aimAssist) return;
     this.launcherBase.fillStyle(0x0b1120, 0.95);
     this.launcherBase.fillCircle(BOARD_GEOMETRY.launcherX, BOARD_GEOMETRY.launcherY + 3, 42);
@@ -315,9 +322,6 @@ export class PlayScene extends Phaser.Scene {
       y: BOARD_GEOMETRY.launcherY,
     });
     this.launcherOrb.setScale(0.93);
-
-    this.nextOrb = this.createOrb(this.gameState.nextColor, { x: 478, y: 698 });
-    this.nextOrb.setScale(0.72);
 
   }
 
@@ -412,7 +416,7 @@ export class PlayScene extends Phaser.Scene {
     if (event.code === 'Space') { event.preventDefault(); if (event.repeat) return; }
     if (event.code === 'Escape') {
       event.preventDefault();
-      if (!this.isTimed) sendWindowEvent('snood-save-home', undefined);
+      sendWindowEvent('snood-save-home', undefined);
       return;
     }
     if (this.phase === 'PAUSED' && event.code === 'Space') {
@@ -612,7 +616,7 @@ export class PlayScene extends Phaser.Scene {
       mode: this.gameState.mode ?? 'endless',
       endReason: this.gameState.endReason,
       durationMs: this.gameState.durationMs,
-      descentRemainingMs: Math.max(0, (this.gameState.nextDescentAt ?? 0) - Date.now()),
+      descentRemainingMs: Math.max(0, (this.gameState.nextDescentAt ?? 0) - (this.gameState.timedSavedAt ?? Date.now())),
     });
   }
 }

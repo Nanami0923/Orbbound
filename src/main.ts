@@ -3,7 +3,7 @@ import { Capacitor } from '@capacitor/core';
 import { App } from '@capacitor/app';
 import { usesButtonControls } from './game/input-mode';
 import { DANGER_MAX, getDifficulty, shotsUntilDescent } from './core/engine';
-import { advanceTimed, createRound, scoreMultiplier, weightedScore, type GameMode } from './core/modes';
+import { createRound, scoreMultiplier, weightedScore, type GameMode } from './core/modes';
 import type { GameState } from './core/types';
 import { PHASER_CONFIG, PlayScene } from './game/PlayScene';
 import { getOrbTheme } from './content/theme';
@@ -32,6 +32,7 @@ const gameScreen = document.querySelector<HTMLElement>('#game-screen');
 const modalRoot = document.querySelector<HTMLElement>('#modal-root');
 const toast = document.querySelector<HTMLElement>('#toast');
 const continueButton = document.querySelector<HTMLButtonElement>('#continue-button');
+const timedContinueButton = document.querySelector<HTMLButtonElement>('#timed-continue-button');
 const launchButton = document.querySelector<HTMLButtonElement>('#launch-button');
 const scoreValue = document.querySelector<HTMLElement>('#score-value');
 const dangerValue = document.querySelector<HTMLElement>('#danger-value');
@@ -70,7 +71,6 @@ function ensureGame(): void {
 
 function showHome(): void {
   const scene = getScene();
-  if (scene?.isTimed && scene.activeState.status === 'READY') scene.settleGame();
   scene?.pauseGame();
   getScene()?.persistGame();
   resumeAfterModal = false;
@@ -112,7 +112,12 @@ function updateHomeState(): void {
   if (continueButton) continueButton.disabled = !saved;
   const best = loadHistory().top.filter(r => rankingKey(r) === 'endless')[0]?.score ?? 0;
   if (homeHighScore) homeHighScore.textContent = `无尽最高 ${formatScore(best)}`;
-  if (continueButton) continueButton.textContent = saved ? `读取存档 · ${saved.score} 分` : '暂无存档';
+  if (continueButton) continueButton.textContent = saved ? `无尽存档 · ${saved.score} 分` : '无尽 · 暂无存档';
+  const timedSaved = loadGame('timed');
+  if (timedContinueButton) {
+    timedContinueButton.disabled = !timedSaved;
+    timedContinueButton.textContent = timedSaved ? `限时存档 · ${formatDuration(Math.max(0,timedSaved.durationMs! - (timedSaved.elapsedMs ?? 0)) + 999)}` : '限时 · 暂无存档';
+  }
   document.querySelectorAll<HTMLButtonElement>('[data-difficulty]').forEach((button) => {
     button.classList.toggle('active', button.dataset.difficulty === selectedDifficulty);
   });
@@ -141,8 +146,8 @@ function updateGameState(detail: SceneStateDetail): void {
   for (const button of [pauseButton, document.querySelector<HTMLButtonElement>('#mobile-pause-button')]) {
     if (!button) continue;
     button.textContent = '存档';
-    button.disabled = detail.mode === 'timed' || detail.status !== 'READY';
-    button.setAttribute('aria-label', detail.mode === 'timed' ? '限时模式不可暂停' : '存档并返回首页');
+    button.disabled = detail.status !== 'READY';
+    button.setAttribute('aria-label', '存档并返回首页');
   }
   if (nextOrbPreview) updateOrbPreview(nextOrbPreview, detail.nextColor);
   const current = document.querySelector<HTMLElement>('#current-orb-preview');
@@ -150,7 +155,7 @@ function updateGameState(detail: SceneStateDetail): void {
   const clock = document.querySelector<HTMLElement>('#round-clock');
   if (clock) {
     clock.textContent = formatDuration(detail.mode === 'timed' ? Math.max(0, detail.durationMs! - detail.elapsedMs + 999) : detail.elapsedMs);
-    clock.previousElementSibling!.textContent = detail.mode === 'timed' ? '剩余时间 · 不可暂停' : '本局用时';
+    clock.previousElementSibling!.textContent = detail.mode === 'timed' ? '剩余时间' : '本局用时';
     clock.classList.toggle('clock-urgent', detail.mode === 'timed' && detail.durationMs! - detail.elapsedMs <= 30000);
   }
   if (launchButton) launchButton.disabled = detail.phase !== 'READY';
@@ -210,16 +215,14 @@ function showHistory(top = true, page = 0, board = 'endless'): void {
   const all = (top ? data.top : data.recent).filter(r => rankingKey(r) === board);
   const rows = all.slice(page * 20, page * 20 + 20);
   openModal(`<button class="modal-close" data-close-modal type="button">关闭</button>
-    <p class="eyebrow">PERSONAL / LOCAL</p><h2>${top ? '个人前十' : '历史记录'}</h2>
+    <p class="eyebrow">PERSONAL / LOCAL</p><h2 class="history-heading"><button id="history-toggle" type="button" aria-label="${top ? '排行榜，点击切换到历史记录' : '历史记录，点击切换到排行榜'}">${top ? '排行榜' : '历史记录'}<span aria-hidden="true">⇄</span></button></h2>
     <p>原始分 × 难度系数：简单 ×1、普通 ×1.5、困难 ×2。结算后入榜，重开不入榜；同分时用时短者优先。三个榜单各保留前十。</p>
     <div class="mode-tabs">${[['endless','无尽'],['timed-300000','限时 5 分钟'],['timed-600000','限时 10 分钟']].map(([key,label]) => `<button data-board="${key}" class="quiet-button ${key === board ? 'active' : ''}">${label}</button>`).join('')}</div>
-    <div class="history-tabs"><button id="history-top" class="quiet-button">前十排行榜</button><button id="history-recent" class="quiet-button">最近对局</button></div>
     <div class="history-scroll"><table><thead><tr><th>#</th><th>开始时间</th><th>分数</th><th>难度 / 结果</th><th>用时 / 发射</th></tr></thead><tbody>
     ${rows.map((r,i) => `<tr><td>${page*20+i+1}</td><td>${new Date(r.startedAt).toLocaleString('zh-CN',{hour12:false})}</td><td><strong>${r.score}</strong><small class="score-formula">${r.rawScore ?? r.score} ×${r.multiplier ?? 1}</small></td><td>${getDifficulty(r.difficulty).label} / ${{WON:'清盘',LOST:'触底',ABANDONED:'重开',TIMEOUT:'时间到',SETTLED:'主动结算'}[r.result]}</td><td>${formatDuration(r.elapsedMs)} / ${r.shots}</td></tr>`).join('') || '<tr><td colspan="5">暂无记录，完成一局后会自动保存在这里。</td></tr>'}
     </tbody></table></div><div class="history-tabs"><button id="history-prev" class="quiet-button" ${page === 0 ? 'disabled' : ''}>上一页</button><span>${page+1} / ${Math.max(1,Math.ceil(all.length/20))}</span><button id="history-next" class="quiet-button" ${(page+1)*20 >= all.length ? 'disabled' : ''}>下一页</button></div>`, 'history-card');
   document.querySelectorAll<HTMLElement>('[data-board]').forEach(button => button.addEventListener('click', () => showHistory(top, 0, button.dataset.board)));
-  document.querySelector('#history-top')?.addEventListener('click', () => showHistory(true,0,board));
-  document.querySelector('#history-recent')?.addEventListener('click', () => showHistory(false,0,board));
+  document.querySelector('#history-toggle')?.addEventListener('click', () => showHistory(!top,0,board));
   document.querySelector('#history-prev')?.addEventListener('click', () => showHistory(top,page-1,board));
   document.querySelector('#history-next')?.addEventListener('click', () => showHistory(top,page+1,board));
 }
@@ -229,7 +232,7 @@ function showTutorial(): void {
     <button class="modal-close" data-close-modal type="button">关闭</button>
     <p class="eyebrow">FIELD GUIDE / 01</p>
     <h2>三步读懂棋盘</h2>
-    <p>无尽模式可随时存档、下次续玩或主动结算。限时模式有 5 / 10 分钟，菜单和后台均不停表；发射次数或下落计时任一达到条件就下降，清盘后补充棋盘继续。结算得分按简单 ×1、普通 ×1.5、困难 ×2 入榜。</p>
+    <p>两种模式均可独立存档、下次续玩或主动结算；存档本身不入榜。限时模式有 5 / 10 分钟，存档、菜单和后台会冻结进度；发射次数或下落计时任一归零就下降，并同时重置两项倒计时。清盘后补充棋盘继续。结算得分按简单 ×1、普通 ×1.5、困难 ×2 入榜。</p>
     <div class="tutorial-steps">
       <div class="tutorial-step"><b>01</b><div><strong>调整炮口方向</strong><span>手机版使用底部 ↶ / ↷ 调整方向，可长按连续转动；中间按钮发射。电脑版使用鼠标或方向键瞄准。</span></div></div>
       <div class="tutorial-step"><b>02</b><div><strong>三个同类连在一起</strong><span>命中后，同色连通区域达到 3 枚就会消失；每枚 10 分。</span></div></div>
@@ -297,10 +300,12 @@ function showModeSetup(mode: GameMode): void {
   selectedMode = mode;
   openModal(`<button class="modal-close" data-close-modal>关闭</button><p class="eyebrow">${mode === 'timed' ? 'RACE THE CLOCK' : 'FIND YOUR RHYTHM'}</p>
     <h2>${mode === 'timed' ? '限时模式' : '无尽模式'}</h2>
-    <p>${mode === 'timed' ? '选择 5 或 10 分钟。不可暂停，切后台仍计时；次数或时间先到就下降。清盘后继续挑战。' : '按自己的节奏消除。可存档退出、跨次续玩，也可随时结算计入排行榜。新开无尽局会替换现有存档。'}</p>
+    <p>${mode === 'timed' ? '选择 5 或 10 分钟。次数或时间先到就下降，两项同时重置。可独立存档退出，读取后继续计时，仅结算成绩入榜。新开限时局会替换限时存档。' : '按自己的节奏消除。可存档退出、跨次续玩，也可随时结算计入排行榜。新开无尽局会替换现有存档。'}</p>
     <div class="mode-tabs">${['easy','normal','hard'].map(id => `<button class="quiet-button ${id === selectedDifficulty ? 'active' : ''}" data-setup-difficulty="${id}">${getDifficulty(id).label.split(' · ')[0]} ×${scoreMultiplier(id)}</button>`).join('')}</div>
     ${mode === 'timed' ? `<div class="mode-tabs"><button data-duration="300000" class="quiet-button ${selectedDuration === 300000 ? 'active' : ''}">5 分钟</button><button data-duration="600000" class="quiet-button ${selectedDuration === 600000 ? 'active' : ''}">10 分钟</button></div><p class="mode-note">下落间隔随进度缩短：简单 30→14 秒，普通 24→11 秒，困难 18→8 秒。</p>` : ''}
+    ${loadGame(mode) ? '<button id="mode-continue" class="quiet-button mode-continue">读取此模式存档</button>' : ''}
     <div class="modal-footer"><button id="mode-begin" class="primary-button">开始挑战 ↗</button><button id="mode-ranking" class="quiet-button">查看排行榜</button></div>`);
+  document.querySelector('#mode-continue')?.addEventListener('click', () => { closeModal(); continueSaved(mode); });
   document.querySelectorAll<HTMLElement>('[data-setup-difficulty]').forEach(button => button.addEventListener('click', () => {
     selectedDifficulty = button.dataset.setupDifficulty!; showModeSetup(mode); updateHomeState();
   }));
@@ -317,17 +322,20 @@ function showModeSetup(mode: GameMode): void {
 document.querySelector('#start-button')?.addEventListener('click', () => showModeSetup('endless'));
 document.querySelector('#timed-button')?.addEventListener('click', () => showModeSetup('timed'));
 
-continueButton?.addEventListener('click', () => {
-  const saved = loadGame();
+function continueSaved(mode: GameMode): void {
+  const saved = loadGame(mode);
   if (!saved) {
     showToast('没有找到可继续的完整回合');
     updateHomeState();
     return;
   }
   selectedDifficulty = saved.difficultyId;
-  selectedMode = 'endless';
+  selectedMode = mode;
+  selectedDuration = saved.durationMs ?? 300000;
   startRound(saved, saved.difficultyId);
-});
+}
+continueButton?.addEventListener('click', () => continueSaved('endless'));
+timedContinueButton?.addEventListener('click', () => continueSaved('timed'));
 
 document.querySelectorAll<HTMLButtonElement>('[data-difficulty]').forEach((button) => {
   button.addEventListener('click', () => {
@@ -340,7 +348,6 @@ document.querySelector<HTMLButtonElement>('#tutorial-button')?.addEventListener(
 document.querySelector<HTMLButtonElement>('#settings-button')?.addEventListener('click', showSettings);
 document.querySelector<HTMLButtonElement>('#game-settings-button')?.addEventListener('click', showSettings);
 function saveAndHome(): void {
-  if (getScene()?.isTimed) return;
   getScene()?.pauseGame();
   showHome();
   showToast('已存档，下次可从首页继续');
@@ -352,8 +359,8 @@ document.querySelector('#mobile-pause-button')?.addEventListener('click', saveAn
 document.querySelector('#mobile-help-button')?.addEventListener('click', showTutorial);
 document.querySelector('#mobile-menu-button')?.addEventListener('click', () => {
   openModal(`<button class="modal-close" data-close-modal type="button">继续游戏</button><h2>游戏菜单</h2>
-    <p>${getScene()?.isTimed ? '限时挑战仍在继续，菜单和后台不会停止计时。' : '本局已自动存档，可继续或结算计分。'}</p>
-    <div class="mobile-menu-actions"><button id="menu-settings" class="quiet-button">设置</button><button id="menu-history" class="quiet-button">历史与排行</button><button id="menu-settle" class="quiet-button">结束本局并计入排行榜</button><button id="menu-restart" class="quiet-button">放弃成绩并重开</button><button id="menu-home" class="quiet-button">${getScene()?.isTimed ? '结算并返回首页' : '存档并返回首页'}</button></div>`);
+    <p>本局已临时存档，进度已冻结。可继续或结算计分；存档本身不入榜。</p>
+    <div class="mobile-menu-actions"><button id="menu-settings" class="quiet-button">设置</button><button id="menu-history" class="quiet-button">历史与排行</button><button id="menu-settle" class="quiet-button">结束本局并计入排行榜</button><button id="menu-restart" class="quiet-button">放弃成绩并重开</button><button id="menu-home" class="quiet-button">存档并返回首页</button></div>`);
   document.querySelector('#menu-settle')?.addEventListener('click', () => { closeModal(); getScene()?.settleGame(); });
   document.querySelector('#menu-settings')?.addEventListener('click', showSettings);
   document.querySelector('#menu-history')?.addEventListener('click', () => showHistory());
@@ -400,18 +407,12 @@ window.addEventListener('snood-finished', (event) => {
 });
 
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) {
-    getScene()?.pauseGame();
-    getScene()?.persistGame();
-  } else getScene()?.syncTimedClock();
+  if (document.hidden && !gameScreen?.hidden) showHome();
 });
 
 if (Capacitor.isNativePlatform()) {
   void App.addListener('appStateChange', ({ isActive }) => {
-    if (!isActive) {
-      getScene()?.pauseGame();
-      getScene()?.persistGame();
-    } else getScene()?.syncTimedClock();
+    if (!isActive && !gameScreen?.hidden) showHome();
   });
   void App.addListener('backButton', () => {
     if (modalRoot && !modalRoot.hidden) {
@@ -433,15 +434,6 @@ window.addEventListener('keydown', (event) => {
 });
 
 updateHomeState();
-// A timed round resumes against its original deadline even after process death.
-const interruptedTimed = loadGame('timed');
-if (interruptedTimed) {
-  const recovered = advanceTimed(interruptedTimed, Date.now());
-  if (recovered.status === 'READY') {
-    selectedMode = 'timed'; selectedDuration = recovered.durationMs!;
-    selectedDifficulty = recovered.difficultyId; startRound(recovered);
-  } else { recordRound(recovered); showResult(recovered); }
-}
 window.addEventListener('snood-save-home', saveAndHome);
 document.querySelectorAll('[data-history]').forEach(button => button.addEventListener('click', () => showHistory()));
 window.addEventListener('snood-storage-error', () => showToast('本地记录未能保存，请检查可用磁盘空间'));

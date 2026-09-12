@@ -1,4 +1,5 @@
 import type { GameState } from '../core/types';
+import { freezeTimed } from '../core/modes';
 
 const SAVE_KEY = 'orbbound-save-v1';
 const TIMED_KEY = 'orbbound-timed-active-v2';
@@ -47,7 +48,7 @@ export function saveSettings(settings: Settings): void {
 
 export function saveGame(state: GameState): void {
   if (!storageAvailable() || state.status !== 'READY') return;
-  try { window.localStorage.setItem(state.mode === 'timed' ? TIMED_KEY : SAVE_KEY, JSON.stringify(state)); }
+  try { window.localStorage.setItem(state.mode === 'timed' ? TIMED_KEY : SAVE_KEY, JSON.stringify(freezeTimed(state))); }
   catch { window.dispatchEvent(new CustomEvent('snood-storage-error')); }
 }
 
@@ -56,6 +57,10 @@ export function loadGame(mode: 'endless' | 'timed' = 'endless'): GameState | nul
   try {
     const value: unknown = JSON.parse(window.localStorage.getItem(mode === 'timed' ? TIMED_KEY : SAVE_KEY) ?? 'null');
     if (!isGameState(value)) return null;
+    // Upgrade the last 2.0 checkpoint without consuming time while the app was closed.
+    if (value.mode === 'timed' && value.timedSavedAt === undefined) {
+      return freezeTimed(value, value.deadlineAt! - value.durationMs! + (value.elapsedMs ?? 0));
+    }
     return value;
   } catch {
     return null;
@@ -88,6 +93,7 @@ function isGameState(value: unknown): value is GameState {
   if (candidate.mode !== undefined && !['endless', 'timed'].includes(candidate.mode)) return false;
   if (candidate.mode === 'timed' && (![300000,600000].includes(candidate.durationMs!)
     || !Number.isFinite(candidate.deadlineAt) || !Number.isFinite(candidate.nextDescentAt))) return false;
+  if (candidate.timedSavedAt !== undefined && !Number.isFinite(candidate.timedSavedAt)) return false;
   if (candidate.schemaVersion !== 1 || candidate.rulesVersion !== 'classic-v2') return false;
   if (candidate.rowOffset !== 0 && candidate.rowOffset !== 1) return false;
   if (!Array.isArray(candidate.board) || candidate.board.length !== 19) return false;

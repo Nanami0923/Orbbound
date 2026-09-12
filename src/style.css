@@ -505,9 +505,18 @@ html.mobile-ui, .mobile-ui body, .mobile-ui #app { width: 100%; height: 100%; mi
 .mode-tabs > button { flex: 1; min-width: 0; padding: 10px 6px; font-size: 13px; }
 .mode-tabs .active { border-color: var(--mint, #8dd9c3); background: #2c4b50; color: #e2fff5; }
 .score-formula { display: block; color: var(--soft); margin-top: 4px; }
+.history-heading button { display: inline-flex; align-items: center; gap: 16px; padding: 0; border: 0; background: none; color: inherit; font: inherit; font-weight: inherit; cursor: pointer; text-align: left; }
+.history-heading button span { font-size: 24px; color: var(--mint); border: 1px solid var(--line); border-radius: 12px; padding: 4px 10px; }
+.history-heading button:active { color: var(--mint); }
+.save-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; grid-column: 1 / -1; }
+.save-actions button { min-width: 0; font-size: 12px; padding: 8px; }
+.save-actions #continue-button { grid-column: auto; }
+.mode-continue { width: 100%; margin-top: 10px; }
 .clock-urgent { color: var(--coral); }
 .mobile-ui #mobile-pause-button { font-size: 12px; }
-.mobile-ui .history-card { padding: 24px 18px; }
+.mobile-ui .game-sidebar { display: none; }
+.mobile-ui .save-actions .quiet-button { min-height: 44px; font-size: 11px; padding: 8px 4px; }
+.mobile-ui .history-card { width: 100%; padding: 24px 18px; }
 .mobile-ui .history-card > p { font-size: 12px; line-height: 1.65; }
 .mobile-ui .history-card .mode-tabs > button { font-size: 11px; }
 .mobile-ui .history-scroll { overflow-x: hidden; }

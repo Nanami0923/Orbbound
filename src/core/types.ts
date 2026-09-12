@@ -19,6 +19,7 @@ export interface GameState {
   durationMs?: number;
   deadlineAt?: number;
   nextDescentAt?: number;
+  timedSavedAt?: number;
   endReason?: 'timeout' | 'settled';
   rowOffset?: number;
   sessionId?: string;
