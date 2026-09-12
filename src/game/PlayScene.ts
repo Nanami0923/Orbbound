@@ -32,6 +32,8 @@ export class PlayScene extends Phaser.Scene {
   private pointerActive = false;
   private rotationDirection: -1 | 0 | 1 = 0;
   private rotationHeldSeconds = 0;
+  private quickTurn: { from: number; to: number; elapsed: number } | null = null;
+  private get canSteer(): boolean { return ['READY', 'FLYING', 'RESOLVING'].includes(this.phase); }
   private pausedFrom: ScenePhase = 'READY';
   private boardGroup!: Phaser.GameObjects.Container;
   private aimGraphics!: Phaser.GameObjects.Graphics;
@@ -87,12 +89,20 @@ export class PlayScene extends Phaser.Scene {
 
   public override update(_time: number, delta: number): void {
     if (this.isTimed) this.syncTimedClock();
-    if (this.phase === 'READY' && this.rotationDirection !== 0) {
+    if (this.canSteer && this.rotationDirection !== 0) {
       const before = this.rotationHeldSeconds;
       this.rotationHeldSeconds += Math.max(0, delta) / 1000;
       const degrees = heldRotationDegrees(this.rotationHeldSeconds) - heldRotationDegrees(before);
       this.rotateLauncher(this.rotationDirection, degrees);
-    } else if (this.phase !== 'READY') this.stopRotation();
+    } else if (!this.canSteer) this.stopRotation();
+    if (this.canSteer && this.quickTurn) {
+      const turn = this.quickTurn;
+      turn.elapsed += Math.max(0, delta);
+      const t = Math.min(1, turn.elapsed / 260);
+      this.angle = turn.from + (turn.to - turn.from) * t * t * (3 - 2 * t);
+      if (t === 1) this.quickTurn = null;
+      this.drawAim();
+    }
     if (['READY', 'FLYING', 'RESOLVING'].includes(this.phase)) {
       if (!this.isTimed) this.gameState.elapsedMs = (this.gameState.elapsedMs ?? 0) + delta;
       this.clockTick += delta;
@@ -207,29 +217,40 @@ export class PlayScene extends Phaser.Scene {
   }
 
   public launchFromButton(): void {
-    this.stopRotation();
+    if (this.phase !== 'READY') return;
+    this.quickTurn = null;
     this.launch();
   }
 
   public startRotation(direction: -1 | 1): void {
-    if (this.phase !== 'READY') return;
+    if (!this.canSteer) return;
+    this.stopRotation();
     this.rotationDirection = direction;
     this.rotationHeldSeconds = 0;
     this.rotateLauncher(direction);
   }
 
   public stopRotation(): void {
+    this.quickTurn = null;
     this.rotationDirection = 0;
     this.rotationHeldSeconds = 0;
   }
 
   public rotateLauncher(direction: -1 | 1, degrees = 1): void {
-    if (this.phase !== 'READY') return;
+    if (!this.canSteer) return;
     const limit = 78 * Math.PI / 180;
     const angle = Math.max(-limit, Math.min(limit, this.angle + direction * degrees * Math.PI / 180));
     if (angle === this.angle) return;
     this.angle = angle;
     this.drawAim();
+  }
+
+  public quickRotate(direction: -1 | 1): void {
+    if (!this.canSteer) return;
+    const target = (this.quickTurn?.to ?? this.angle) + direction * 30 * Math.PI / 180;
+    this.stopRotation();
+    const limit = 78 * Math.PI / 180;
+    this.quickTurn = { from: this.angle, to: Math.max(-limit, Math.min(limit, target)), elapsed: 0 };
   }
 
   private createArena(): void {
@@ -353,8 +374,9 @@ export class PlayScene extends Phaser.Scene {
     // Keep the cursor hidden for the entire shot, including flight and resolution.
     const playing = this.phase === 'READY' || this.phase === 'FLYING' || this.phase === 'RESOLVING';
     this.input.setDefaultCursor(!this.settings.aimAssist && playing ? 'none' : 'auto');
-    if (this.phase !== 'READY') return;
-    if (!this.settings.aimAssist) {
+    if (!playing) return;
+    // During board animation show direction only; trace the settled board when ready.
+    if (!this.settings.aimAssist || this.phase !== 'READY') {
       const x = BOARD_GEOMETRY.launcherX, y = BOARD_GEOMETRY.launcherY - BOARD_GEOMETRY.radius - 3;
       this.aimGraphics.lineStyle(4, getOrbTheme(this.gameState.currentColor).color, 1);
       this.aimGraphics.lineBetween(x, y, x + Math.sin(this.angle) * 84, y - Math.cos(this.angle) * 84);

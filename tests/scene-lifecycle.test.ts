@@ -72,7 +72,7 @@ it('resumes the animation manager and clock when starting easy mode from a pause
   expect(clock.removeAllEvents).toHaveBeenCalledOnce();
 });
 
-it('keeps input locked until the descent tween completes', () => {
+it('keeps firing locked while allowing held steering until the descent tween completes', () => {
   const scene = new PlayScene();
   const callbacks: Array<() => void> = [];
   const boardGroup = {setY:vi.fn()};
@@ -84,10 +84,16 @@ it('keeps input locked until the descent tween completes', () => {
     audio:{blip:vi.fn()},renderBoard:vi.fn(),renderLauncher:vi.fn(),drawAim:vi.fn(),emitState:vi.fn(),
     statusText:{setText:vi.fn()},
   });
-  const runtime = scene as unknown as {animateResolution(state:unknown,events:unknown[]):void; phase:string};
+  const runtime = scene as unknown as {animateResolution(state:unknown,events:unknown[]):void; phase:string; angle:number};
   runtime.animateResolution(createGameState('easy',42),[{type:'board-drop'}]);
   callbacks[0]();
   expect(runtime.phase).toBe('RESOLVING');
+  const before = scene.activeState;
+  scene.startRotation(1);
+  scene.launchFromButton();
+  scene.update(0, 100);
+  expect(scene.activeState).toBe(before);
+  expect(runtime.angle).toBeGreaterThan(Math.PI / 180);
   expect(finish).toBeTypeOf('function');
   finish!();
   expect(runtime.phase).toBe('READY');

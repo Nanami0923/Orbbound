@@ -453,7 +453,7 @@ html.mobile-ui, .mobile-ui body, .mobile-ui #app { width: 100%; height: 100%; mi
 }
 
 /* Place the play controls in the lower-middle grip zone, leaving resting space below. */
-.mobile-ui .game-screen { --grip-board-height: min(calc((100vw - 28px) * 760 / 640), max(150px, calc(72dvh - 152px - env(safe-area-inset-top)))); grid-template-rows: 44px 42px auto 84px minmax(0, 1fr); }
+.mobile-ui .game-screen { --grip-board-height: min(calc((100vw - 28px) * 760 / 640), max(150px, calc(72dvh - 152px - env(safe-area-inset-top)))); grid-template-rows: 44px 42px auto 136px minmax(0, 1fr); }
 .mobile-ui .board-wrap { justify-content: start; }
 .mobile-ui .game-container { width: calc(var(--grip-board-height) * 640 / 760); height: var(--grip-board-height); max-width: 100%; }
 .mobile-ui .mobile-controls { margin-top: 0; }
@@ -492,7 +492,7 @@ html.mobile-ui, .mobile-ui body, .mobile-ui #app { width: 100%; height: 100%; mi
 }
 .mobile-ui .home-footer > div { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
 @media (orientation: landscape) and (max-height: 550px) {
-  .mobile-ui .game-screen { --grip-board-height: max(80px, calc(100dvh - 244px - env(safe-area-inset-top) - env(safe-area-inset-bottom))); }
+  .mobile-ui .game-screen { --grip-board-height: max(80px, calc(100dvh - 296px - env(safe-area-inset-top) - env(safe-area-inset-bottom))); }
 }
 
 /* 2.0: two distinct entry points, with setup kept in a compact dialog. */
@@ -526,12 +526,12 @@ html.mobile-ui, .mobile-ui body, .mobile-ui #app { width: 100%; height: 100%; mi
 #descent-time-row.urgent strong { color: var(--coral); }
 #descent-time-row.urgent #descent-time-fill { background: var(--coral); }
 .timed-mode .danger-stat .countdown-label strong { font-size: 13px; margin: 0; }
-.mobile-ui .game-screen.timed-mode { --grip-board-height: min(calc((100vw - 28px) * 760 / 640), max(128px, calc(72dvh - 174px - env(safe-area-inset-top)))); grid-template-rows: 44px 64px auto 84px minmax(0, 1fr); }
+.mobile-ui .game-screen.timed-mode { --grip-board-height: min(calc((100vw - 28px) * 760 / 640), max(128px, calc(72dvh - 174px - env(safe-area-inset-top)))); grid-template-rows: 44px 64px auto 136px minmax(0, 1fr); }
 .mobile-ui .timed-mode .game-header { grid-template-columns: minmax(50px, .8fr) minmax(100px, 1.7fr) minmax(54px, .8fr); }
 .mobile-ui .timed-mode .danger-stat .countdown-label strong { font-size: 11px; }
 .mobile-ui .timed-mode .danger-stat { gap: 3px; }
 @media (orientation: landscape) and (max-height: 550px) {
-  .mobile-ui .game-screen.timed-mode { --grip-board-height: max(80px, calc(100dvh - 266px - env(safe-area-inset-top) - env(safe-area-inset-bottom))); }
+  .mobile-ui .game-screen.timed-mode { --grip-board-height: max(80px, calc(100dvh - 318px - env(safe-area-inset-top) - env(safe-area-inset-bottom))); }
 }
 .mobile-ui #mobile-pause-button { font-size: 12px; }
 .mobile-ui .game-sidebar { display: none; }
@@ -579,3 +579,19 @@ html.mobile-ui, .mobile-ui body, .mobile-ui #app { width: 100%; height: 100%; mi
   .mobile-ui .home-card { height: auto; }
   .mobile-ui .home-actions .primary-button { min-height: 48px; }
 }
+
+/* 2.3: independent steering controls and balanced settlement typography. */
+.result-card { position: relative; }
+.result-card .modal-close { position: absolute; top: 24px; right: 24px; float: none; }
+.result-mark { line-height: 1; }
+.result-card .result-description { max-width: 24em; margin-inline: auto; line-height: 1.85; text-wrap: balance; }
+.result-description span { display: block; }
+.mobile-ui .mobile-controls { grid-template-columns: 1fr 1.2fr 1fr; grid-template-rows: 84px 44px; gap: 8px; }
+.mobile-ui .mobile-controls > button { min-width: 0; min-height: 0; margin: 0; border: 1px solid rgba(152,161,184,.2); border-radius: 16px; box-shadow: none; touch-action: none; }
+.mobile-ui .mobile-controls > .rotate-button, .mobile-ui #mobile-fire { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 8px; }
+.mobile-ui .mobile-controls > .rotate-button > span, .mobile-ui #mobile-fire > span { display: block; font-size: 30px; line-height: 32px; font-weight: 500; }
+.mobile-ui .mobile-controls > .rotate-button > small, .mobile-ui #mobile-fire > small { display: block; font-size: 13px; line-height: 18px; font-weight: 600; margin: 0; }
+.mobile-ui .quick-turn { display: flex; align-items: center; justify-content: center; gap: 5px; padding: 4px; background: #202c44; color: var(--mint); font-size: 22px; cursor: pointer; }
+.mobile-ui .quick-turn span { font-size: 11px; color: var(--cream); }
+.mobile-ui .control-hint { align-self: center; text-align: center; font-size: 10px; line-height: 1.6; color: var(--muted); }
+.mobile-ui .mobile-controls > button:active { transform: scale(.97); filter: brightness(1.15); }

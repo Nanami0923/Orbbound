@@ -73,9 +73,9 @@ it('drops a held rotation when the scene becomes paused and does not resume it',
   expect(runtime.angle).toBeCloseTo(Math.PI / 180);
 });
 
-it('ignores rotation while paused, resolving, flying, or finished', () => {
+it('ignores rotation while paused or finished', () => {
   const { scene, runtime } = setup();
-  for (const phase of ['PAUSED', 'FLYING', 'RESOLVING', 'WON', 'LOST']) {
+  for (const phase of ['PAUSED', 'WON', 'LOST']) {
     runtime.phase = phase;
     scene.rotateLauncher(1);
     expect(runtime.angle).toBe(0);
@@ -92,3 +92,40 @@ it('mobile board touches cannot aim or fire, including an existing pointer gestu
   expect(runtime.pointerActive).toBe(false);
   expect(runtime.launch).not.toHaveBeenCalled();
 });
+
+ it.each(['endless', 'timed'] as const)('keeps held steering continuous through flight and descent in %s', mode => {
+  const { scene, runtime } = setup();
+  Object.assign(scene, { gameState: createRound('normal', mode) });
+  scene.startRotation(1);
+  for (const phase of ['READY', 'FLYING', 'RESOLVING', 'READY']) {
+    runtime.phase = phase;
+    scene.update(0, 150);
+  }
+  expect(runtime.angle).toBeCloseTo((1 + heldRotationDegrees(.6)) * Math.PI / 180);
+ });
+ it('animates a 30 degree quick turn, accepts repeated taps, and clamps at the boundary', () => {
+  const { scene, runtime } = setup();
+  scene.quickRotate(1);
+  expect(runtime.angle).toBe(0);
+  scene.update(0, 130);
+  expect(runtime.angle).toBeCloseTo(15 * Math.PI / 180);
+  scene.quickRotate(1);
+  scene.update(0, 260);
+  expect(runtime.angle).toBeCloseTo(60 * Math.PI / 180);
+  runtime.phase = 'RESOLVING';
+  scene.quickRotate(1);
+  scene.update(0, 260);
+  expect(runtime.angle).toBeCloseTo(78 * Math.PI / 180);
+ });
+ it('cancels quick turn on release of input focus or new manual steering', () => {
+  const { scene, runtime } = setup();
+  scene.quickRotate(1);
+  scene.update(0, 130);
+  scene.stopRotation();
+  scene.update(0, 260);
+  expect(runtime.angle).toBeCloseTo(15 * Math.PI / 180);
+  scene.quickRotate(1);
+  scene.startRotation(-1);
+  scene.update(0, 100);
+  expect(runtime.angle).toBeLessThan(15 * Math.PI / 180);
+ });

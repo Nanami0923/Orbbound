@@ -12,7 +12,7 @@
         <div class="home-topline">
           <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
           <span class="brand-name">ORBBOUND</span>
-          <span class="version-pill">2.2 / LOCAL</span>
+          <span class="version-pill">2.3 / LOCAL</span>
         </div>
 
         <div class="home-content">
@@ -113,9 +113,12 @@
           </aside>
         </main>
         <div class="mobile-controls" role="group" aria-label="炮口控制">
-          <button id="rotate-left" class="rotate-button" type="button" aria-label="炮口逆时针旋转">↶<small>逆时针</small></button>
-          <button id="mobile-fire" class="primary-button" type="button">发射 ↑</button>
-          <button id="rotate-right" class="rotate-button" type="button" aria-label="炮口顺时针旋转">↷<small>顺时针</small></button>
+          <button id="rotate-left" class="rotate-button" type="button" aria-label="炮口左转，长按加速"><span aria-hidden="true">↶</span><small>左转</small></button>
+          <button id="mobile-fire" class="primary-button" type="button"><span aria-hidden="true">↑</span><small>发射</small></button>
+          <button id="rotate-right" class="rotate-button" type="button" aria-label="炮口右转，长按加速"><span aria-hidden="true">↷</span><small>右转</small></button>
+          <button id="quick-left" class="quick-turn" type="button" aria-label="向左快转30度">↶ <span>快转 30°</span></button>
+          <span class="control-hint">点按微调<br>长按加速</span>
+          <button id="quick-right" class="quick-turn" type="button" aria-label="向右快转30度">↷ <span>快转 30°</span></button>
         </div>
       </section>
 

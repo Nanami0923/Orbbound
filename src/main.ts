@@ -309,7 +309,7 @@ function showResult(state: GameState): void {
     <div class="result-mark">${won ? '✦' : '!'}</div>
     <p class="eyebrow">${state.endReason ? 'ROUND COMPLETE' : won ? 'BOARD CLEARED' : 'ONE MORE TRY'}</p>
     <h2>${title}</h2>
-    <p>${state.endReason ? '这一次的每次消除，都已成为你的成绩。下一局，试着突破自己的纪录。' : won ? '你把整片星群都放回了夜空。下一局可以试试更激进的反弹。' : '留意剩余发射次数，消掉上方支撑，让更多小球一起掉落。'}</p>
+    <p class="result-description">${state.endReason ? '<span>每次消除，都已化为成绩。</span><span>下一局，试着突破自己的纪录。</span>' : won ? '<span>整片星群，都已重返夜空。</span><span>下一局，试试更大胆的反弹。</span>' : '<span>留意次数，先消掉上方支撑；</span><span>让成片小球一起掉落。</span>'}</p>
     <div class="result-score">${formatScore(weightedScore(state))}</div>
     <div class="result-meta">原始分 ${state.score} × 难度 ${scoreMultiplier(state.difficultyId)}<br>${state.step} 次发射 · 已计入${state.mode === 'timed' ? `限时 ${state.durationMs! / 60000} 分钟` : '无尽'}排行榜</div>
     <div class="modal-footer"><button id="result-retry" class="primary-button" type="button"><span>${won ? '再开一局' : '再试一次'}</span><b>↗</b></button><button id="result-home" class="quiet-button" type="button">返回首页</button></div>
@@ -406,6 +406,9 @@ for (const [id, direction] of [['rotate-left', -1], ['rotate-right', 1]] as cons
   });
   for (const name of ['pointerup', 'pointercancel', 'lostpointercapture']) button.addEventListener(name, stopRotation);
   button.addEventListener('click', (event) => { if (event.detail === 0) getScene()?.rotateLauncher(direction); });
+}
+for (const [id, direction] of [['quick-left', -1], ['quick-right', 1]] as const) {
+  document.getElementById(id)?.addEventListener('click', () => getScene()?.quickRotate(direction));
 }
 window.addEventListener('blur', stopRotation);
 document.addEventListener('visibilitychange', stopRotation);
