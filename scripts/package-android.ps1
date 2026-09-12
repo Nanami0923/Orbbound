@@ -36,7 +36,7 @@ if (!(Test-Path $keyPath)) {
 }
 try {
     $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
-    $outputDir = Join-Path (Get-Location) "最终交付/Orbbound-$version"
+    $outputDir = Join-Path (Get-Location) "最终交付/Android/Orbbound-$version"
     New-Item -ItemType Directory -Force $outputDir | Out-Null
     $apk = Join-Path $outputDir "Orbbound-$version-Android.apk"
     & "$SdkPath/build-tools/36.0.0/zipalign.exe" -f -p 4 android/app/build/outputs/apk/release/app-release-unsigned.apk "$outputDir/aligned.apk"

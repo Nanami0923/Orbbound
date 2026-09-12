@@ -51,6 +51,9 @@ const pauseButton = document.querySelector<HTMLButtonElement>('#pause-button');
 const nextOrbPreview = document.querySelector<HTMLElement>('#next-orb-preview');
 const homeHighScore = document.querySelector<HTMLElement>('#home-high-score');
 
+const versionPill = document.querySelector('.version-pill');
+if (versionPill) versionPill.textContent = `${import.meta.env.VITE_APP_VERSION} / ${import.meta.env.MODE === 'windows' ? 'WINDOWS' : 'LOCAL'}`;
+
 let settings: Settings = loadSettings();
 let selectedDifficulty = 'normal';
 let selectedMode: GameMode = 'endless';
@@ -185,6 +188,8 @@ function updateGameState(detail: SceneStateDetail): void {
     clock.classList.toggle('clock-urgent', detail.mode === 'timed' && detail.durationMs! - detail.elapsedMs <= 30000);
   }
   if (launchButton) launchButton.disabled = detail.phase !== 'READY';
+  const settleButton = document.querySelector<HTMLButtonElement>('#settle-button');
+  if (settleButton) settleButton.disabled = detail.status !== 'READY';
 }
 
 function statusLabel(phase: SceneStateDetail['phase'], status: SceneStateDetail['status']): string {
@@ -262,7 +267,7 @@ function showTutorial(): void {
     <h2>三步读懂棋盘</h2>
     <p>两种模式均可独立存档、下次续玩或主动结算；存档本身不入榜。限时模式有 5 / 10 分钟，存档、菜单和后台会冻结进度；发射次数或下落计时任一归零就下降，并同时重置两项倒计时。清盘后补充棋盘继续。结算得分按简单 ×1、普通 ×1.5、困难 ×2 入榜。</p>
     <div class="tutorial-steps">
-      <div class="tutorial-step"><b>01</b><div><strong>调整炮口方向</strong><span>手机版使用底部 ↶ / ↷ 调整方向，可长按连续转动；中间按钮发射。电脑版使用鼠标或方向键瞄准。</span></div></div>
+      <div class="tutorial-step"><b>01</b><div><strong>调整炮口方向</strong><span>手机版使用底部 ↶ / ↷ 调整方向，可长按连续转动；中间按钮发射。电脑版使用鼠标瞄准、点击发射；方向键长按加速，Q / E 平滑快转 30°，空格发射。下落期间仍可转向。</span></div></div>
       <div class="tutorial-step"><b>02</b><div><strong>三个同类连在一起</strong><span>命中后，同色连通区域达到 3 枚就会消失；每枚 10 分。</span></div></div>
       <div class="tutorial-step"><b>03</b><div><strong>让悬空小球掉落</strong><span>消除支撑后，不再与顶部相连的小球会掉落，不分颜色，每枚 20 分。顶部显示还可发射几次，归零后棋盘下降一行。</span></div></div>
     </div>
@@ -385,6 +390,10 @@ launchButton?.addEventListener('click', () => getScene()?.launchFromButton());
 document.querySelector('#mobile-fire')?.addEventListener('click', () => getScene()?.launchFromButton());
 document.querySelector('#mobile-pause-button')?.addEventListener('click', saveAndHome);
 document.querySelector('#mobile-help-button')?.addEventListener('click', showTutorial);
+document.querySelector('#settle-button')?.addEventListener('click', () => {
+  openModal(`<button class="modal-close" data-close-modal>继续游戏</button><h2>结算本局</h2><p>结算后按难度系数计入对应排行榜，本局存档将结束。</p><div class="modal-footer"><button id="desktop-confirm-settle" class="primary-button">结算并计入排行榜</button></div>`);
+  document.querySelector('#desktop-confirm-settle')?.addEventListener('click', () => { closeModal(); getScene()?.settleGame(); });
+});
 document.querySelector('#mobile-menu-button')?.addEventListener('click', () => {
   openModal(`<button class="modal-close" data-close-modal type="button">继续游戏</button><h2>游戏菜单</h2>
     <p>本局已临时存档，进度已冻结。可继续或结算计分；存档本身不入榜。</p>
@@ -397,7 +406,7 @@ document.querySelector('#mobile-menu-button')?.addEventListener('click', () => {
 });
 
 function stopRotation(): void { getScene()?.stopRotation(); }
-for (const [id, direction] of [['rotate-left', -1], ['rotate-right', 1]] as const) {
+for (const [id, direction] of [['rotate-left', -1], ['rotate-right', 1], ['desktop-left', -1], ['desktop-right', 1]] as const) {
   const button = document.getElementById(id)!;
   button.addEventListener('pointerdown', (event) => {
     if (event.button !== 0) return;
@@ -407,7 +416,7 @@ for (const [id, direction] of [['rotate-left', -1], ['rotate-right', 1]] as cons
   for (const name of ['pointerup', 'pointercancel', 'lostpointercapture']) button.addEventListener(name, stopRotation);
   button.addEventListener('click', (event) => { if (event.detail === 0) getScene()?.rotateLauncher(direction); });
 }
-for (const [id, direction] of [['quick-left', -1], ['quick-right', 1]] as const) {
+for (const [id, direction] of [['quick-left', -1], ['quick-right', 1], ['desktop-quick-left', -1], ['desktop-quick-right', 1]] as const) {
   document.getElementById(id)?.addEventListener('click', () => getScene()?.quickRotate(direction));
 }
 window.addEventListener('blur', stopRotation);

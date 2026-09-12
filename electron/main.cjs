@@ -6,8 +6,8 @@ function createWindow() {
   const window = new BrowserWindow({
     width: Math.min(1280, area.width),
     height: Math.min(860, area.height),
-    minWidth: 900,
-    minHeight: 540,
+    minWidth: 940,
+    minHeight: 580,
     backgroundColor: '#0d1221',
     autoHideMenuBar: true,
     webPreferences: {

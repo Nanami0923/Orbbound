@@ -12,7 +12,9 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "package:win": "npm run build && node scripts/package-win.cjs",
+    "build:win": "tsc --noEmit && vite build --mode windows",
+    "dev:win": "vite --mode windows",
+    "package:win": "npm run build:win && node scripts/package-win.cjs",
     "sync:android": "npm run build && cap sync android",
     "package:android": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-android.ps1"
   },

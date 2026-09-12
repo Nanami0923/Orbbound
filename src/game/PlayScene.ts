@@ -137,6 +137,7 @@ export class PlayScene extends Phaser.Scene {
     this.input.on('pointerup', this.handlePointerUp, this);
     this.input.on('pointerout', () => { this.pointerActive = false; });
     this.input.keyboard?.on('keydown', this.handleKeyDown, this);
+    this.input.keyboard?.on('keyup', this.handleKeyUp, this);
 
     this.begin(createGameState('normal'));
     this.ready = true;
@@ -406,14 +407,14 @@ export class PlayScene extends Phaser.Scene {
 
   private handlePointerDown(pointer: Phaser.Input.Pointer): void {
     if (usesButtonControls()) return;
-    if (this.phase !== 'READY') return;
-    this.pointerActive = true;
+    if (!this.canSteer) return;
+    this.pointerActive = this.phase === 'READY';
     this.updateAim(pointer);
   }
 
   private handlePointerMove(pointer: Phaser.Input.Pointer): void {
     if (usesButtonControls()) return;
-    if (this.phase !== 'READY') return;
+    if (!this.canSteer) return;
     if (pointer.isDown || this.pointerActive || pointer.worldY < BOARD_GEOMETRY.launcherY) this.updateAim(pointer);
   }
 
@@ -425,6 +426,7 @@ export class PlayScene extends Phaser.Scene {
   }
 
   private updateAim(pointer: Phaser.Input.Pointer): void {
+    this.stopRotation();
     const dx = pointer.worldX - BOARD_GEOMETRY.launcherX;
     const dy = pointer.worldY - BOARD_GEOMETRY.launcherY;
     const nextAngle = Math.atan2(dx, -dy);
@@ -446,16 +448,22 @@ export class PlayScene extends Phaser.Scene {
       this.resumeGame();
       return;
     }
-    if (this.phase !== 'READY') return;
+    if (!this.canSteer) return;
     if (event.code === 'ArrowLeft' || event.code === 'ArrowRight') {
       event.preventDefault();
-      const amount = event.code === 'ArrowLeft' ? -Phaser.Math.DegToRad(3) : Phaser.Math.DegToRad(3);
-      this.angle = Phaser.Math.Clamp(this.angle + amount, -Phaser.Math.DegToRad(78), Phaser.Math.DegToRad(78));
-      this.drawAim();
+      if (!event.repeat) this.startRotation(event.code === 'ArrowLeft' ? -1 : 1);
+    } else if (event.code === 'KeyQ' || event.code === 'KeyE') {
+      event.preventDefault();
+      if (!event.repeat) this.quickRotate(event.code === 'KeyQ' ? -1 : 1);
     } else if (event.code === 'Space') {
       event.preventDefault();
-      this.launch();
+      this.launchFromButton();
     }
+  }
+
+  private handleKeyUp(event: KeyboardEvent): void {
+    const direction = event.code === 'ArrowLeft' ? -1 : event.code === 'ArrowRight' ? 1 : 0;
+    if (direction && direction === this.rotationDirection) this.stopRotation();
   }
 
   private launch(): void {

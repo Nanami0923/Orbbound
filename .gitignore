@@ -8,6 +8,7 @@ signing.properties
 
 # Generated web and Windows builds
 dist/
+.build/
 release/
 release-win/
 最终交付/
