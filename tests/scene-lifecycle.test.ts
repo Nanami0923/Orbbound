@@ -2,6 +2,44 @@ import { expect, it, vi } from 'vitest';
 vi.mock('phaser', () => ({default:{Scene:class {},AUTO:0,Scale:{FIT:0,CENTER_BOTH:0}}}));
 import { PlayScene } from '../src/game/PlayScene';
 import { createGameState } from '../src/core/engine';
+import { cellKey } from '../src/core/grid';
+
+it('reuses unchanged board balls and only creates or destroys changed cells', () => {
+  const scene = new PlayScene();
+  const createOrb = vi.fn(() => {
+    const data = new Map();
+    const orb = { setData(k: string, v: unknown) { data.set(k,v); return orb; }, getData(k: string) { return data.get(k); },
+      setPosition: vi.fn(() => orb), setScale: vi.fn(() => orb), setAlpha: vi.fn(() => orb), destroy: vi.fn() };
+    return orb;
+  });
+  const state = createGameState('easy', 42);
+  Object.assign(scene, {gameState:state, createOrb, boardGroup:{setY:vi.fn(),add:vi.fn()}});
+  const runtime = scene as unknown as {renderBoard():void; boardBalls:Map<string,ReturnType<typeof createOrb>>};
+  runtime.renderBoard();
+  const count = createOrb.mock.calls.length;
+  const first = runtime.boardBalls.get(cellKey({row:0,col:0}))!;
+  runtime.renderBoard();
+  expect(createOrb).toHaveBeenCalledTimes(count);
+  expect(first.destroy).not.toHaveBeenCalled();
+  state.board[0][0] = null;
+  runtime.renderBoard();
+  expect(first.destroy).toHaveBeenCalledOnce();
+  expect(runtime.boardBalls.size).toBe(count - 1);
+  state.board[0][0] = 0;
+  runtime.renderBoard();
+  expect(createOrb).toHaveBeenCalledTimes(count + 1);
+  expect(runtime.boardBalls.size).toBe(count);
+});
+
+it('uses an 84-unit barrel when trajectory assistance is off', () => {
+  const scene = new PlayScene();
+  const lineBetween = vi.fn();
+  Object.assign(scene, {phase:'READY',angle:0,settings:{aimAssist:false},input:{setDefaultCursor:vi.fn()},
+    aimGraphics:{clear:vi.fn(),lineStyle:vi.fn(),lineBetween}});
+  (scene as unknown as {drawAim():void}).drawAim();
+  const [x,y,endX,endY] = lineBetween.mock.calls[0];
+  expect(Math.hypot(endX-x,endY-y)).toBe(84);
+});
 
 it('keeps the cursor hidden through flight and resolution, and restores it on pause or game over', () => {
   const scene = new PlayScene();

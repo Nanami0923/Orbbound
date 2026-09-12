@@ -221,20 +221,31 @@ export class PlayScene extends Phaser.Scene {
   }
 
   private renderBoard(offsetY = 0): void {
-    this.boardGroup.removeAll(true);
     this.boardGroup.setY(offsetY);
-    this.boardBalls.clear();
+    const retained = new Set<string>();
 
     for (let row = 0; row < this.gameState.board.length; row += 1) {
       for (let col = 0; col < this.gameState.board[row].length; col += 1) {
         const color = this.gameState.board[row][col];
         if (color === null) continue;
         const cell = { row, col };
-        const orb = this.createOrb(color, cellToPoint(cell, this.geometry));
-        orb.setData('cellKey', cellKey(cell));
-        this.boardGroup.add(orb);
-        this.boardBalls.set(cellKey(cell), orb);
+        const key = cellKey(cell);
+        const point = cellToPoint(cell, this.geometry);
+        let orb = this.boardBalls.get(key);
+        if (orb && orb.getData('colorId') !== color) { orb.destroy(); orb = undefined; }
+        if (!orb) {
+          orb = this.createOrb(color, point);
+          orb.setData('colorId', color);
+          orb.setData('cellKey', key);
+          this.boardGroup.add(orb);
+          this.boardBalls.set(key, orb);
+        }
+        orb.setPosition(point.x, point.y).setScale(1).setAlpha(1);
+        retained.add(key);
       }
+    }
+    for (const [key, orb] of this.boardBalls) {
+      if (!retained.has(key)) { orb.destroy(); this.boardBalls.delete(key); }
     }
   }
 
@@ -262,15 +273,6 @@ export class PlayScene extends Phaser.Scene {
     this.nextOrb = this.createOrb(this.gameState.nextColor, { x: 478, y: 698 });
     this.nextOrb.setScale(0.72);
 
-    const nextLabel = this.add.text(478, 735, '下一枚', {
-      color: '#64718d',
-      fontFamily: 'Segoe UI, Microsoft YaHei, sans-serif',
-      fontSize: '11px',
-      fontStyle: 'bold',
-      letterSpacing: 1,
-    }).setOrigin(0.5);
-    nextLabel.setData('launcher-label', true);
-    this.time.delayedCall(1, () => nextLabel.destroy());
   }
 
   private createOrb(colorId: number, point: Point): Phaser.GameObjects.Container {
@@ -304,7 +306,7 @@ export class PlayScene extends Phaser.Scene {
     if (!this.settings.aimAssist) {
       const x = BOARD_GEOMETRY.launcherX, y = BOARD_GEOMETRY.launcherY - BOARD_GEOMETRY.radius - 3;
       this.aimGraphics.lineStyle(4, getOrbTheme(this.gameState.currentColor).color, 1);
-      this.aimGraphics.lineBetween(x, y, x + Math.sin(this.angle) * 36, y - Math.cos(this.angle) * 36);
+      this.aimGraphics.lineBetween(x, y, x + Math.sin(this.angle) * 84, y - Math.cos(this.angle) * 84);
       return;
     }
 
@@ -409,9 +411,12 @@ export class PlayScene extends Phaser.Scene {
       duration,
       ease: 'Linear',
       onUpdate: () => {
-        const index = Math.min(trace.points.length - 1, Math.floor(driver.progress * (trace.points.length - 1)));
+        const position = driver.progress * (trace.points.length - 1);
+        const index = Math.min(trace.points.length - 1, Math.floor(position));
         const point = trace.points[index];
-        projectile.setPosition(point.x, point.y);
+        const next = trace.points[Math.min(index + 1, trace.points.length - 1)];
+        const fraction = position - index;
+        projectile.setPosition(point.x + (next.x - point.x) * fraction, point.y + (next.y - point.y) * fraction);
       },
       onComplete: () => {
         projectile.destroy();
@@ -438,15 +443,22 @@ export class PlayScene extends Phaser.Scene {
     const removeDuration = reduced ? 80 : 170;
     const removeDelay = reduced ? 0 : 36;
 
+    const animationGroups = new Map<number, Phaser.GameObjects.Container[]>();
     for (const [index, cell] of removed.entries()) {
       const orb = this.boardBalls.get(cellKey(cell));
       if (!orb) continue;
+      const delay = dropped.includes(cell) ? Math.min(index, 8) * removeDelay : 0;
+      const group = animationGroups.get(delay) ?? [];
+      group.push(orb);
+      animationGroups.set(delay, group);
+    }
+    for (const [delay, targets] of animationGroups) {
       this.tweens.add({
-        targets: orb,
+        targets,
         scale: 0.05,
         alpha: 0,
         duration: removeDuration,
-        delay: dropped.includes(cell) ? Math.min(index, 8) * removeDelay : 0,
+        delay,
         ease: 'Back.In',
       });
     }
@@ -458,7 +470,7 @@ export class PlayScene extends Phaser.Scene {
     }
     if (events.some((event) => event.type === 'board-drop')) this.audio.blip('danger');
 
-    const wait = reduced ? 100 : Math.min(620, 240 + removed.length * 28);
+    const wait = animationGroups.size ? removeDuration + Math.max(...animationGroups.keys()) + 20 : 60;
     this.time.delayedCall(wait, () => {
       const droppedBoard = events.some((event) => event.type === 'board-drop');
       this.renderBoard(droppedBoard ? -BOARD_GEOMETRY.rowStep : 0);

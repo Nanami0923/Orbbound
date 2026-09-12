@@ -453,7 +453,7 @@ html.mobile-ui, .mobile-ui body, .mobile-ui #app { width: 100%; height: 100%; mi
 }
 
 /* Place the play controls in the lower-middle grip zone, leaving resting space below. */
-.mobile-ui .game-screen { --grip-board-height: min(calc((100vw - 28px) * 760 / 640), max(150px, calc(72dvh - 152px - env(safe-area-inset-top)))); grid-template-rows: 44px 42px auto 64px minmax(0, 1fr); }
+.mobile-ui .game-screen { --grip-board-height: min(calc((100vw - 28px) * 760 / 640), max(150px, calc(72dvh - 152px - env(safe-area-inset-top)))); grid-template-rows: 44px 42px auto 84px minmax(0, 1fr); }
 .mobile-ui .board-wrap { justify-content: start; }
 .mobile-ui .game-container { width: calc(var(--grip-board-height) * 640 / 760); height: var(--grip-board-height); max-width: 100%; }
 .mobile-ui .mobile-controls { margin-top: 0; }
@@ -492,5 +492,5 @@ html.mobile-ui, .mobile-ui body, .mobile-ui #app { width: 100%; height: 100%; mi
 }
 .mobile-ui .home-footer > div { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
 @media (orientation: landscape) and (max-height: 550px) {
-  .mobile-ui .game-screen { --grip-board-height: max(80px, calc(100dvh - 224px - env(safe-area-inset-top) - env(safe-area-inset-bottom))); }
+  .mobile-ui .game-screen { --grip-board-height: max(80px, calc(100dvh - 244px - env(safe-area-inset-top) - env(safe-area-inset-bottom))); }
 }
