@@ -309,6 +309,26 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
   .danger-stat #danger-value { font-size: 11px; }
 }
 .game-screen.independent-launch .mobile-launch-row { display: flex; }
+/* Keep the mobile HUD compact so desktop controls cannot squeeze the board. */
+@media (max-width: 899px) {
+  .home-screen { padding-top: max(20px, env(safe-area-inset-top)); padding-bottom: max(20px, env(safe-area-inset-bottom)); }
+  .game-screen { padding: max(10px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left)); }
+  .game-header { display: grid; grid-template-columns: 1fr 1.5fr auto; gap: 8px; }
+  .game-header .header-brand, .game-header .current-card { display: none; }
+  .game-header .header-stat { min-width: 0; padding: 0; border: 0; }
+  .game-header .header-stat:nth-of-type(4) { grid-column: 1 / 3; flex-direction: row; align-items: center; gap: 8px; }
+  .game-header .mobile-launch-row { margin: 0; justify-content: end; }
+  .game-header .mobile-launch-row .primary-button { min-width: 72px; min-height: 44px; }
+  .game-container { width: min(100%, calc((100dvh - 180px) * 640 / 760)); }
+  .game-layout { grid-template-columns: minmax(0, 1fr); }
+  .game-sidebar { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 8px; }
+  .game-sidebar .legend-card { display: none; }
+  .game-sidebar .next-card { padding: 8px; }
+  .next-card .next-preview { height: 48px; margin: 4px auto; width: 100%; }
+  .next-card p { display: none; }
+  .sidebar-actions { grid-column: auto; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .sidebar-actions .side-button { min-height: 44px; }
+}
 .history-card { width: min(880px, 94vw); max-width: 880px; }
 .history-tabs { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 16px 0; }
 .history-scroll { overflow: auto; max-height: 48vh; }

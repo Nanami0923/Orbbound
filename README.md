@@ -1,5 +1,25 @@
 # Orbbound
 
+## 1.3.0 安卓版
+
+- 新增 Android 7.0 及以上可安装的离线 APK，包名 `com.orbbound.game`，versionCode `10300`。
+- 手机界面压缩顶部信息区，按屏幕高度缩放棋盘，保留拖动瞄准、松手发射和独立发射按钮。
+- 切后台自动暂停并保存；系统返回键依次关闭弹窗、返回首页、将应用放入后台。
+- 本地成绩、设置和续局保存在应用内；卸载或清除应用数据会删除记录。
+- 下载：[GitHub Release v1.3.0](https://github.com/Nanami0923/Orbbound/releases/tag/v1.3.0)。
+
+本机构建需要 JDK 21、Android SDK platform 36 和 build-tools 36.0.0，设置 `JAVA_HOME` 和 `ANDROID_HOME` 后运行：
+
+```powershell
+npm ci
+npm run package:android
+```
+
+输出：`最终交付/Orbbound-1.3.0/Orbbound-1.3.0-Android.apk`，附 SHA-256 校验文件。
+首次打包会创建专用发行签名，保存于 `%LOCALAPPDATA%/Orbbound/signing`，密码通过 Windows DPAPI 加密。后续版本复用该签名以便覆盖安装；请保留该目录与当前 Windows 用户环境，迁移构建机前应安全备份和导出签名。签名资料不提交 GitHub。
+
+验证：规则及生命周期测试、生产构建、手机尺寸浏览器检查和 APK 签名校验。尚未连接实体安卓手机进行安装实测。
+
 ## 1.2.0 修复
 
 - 棋盘下降时翻转六角行偏移，渲染、邻接搜索和射线预测共享该偏移；保留既有小球位置关系。

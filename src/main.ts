@@ -1,4 +1,6 @@
 import Phaser from 'phaser';
+import { Capacitor } from '@capacitor/core';
+import { App } from '@capacitor/app';
 import { createGameState, DANGER_MAX, getDifficulty, shotsUntilDescent } from './core/engine';
 import { PHASER_CONFIG, PlayScene } from './game/PlayScene';
 import { getOrbTheme } from './content/theme';
@@ -311,8 +313,30 @@ window.addEventListener('snood-finished', (event) => {
 });
 
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) getScene()?.pauseGame();
+  if (document.hidden) {
+    getScene()?.pauseGame();
+    getScene()?.persistGame();
+  }
 });
+
+if (Capacitor.isNativePlatform()) {
+  void App.addListener('appStateChange', ({ isActive }) => {
+    if (!isActive) {
+      getScene()?.pauseGame();
+      getScene()?.persistGame();
+    }
+  });
+  void App.addListener('backButton', () => {
+    if (modalRoot && !modalRoot.hidden) {
+      closeModal();
+    } else if (gameScreen && !gameScreen.hidden) {
+      getScene()?.pauseGame();
+      showHome();
+    } else {
+      void App.minimizeApp();
+    }
+  });
+}
 
 window.addEventListener('keydown', (event) => {
   if (event.key.toLowerCase() === 'r' && !gameScreen?.hidden && modalRoot?.hidden) {
