@@ -9,6 +9,7 @@ import { DEFAULT_SETTINGS, type Settings } from '../storage/storage';
 import { GameAudio } from './audio';
 import { recordRound } from '../storage/history';
 import { usesButtonControls } from './input-mode';
+import { heldRotationDegrees } from './rotation';
 
 type ScenePhase = 'READY' | 'FLYING' | 'RESOLVING' | 'PAUSED' | 'WON' | 'LOST';
 
@@ -28,6 +29,8 @@ export class PlayScene extends Phaser.Scene {
   private audio = new GameAudio(this.settings);
   private angle = 0;
   private pointerActive = false;
+  private rotationDirection: -1 | 0 | 1 = 0;
+  private rotationHeldSeconds = 0;
   private pausedFrom: ScenePhase = 'READY';
   private boardGroup!: Phaser.GameObjects.Container;
   private aimGraphics!: Phaser.GameObjects.Graphics;
@@ -47,6 +50,12 @@ export class PlayScene extends Phaser.Scene {
   private transient = new Set<Phaser.GameObjects.GameObject>();
 
   public override update(_time: number, delta: number): void {
+    if (this.phase === 'READY' && this.rotationDirection !== 0) {
+      const before = this.rotationHeldSeconds;
+      this.rotationHeldSeconds += Math.max(0, delta) / 1000;
+      const degrees = heldRotationDegrees(this.rotationHeldSeconds) - heldRotationDegrees(before);
+      this.rotateLauncher(this.rotationDirection, degrees);
+    } else if (this.phase !== 'READY') this.stopRotation();
     if (['READY', 'FLYING', 'RESOLVING'].includes(this.phase)) {
       this.gameState.elapsedMs = (this.gameState.elapsedMs ?? 0) + delta;
       this.clockTick += delta;
@@ -84,6 +93,7 @@ export class PlayScene extends Phaser.Scene {
   }
 
   public begin(state: GameState): void {
+    this.stopRotation();
     this.tweens.killAll();
     this.tweens.resumeAll();
     this.time.removeAllEvents();
@@ -121,6 +131,7 @@ export class PlayScene extends Phaser.Scene {
   }
 
   public pauseGame(): void {
+    this.stopRotation();
     if (this.phase === 'PAUSED' || this.phase === 'WON' || this.phase === 'LOST') return;
     this.pausedFrom = this.phase;
     this.phase = 'PAUSED';
@@ -149,13 +160,28 @@ export class PlayScene extends Phaser.Scene {
   }
 
   public launchFromButton(): void {
+    this.stopRotation();
     this.launch();
   }
 
-  public rotateLauncher(direction: -1 | 1): void {
+  public startRotation(direction: -1 | 1): void {
+    if (this.phase !== 'READY') return;
+    this.rotationDirection = direction;
+    this.rotationHeldSeconds = 0;
+    this.rotateLauncher(direction);
+  }
+
+  public stopRotation(): void {
+    this.rotationDirection = 0;
+    this.rotationHeldSeconds = 0;
+  }
+
+  public rotateLauncher(direction: -1 | 1, degrees = 1): void {
     if (this.phase !== 'READY') return;
     const limit = 78 * Math.PI / 180;
-    this.angle = Math.max(-limit, Math.min(limit, this.angle + direction * Math.PI / 180));
+    const angle = Math.max(-limit, Math.min(limit, this.angle + direction * degrees * Math.PI / 180));
+    if (angle === this.angle) return;
+    this.angle = angle;
     this.drawAim();
   }
 

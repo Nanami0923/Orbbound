@@ -21,19 +21,20 @@ function isLegalAttachment(board: Board, cell: Cell, rowOffset = 0): boolean {
     .some((neighbor) => board[neighbor.row][neighbor.col] !== null);
 }
 
-function doesNotOverlap(board: Board, candidate: Cell, geometry: BoardGeometry): boolean {
+function doesNotOverlap(occupiedPoints: Point[], candidate: Cell, geometry: BoardGeometry): boolean {
   const point = cellToPoint(candidate, geometry);
   const minimum = geometry.radius * 2 - 0.8;
-  return occupiedCells(board).every((cell) => distanceSquared(point, cellToPoint(cell, geometry)) >= minimum * minimum);
+  return occupiedPoints.every((occupied) => distanceSquared(point, occupied) >= minimum * minimum);
 }
 
 function chooseLanding(board: Board, contact: Point, geometry: BoardGeometry, topOnly = false): Cell | null {
+  const occupiedPoints = occupiedCells(board).map(cell => cellToPoint(cell, geometry));
   const candidates: Array<{ cell: Cell; distance: number }> = [];
   for (let row = 0; row < geometry.maxRows; row += 1) {
     for (let col = 0; col < geometry.columns; col += 1) {
       const cell = { row, col };
       if (topOnly && row !== 0) continue;
-      if (!isLegalAttachment(board, cell, geometry.rowOffset) || !doesNotOverlap(board, cell, geometry)) continue;
+      if (!isLegalAttachment(board, cell, geometry.rowOffset) || !doesNotOverlap(occupiedPoints, cell, geometry)) continue;
       const point = cellToPoint(cell, geometry);
       candidates.push({ cell, distance: distanceSquared(point, contact) });
     }

@@ -451,3 +451,46 @@ html.mobile-ui, .mobile-ui body, .mobile-ui #app { width: 100%; height: 100%; mi
   .mobile-ui .hero-copy { width: 40%; }
   .mobile-ui .home-card { height: 100%; }
 }
+
+/* Place the play controls in the lower-middle grip zone, leaving resting space below. */
+.mobile-ui .game-screen { --grip-board-height: min(calc((100vw - 28px) * 760 / 640), max(150px, calc(72dvh - 152px - env(safe-area-inset-top)))); grid-template-rows: 44px 42px auto 64px minmax(0, 1fr); }
+.mobile-ui .board-wrap { justify-content: start; }
+.mobile-ui .game-container { width: calc(var(--grip-board-height) * 640 / 760); height: var(--grip-board-height); max-width: 100%; }
+.mobile-ui .mobile-controls { margin-top: 0; }
+.mobile-ui .home-screen { display: block; padding: 0 24px; }
+.mobile-ui .home-topline { position: absolute; top: max(7dvh, calc(env(safe-area-inset-top) + 16px)); left: 24px; right: 24px; height: 32px; }
+.mobile-ui .home-content { display: contents; }
+.mobile-ui .hero-copy { position: absolute; top: 17dvh; left: 24px; right: 24px; }
+.mobile-ui .hero-copy h1 { font-size: clamp(28px, 7.8vw, 40px); }
+.mobile-ui .home-card { position: absolute; top: 32dvh; left: 24px; right: 24px; bottom: 28dvh; width: auto; height: auto; padding: 16px 14px 0; border: 0; background: none; box-shadow: none; overflow: visible; }
+.mobile-ui .home-card::before { display: none; }
+.mobile-ui .home-card .hero-orb { top: 12px; }
+.mobile-ui .home-card .hero-orb.mint { top: 0; }
+.mobile-ui .home-card .hero-orb.gold { top: 22px; }
+.mobile-ui .home-card .orb-orbit { opacity: .5; }
+.mobile-ui .card-caption { margin-bottom: 2px; }
+.mobile-ui .card-caption span, .mobile-ui #difficulty-description, .mobile-ui #save-note { display: none; }
+.mobile-ui .home-footer { position: absolute; top: 74dvh; left: 24px; right: 24px; width: auto; gap: 6px; }
+.mobile-ui .home-footer > span { font-size: 10px; }
+.mobile-ui .home-footer .text-button { color: #b8c2d7; }
+@media (max-height: 650px) {
+  .mobile-ui .hero-copy { top: 16dvh; }
+  .mobile-ui .hero-copy .eyebrow { display: none; }
+  .mobile-ui .hero-description { margin-top: 6px; }
+  .mobile-ui .home-card { top: 32dvh; bottom: 25dvh; }
+  .mobile-ui .home-card .hero-orb { width: 40px; height: 40px; font-size: 18px; }
+  .mobile-ui .card-caption strong { font-size: 22px; }
+  .mobile-ui .home-footer { top: 77dvh; }
+}
+@media (orientation: landscape) and (max-height: 550px) {
+  .mobile-ui .home-topline { top: 18px; }
+  .mobile-ui .hero-copy { top: 28dvh; width: 38%; }
+  .mobile-ui .home-card { left: 46%; top: 20dvh; bottom: 24dvh; }
+  .mobile-ui .home-card .hero-orb, .mobile-ui .card-caption { display: none; }
+  .mobile-ui .home-footer { left: 46%; top: 79dvh; }
+  .mobile-ui .home-footer > span { display: none; }
+}
+.mobile-ui .home-footer > div { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+@media (orientation: landscape) and (max-height: 550px) {
+  .mobile-ui .game-screen { --grip-board-height: max(80px, calc(100dvh - 224px - env(safe-area-inset-top) - env(safe-area-inset-bottom))); }
+}

@@ -306,15 +306,13 @@ document.querySelector('#mobile-menu-button')?.addEventListener('click', () => {
   document.querySelector('#menu-home')?.addEventListener('click', () => { resumeAfterModal = false; closeModal(); showHome(); });
 });
 
-let rotationTimer: number | undefined;
-function stopRotation(): void { window.clearInterval(rotationTimer); rotationTimer = undefined; }
+function stopRotation(): void { getScene()?.stopRotation(); }
 for (const [id, direction] of [['rotate-left', -1], ['rotate-right', 1]] as const) {
   const button = document.getElementById(id)!;
   button.addEventListener('pointerdown', (event) => {
     if (event.button !== 0) return;
     event.preventDefault(); stopRotation(); button.setPointerCapture(event.pointerId);
-    getScene()?.rotateLauncher(direction);
-    rotationTimer = window.setInterval(() => getScene()?.rotateLauncher(direction), 40);
+    getScene()?.startRotation(direction);
   });
   for (const name of ['pointerup', 'pointercancel', 'lostpointercapture']) button.addEventListener(name, stopRotation);
   button.addEventListener('click', (event) => { if (event.detail === 0) getScene()?.rotateLauncher(direction); });

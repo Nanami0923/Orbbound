@@ -5,7 +5,7 @@ import { PlayScene } from '../src/game/PlayScene';
 
 function setup() {
   const scene = new PlayScene();
-  Object.assign(scene, { drawAim: vi.fn(), launch: vi.fn() });
+  Object.assign(scene, { drawAim: vi.fn(), launch: vi.fn(), emitState: vi.fn() });
   const runtime = scene as unknown as {
     angle: number; phase: string; pointerActive: boolean; launch: ReturnType<typeof vi.fn>;
     handlePointerDown(pointer: unknown): void; handlePointerMove(pointer: unknown): void; handlePointerUp(): void;
@@ -23,6 +23,39 @@ it('rotates counterclockwise and clockwise in one-degree steps, clamped to playa
   expect(runtime.angle).toBeCloseTo(78 * Math.PI / 180);
   for (let i = 0; i < 300; i++) scene.rotateLauncher(-1);
   expect(runtime.angle).toBeCloseTo(-78 * Math.PI / 180);
+});
+
+it('starts immediately and integrates the same held angle at 30, 60, and 120 FPS', () => {
+  for (const fps of [30, 60, 120]) {
+    const { scene, runtime } = setup();
+    scene.startRotation(1);
+    expect(runtime.angle).toBeCloseTo(Math.PI / 180);
+    for (let frame = 0; frame < fps; frame++) scene.update(0, 1000 / fps);
+    expect(runtime.angle).toBeCloseTo(49 * Math.PI / 180);
+  }
+});
+
+it('stops on release and resets acceleration when the direction changes', () => {
+  const { scene, runtime } = setup();
+  scene.startRotation(1);
+  scene.update(0, 200);
+  scene.stopRotation();
+  const angle = runtime.angle;
+  scene.update(0, 200);
+  expect(runtime.angle).toBe(angle);
+  scene.startRotation(-1);
+  scene.update(0, 200);
+  expect(runtime.angle).toBeCloseTo(0);
+});
+
+it('drops a held rotation when the scene becomes paused and does not resume it', () => {
+  const { scene, runtime } = setup();
+  scene.startRotation(1);
+  runtime.phase = 'PAUSED';
+  scene.update(0, 1000);
+  runtime.phase = 'READY';
+  scene.update(0, 1000);
+  expect(runtime.angle).toBeCloseTo(Math.PI / 180);
 });
 
 it('ignores rotation while paused, resolving, flying, or finished', () => {
