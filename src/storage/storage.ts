@@ -1,6 +1,7 @@
 import type { GameState } from '../core/types';
 
 const SAVE_KEY = 'orbbound-save-v1';
+const TIMED_KEY = 'orbbound-timed-active-v2';
 const SETTINGS_KEY = 'orbbound-settings-v1';
 const HIGH_SCORE_KEY = 'orbbound-high-score-v1';
 
@@ -46,13 +47,14 @@ export function saveSettings(settings: Settings): void {
 
 export function saveGame(state: GameState): void {
   if (!storageAvailable() || state.status !== 'READY') return;
-  window.localStorage.setItem(SAVE_KEY, JSON.stringify(state));
+  try { window.localStorage.setItem(state.mode === 'timed' ? TIMED_KEY : SAVE_KEY, JSON.stringify(state)); }
+  catch { window.dispatchEvent(new CustomEvent('snood-storage-error')); }
 }
 
-export function loadGame(): GameState | null {
+export function loadGame(mode: 'endless' | 'timed' = 'endless'): GameState | null {
   if (!storageAvailable()) return null;
   try {
-    const value: unknown = JSON.parse(window.localStorage.getItem(SAVE_KEY) ?? 'null');
+    const value: unknown = JSON.parse(window.localStorage.getItem(mode === 'timed' ? TIMED_KEY : SAVE_KEY) ?? 'null');
     if (!isGameState(value)) return null;
     return value;
   } catch {
@@ -65,8 +67,8 @@ export function hasLegacySave(): boolean {
   catch { return false; }
 }
 
-export function clearGame(): void {
-  if (storageAvailable()) window.localStorage.removeItem(SAVE_KEY);
+export function clearGame(mode: 'endless' | 'timed' = 'endless'): void {
+  if (storageAvailable()) window.localStorage.removeItem(mode === 'timed' ? TIMED_KEY : SAVE_KEY);
 }
 
 export function getHighScore(): number {
@@ -83,6 +85,9 @@ export function setHighScore(score: number): void {
 function isGameState(value: unknown): value is GameState {
   if (!value || typeof value !== 'object') return false;
   const candidate = value as Partial<GameState>;
+  if (candidate.mode !== undefined && !['endless', 'timed'].includes(candidate.mode)) return false;
+  if (candidate.mode === 'timed' && (![300000,600000].includes(candidate.durationMs!)
+    || !Number.isFinite(candidate.deadlineAt) || !Number.isFinite(candidate.nextDescentAt))) return false;
   if (candidate.schemaVersion !== 1 || candidate.rulesVersion !== 'classic-v2') return false;
   if (candidate.rowOffset !== 0 && candidate.rowOffset !== 1) return false;
   if (!Array.isArray(candidate.board) || candidate.board.length !== 19) return false;

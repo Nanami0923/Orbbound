@@ -15,6 +15,11 @@ export type Board = Array<Array<ColorId | null>>;
 export type GameStatus = 'READY' | 'WON' | 'LOST';
 
 export interface GameState {
+  mode?: 'endless' | 'timed';
+  durationMs?: number;
+  deadlineAt?: number;
+  nextDescentAt?: number;
+  endReason?: 'timeout' | 'settled';
   rowOffset?: number;
   sessionId?: string;
   startedAt?: number;

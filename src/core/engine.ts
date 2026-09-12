@@ -122,6 +122,17 @@ function shiftBoardDown(board: Board, random: SeededRandom, config: DifficultyCo
   return hasOccupiedAtOrBelow(board, LOSE_ROW);
 }
 
+export function forceDescent(input: GameState): ResolveResult {
+  if (input.status !== 'READY') return { state: input, events: [] };
+  const state = { ...input, board: cloneBoard(input.board), danger: 0 };
+  const random = new SeededRandom(state.rngState);
+  const lost = shiftBoardDown(state.board, random, getDifficulty(state.difficultyId));
+  state.rowOffset = 1 - (state.rowOffset ?? 0);
+  state.rngState = random.getState();
+  if (lost) state.status = 'LOST';
+  return { state, events: [{ type: 'board-drop' }, ...(lost ? [{ type: 'lost' as const }] : [])] };
+}
+
 export function resolveShot(input: GameState, landing: Cell): ResolveResult {
   if (input.status !== 'READY') return { state: input, events: [] };
 
@@ -159,6 +170,13 @@ export function resolveShot(input: GameState, landing: Cell): ResolveResult {
   state.step += 1;
 
   if (boardIsEmpty(state.board)) {
+    if (state.mode === 'timed') {
+      const wave = createGameState(state.difficultyId, random.getState());
+      Object.assign(state, { board: wave.board, rowOffset: 0, danger: 0, rngState: wave.rngState,
+        currentColor: wave.currentColor, nextColor: wave.nextColor });
+      events.push({ type: 'board-drop' });
+      return { state, events };
+    }
     state.status = 'WON';
     state.rngState = random.getState();
     events.push({ type: 'win' });

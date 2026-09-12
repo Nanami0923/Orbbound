@@ -3,6 +3,7 @@ vi.mock('phaser', () => ({default:{Scene:class {},AUTO:0,Scale:{FIT:0,CENTER_BOT
 import { PlayScene } from '../src/game/PlayScene';
 import { createGameState } from '../src/core/engine';
 import { cellKey } from '../src/core/grid';
+import { createRound } from '../src/core/modes';
 
 it('reuses unchanged board balls and only creates or destroys changed cells', () => {
   const scene = new PlayScene();
@@ -90,5 +91,25 @@ it('keeps input locked until the descent tween completes', () => {
   expect(finish).toBeTypeOf('function');
   finish!();
   expect(runtime.phase).toBe('READY');
+});
+
+it('does not pause timed mode when a menu or background lifecycle asks to pause', () => {
+  const scene = new PlayScene();
+  const pauseAll = vi.fn(), persistGame = vi.fn();
+  Object.assign(scene, {gameState:createRound('normal','timed'),phase:'READY',persistGame,tweens:{pauseAll}});
+  scene.pauseGame();
+  expect(scene.isPaused).toBe(false); expect(pauseAll).not.toHaveBeenCalled(); expect(persistGame).toHaveBeenCalledOnce();
+});
+
+it('cancels a pending animation and finishes only once when the timed deadline passes', () => {
+  const scene = new PlayScene();
+  const state = createRound('normal','timed',300000,Date.now()-300001);
+  state.nextDescentAt=Date.now()+1000;
+  const killAll=vi.fn(), removeAllEvents=vi.fn(), destroy=vi.fn();
+  Object.assign(scene,{ready:true,gameState:state,phase:'FLYING',tweens:{killAll},time:{removeAllEvents},
+    transient:new Set([{destroy}]),renderBoard:vi.fn(),renderLauncher:vi.fn(),drawAim:vi.fn(),emitState:vi.fn()});
+  scene.syncTimedClock(); scene.syncTimedClock();
+  expect(scene.activeState.endReason).toBe('timeout');
+  expect(killAll).toHaveBeenCalledOnce(); expect(removeAllEvents).toHaveBeenCalledOnce(); expect(destroy).toHaveBeenCalledOnce();
 });
 

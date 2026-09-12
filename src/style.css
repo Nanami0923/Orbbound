@@ -494,3 +494,59 @@ html.mobile-ui, .mobile-ui body, .mobile-ui #app { width: 100%; height: 100%; mi
 @media (orientation: landscape) and (max-height: 550px) {
   .mobile-ui .game-screen { --grip-board-height: max(80px, calc(100dvh - 244px - env(safe-area-inset-top) - env(safe-area-inset-bottom))); }
 }
+
+/* 2.0: two distinct entry points, with setup kept in a compact dialog. */
+.home-actions { display: grid; grid-template-columns: 1fr 1fr; }
+.home-actions #continue-button { grid-column: 1 / -1; }
+.home-actions .primary-button small { display: block; font-size: 10px; font-weight: 500; opacity: .8; margin-top: 5px; }
+.timed-entry { background: #eebc77; color: #202237; }
+.home-card .difficulty-picker, .home-card #difficulty-description { display: none; }
+.mode-tabs { display: flex; gap: 8px; margin: 18px 0; }
+.mode-tabs > button { flex: 1; min-width: 0; padding: 10px 6px; font-size: 13px; }
+.mode-tabs .active { border-color: var(--mint, #8dd9c3); background: #2c4b50; color: #e2fff5; }
+.score-formula { display: block; color: var(--soft); margin-top: 4px; }
+.clock-urgent { color: var(--coral); }
+.mobile-ui #mobile-pause-button { font-size: 12px; }
+.mobile-ui .history-card { padding: 24px 18px; }
+.mobile-ui .history-card > p { font-size: 12px; line-height: 1.65; }
+.mobile-ui .history-card .mode-tabs > button { font-size: 11px; }
+.mobile-ui .history-scroll { overflow-x: hidden; }
+.mobile-ui .history-scroll table, .mobile-ui .history-scroll tbody { display: block; width: 100%; white-space: normal; }
+.mobile-ui .history-scroll thead { display: none; }
+.mobile-ui .history-scroll tr { display: grid; grid-template-columns: 20px 1fr 1.15fr; grid-template-areas: 'rank score result' 'rank date duration'; gap: 8px; padding: 14px 0; border-bottom: 1px solid var(--line); }
+.mobile-ui .history-scroll td { padding: 0; border: 0; font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
+.mobile-ui .history-scroll td:nth-child(1) { grid-area: rank; color: var(--mint); }
+.mobile-ui .history-scroll td:nth-child(2) { grid-area: date; color: var(--muted); font-size: 10px; }
+.mobile-ui .history-scroll td:nth-child(3) { grid-area: score; }
+.mobile-ui .history-scroll td:nth-child(3) strong { font-size: 22px; }
+.mobile-ui .history-scroll td:nth-child(4) { grid-area: result; }
+.mobile-ui .history-scroll td:nth-child(5) { grid-area: duration; color: var(--muted); }
+.mobile-ui .history-scroll td[colspan] { grid-area: auto; grid-column: 1 / -1; color: var(--muted); }
+.mobile-ui .home-screen { display: flex; flex-direction: column; padding: max(24px, env(safe-area-inset-top)) 24px max(16px, env(safe-area-inset-bottom)); gap: 18px; }
+.mobile-ui .home-topline, .mobile-ui .hero-copy, .mobile-ui .home-card, .mobile-ui .home-footer { position: relative; inset: auto; width: 100%; }
+.mobile-ui .home-topline { flex: 0 0 32px; }
+.mobile-ui .home-content { display: flex; flex: 1; min-height: 0; gap: 8px; }
+.mobile-ui .hero-copy { margin-top: clamp(0px, 3dvh, 28px); }
+.mobile-ui .home-card { flex: 1; padding: 0; justify-content: end; gap: 14px; }
+.mobile-ui .home-card .hero-orb { top: 8%; }
+.mobile-ui .home-card .hero-orb.mint { top: 3%; }
+.mobile-ui .home-card .hero-orb.gold { top: 14%; }
+.mobile-ui .home-card .orb-orbit { display: none; }
+.mobile-ui .home-actions { display: grid; grid-template-columns: 1fr; gap: 9px; }
+.mobile-ui .home-actions .primary-button { min-height: 62px; padding: 10px 18px; }
+.mobile-ui .home-actions #continue-button { min-height: 44px; }
+.mobile-ui .card-caption strong { font-size: 22px; }
+.mobile-ui .home-footer { flex: 0 0 auto; margin-bottom: clamp(0px, 7dvh, 70px); }
+@media (max-height: 700px) {
+  .mobile-ui .home-screen { gap: 10px; padding-top: max(14px, env(safe-area-inset-top)); }
+  .mobile-ui .hero-copy { margin-top: 0; }
+  .mobile-ui .home-card .hero-orb, .mobile-ui .card-caption { display: none; }
+  .mobile-ui .home-footer { margin-bottom: 0; }
+  .mobile-ui .home-card { justify-content: center; }
+}
+@media (orientation: landscape) and (max-height: 550px) {
+  .mobile-ui .home-content { flex-direction: row; gap: 24px; }
+  .mobile-ui .hero-copy { width: 40%; align-self: center; }
+  .mobile-ui .home-card { height: auto; }
+  .mobile-ui .home-actions .primary-button { min-height: 48px; }
+}

@@ -10,6 +10,7 @@ import { GameAudio } from './audio';
 import { recordRound } from '../storage/history';
 import { usesButtonControls } from './input-mode';
 import { heldRotationDegrees } from './rotation';
+import { advanceTimed, createRound, resetDescent } from '../core/modes';
 
 type ScenePhase = 'READY' | 'FLYING' | 'RESOLVING' | 'PAUSED' | 'WON' | 'LOST';
 
@@ -41,15 +42,51 @@ export class PlayScene extends Phaser.Scene {
   private statusText!: Phaser.GameObjects.Text;
   public ready = false;
   public get isPaused(): boolean { return this.phase === 'PAUSED'; }
+  public get isTimed(): boolean { return this.gameState.mode === 'timed'; }
+  public get activeState(): GameState { return this.gameState; }
+  public settleGame(): void {
+    this.syncTimedClock();
+    if (this.gameState.status !== 'READY') return;
+    this.gameState.status = 'WON';
+    this.gameState.endReason = 'settled';
+    this.finishImmediately();
+  }
+  private finishImmediately(): void {
+    this.stopRotation();
+    this.tweens.killAll();
+    this.time.removeAllEvents();
+    this.transient.forEach(object => object.destroy());
+    this.transient.clear();
+    this.phase = this.gameState.status;
+    this.renderBoard();
+    this.renderLauncher();
+    this.drawAim();
+    this.emitState();
+    recordRound(this.gameState);
+    sendWindowEvent('snood-finished', this.gameState);
+  }
+  public syncTimedClock(): void {
+    if (!this.ready || !this.isTimed || this.gameState.status !== 'READY') return;
+    const previous = this.gameState;
+    const now = Date.now();
+    this.gameState = advanceTimed(previous, now, this.phase === 'READY' || now >= previous.deadlineAt!);
+    if (this.gameState.status !== 'READY') { this.finishImmediately(); return; }
+    if (previous.board !== this.gameState.board) {
+      this.phase = 'RESOLVING';
+      this.animateResolution(previous, [{ type: 'board-drop' }]);
+      this.persistGame();
+    }
+  }
   public persistGame(): void {
     if (!this.ready) return;
     if (this.gameState.status === 'READY') sendWindowEvent('snood-save-request', this.gameState);
-    else recordRound(this.gameState);
+    else { recordRound(this.gameState); sendWindowEvent('snood-clear-save', this.gameState.mode ?? 'endless'); }
   }
   private clockTick = 0;
   private transient = new Set<Phaser.GameObjects.GameObject>();
 
   public override update(_time: number, delta: number): void {
+    if (this.isTimed) this.syncTimedClock();
     if (this.phase === 'READY' && this.rotationDirection !== 0) {
       const before = this.rotationHeldSeconds;
       this.rotationHeldSeconds += Math.max(0, delta) / 1000;
@@ -57,7 +94,7 @@ export class PlayScene extends Phaser.Scene {
       this.rotateLauncher(this.rotationDirection, degrees);
     } else if (this.phase !== 'READY') this.stopRotation();
     if (['READY', 'FLYING', 'RESOLVING'].includes(this.phase)) {
-      this.gameState.elapsedMs = (this.gameState.elapsedMs ?? 0) + delta;
+      if (!this.isTimed) this.gameState.elapsedMs = (this.gameState.elapsedMs ?? 0) + delta;
       this.clockTick += delta;
       if (this.clockTick >= 1000) { this.clockTick = 0; this.emitState(); }
     }
@@ -107,6 +144,7 @@ export class PlayScene extends Phaser.Scene {
     state.sessionId ??= crypto.randomUUID();
     state.startedAt ??= Date.now();
     state.elapsedMs = Number.isFinite(state.elapsedMs) ? Math.max(0, state.elapsedMs!) : 0;
+    this.clockTick = 0;
     this.gameState = state;
     this.phase = state.status;
     if (state.status === 'READY') this.phase = 'READY';
@@ -116,13 +154,15 @@ export class PlayScene extends Phaser.Scene {
     this.renderLauncher();
     this.drawAim();
     this.emitState();
+    this.persistGame();
+    this.syncTimedClock();
   }
 
   public restartGame(): void {
     if (this.gameState.status === 'READY') recordRound(this.gameState, true);
     const difficulty = this.gameState.difficultyId;
-    sendWindowEvent('snood-clear-save', undefined);
-    this.begin(createGameState(difficulty, Date.now()));
+    sendWindowEvent('snood-clear-save', this.gameState.mode ?? 'endless');
+    this.begin(createRound(difficulty, this.gameState.mode ?? 'endless', this.gameState.durationMs));
   }
 
   public setSettings(settings: Settings): void {
@@ -135,6 +175,7 @@ export class PlayScene extends Phaser.Scene {
 
   public pauseGame(): void {
     this.stopRotation();
+    if (this.isTimed) { this.persistGame(); return; }
     if (this.phase === 'PAUSED' || this.phase === 'WON' || this.phase === 'LOST') return;
     this.pausedFrom = this.phase;
     this.phase = 'PAUSED';
@@ -143,7 +184,7 @@ export class PlayScene extends Phaser.Scene {
     this.pointerActive = false;
     this.drawAim();
     this.persistGame();
-    this.statusText.setText('已暂停 · 按 Esc 或按钮继续');
+    this.statusText.setText('已存档 · 可退出，下次继续');
     this.emitState();
   }
 
@@ -158,6 +199,7 @@ export class PlayScene extends Phaser.Scene {
   }
 
   public togglePause(): void {
+    if (this.isTimed) return;
     if (this.phase === 'PAUSED') this.resumeGame();
     else this.pauseGame();
   }
@@ -370,7 +412,7 @@ export class PlayScene extends Phaser.Scene {
     if (event.code === 'Space') { event.preventDefault(); if (event.repeat) return; }
     if (event.code === 'Escape') {
       event.preventDefault();
-      this.togglePause();
+      if (!this.isTimed) sendWindowEvent('snood-save-home', undefined);
       return;
     }
     if (this.phase === 'PAUSED' && event.code === 'Space') {
@@ -391,6 +433,7 @@ export class PlayScene extends Phaser.Scene {
   }
 
   private launch(): void {
+    this.syncTimedClock();
     if (this.phase !== 'READY') return;
     const trace = traceShot(this.gameState.board, this.angle, this.geometry);
     if (!trace.landing) {
@@ -410,6 +453,12 @@ export class PlayScene extends Phaser.Scene {
     projectile.setScale(0.93);
     const driver: ProgressDriver = { progress: 0 };
     const duration = this.settings.reducedMotion ? 90 : Math.min(920, Math.max(220, trace.points.length * 2.8));
+    // Commit once on launch: process termination cannot replay a shot or lose its score.
+    const previous = this.gameState;
+    const result = resolveShot(previous, trace.landing);
+    this.gameState = result.state;
+    if (result.events.some(event => event.type === 'board-drop')) resetDescent(this.gameState, Date.now());
+    this.persistGame();
     this.tweens.add({
       targets: driver,
       progress: 1,
@@ -426,18 +475,11 @@ export class PlayScene extends Phaser.Scene {
       onComplete: () => {
         projectile.destroy();
         this.transient.delete(projectile);
-        if (trace.landing) this.resolve(trace.landing);
+        this.phase = 'RESOLVING';
+        this.flashLanding(trace.landing!, getOrbTheme(previous.currentColor).color);
+        this.animateResolution(previous, result.events);
       },
     });
-  }
-
-  private resolve(landing: Cell): void {
-    this.phase = 'RESOLVING';
-    const previous = this.gameState;
-    const result = resolveShot(previous, landing);
-    this.flashLanding(landing, getOrbTheme(previous.currentColor).color);
-    this.gameState = result.state;
-    this.animateResolution(previous, result.events);
   }
 
   private animateResolution(_previous: GameState, events: GameEvent[]): void {
@@ -567,6 +609,10 @@ export class PlayScene extends Phaser.Scene {
       difficultyId: this.gameState.difficultyId,
       step: this.gameState.step,
       elapsedMs: this.gameState.elapsedMs ?? 0,
+      mode: this.gameState.mode ?? 'endless',
+      endReason: this.gameState.endReason,
+      durationMs: this.gameState.durationMs,
+      descentRemainingMs: Math.max(0, (this.gameState.nextDescentAt ?? 0) - Date.now()),
     });
   }
 }

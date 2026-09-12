@@ -1,6 +1,6 @@
 {
   "name": "orbbound",
-  "version": "1.7.0",
+  "version": "2.0.0",
   "private": true,
   "description": "A modern, deterministic bubble-puzzle game inspired by classic connect-and-drop rules.",
   "main": "electron/main.cjs",
