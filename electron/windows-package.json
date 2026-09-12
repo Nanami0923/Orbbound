@@ -1,0 +1,8 @@
+{
+  "name": "orbbound",
+  "version": "1.3.0",
+  "description": "Orbbound offline puzzle game for Windows",
+  "main": "electron/main.cjs",
+  "author": "Orbbound",
+  "license": "UNLICENSED"
+}

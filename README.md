@@ -1,5 +1,21 @@
 # Orbbound
 
+## Windows 1.3.0（独立版本）
+
+- 高清画布 1280×1520、小球纹理 192×192；移除外投影，描边限制在球体内，避免相邻小球遮挡。
+- 保留桌面左右信息栏和居中棋盘，鼠标瞄准、点击发射及键盘微调。
+- 复用棋盘小球对象、合并消除动画、飞行位置连续插值，减少对象重建和跳动。
+- 无辅助线炮口由旧 Windows 版的 36 延长到 84 游戏坐标单位。
+- 桌面打包使用独立最小清单，排除 Android 运行依赖和开发文件；只保留中英文运行语言，使用 7z 固实压缩减小下载体积。
+
+游戏目录：`最终交付/Orbbound-Windows-1.3.0/win-unpacked`，双击其中的 `Orbbound.exe`。下载压缩包后用 7-Zip 解压整个目录。
+
+[Windows 1.3.0 下载](https://github.com/Nanami0923/Orbbound/releases/tag/windows-v1.3.0)
+
+Windows 版本由 `electron/windows-package.json` 管理，发布标签使用 `windows-v*`；Android 版本仍为 1.7.0，原 APK 与标签保持不变。桌面存档继续使用 `%APPDATA%/orbbound`。
+
+验证：24 项自动测试通过；1280×800 和 900×540 桌面视口、鼠标发射结算检查通过；构建目录启动检查通过。未做不同配置电脑的帧率基准测试。
+
 ## 1.6.0 按钮、炮口与动画优化
 
 - 手机三个操作按钮高度由 64 增至 84 CSS 像素，保留中下部握持位置。
@@ -92,9 +108,9 @@ npm run build
 
 ## Windows 10 EXE
 
-1.2.0 为 Windows 10 x64 目录版：
+当前 Windows 1.3.0 为 Windows 10 x64 目录版：
 
-`最终交付/Orbbound-1.2.0/win-unpacked/Orbbound.exe`
+`最终交付/Orbbound-Windows-1.3.0/win-unpacked/Orbbound.exe`
 
 双击即可运行，无需安装。它是未签名的本地构建，Windows SmartScreen 可能显示提示；确认文件来源可信后再运行即可。
 

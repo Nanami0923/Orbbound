@@ -12,50 +12,20 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "package:win": "npm run build && electron-builder --win --dir",
+    "package:win": "npm run build && node scripts/package-win.cjs",
     "sync:android": "npm run build && cap sync android",
     "package:android": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-android.ps1"
   },
   "devDependencies": {
     "@capacitor/cli": "^8.5.2",
     "@types/node": "24.3.0",
+    "7zip-bin": "5.2.0",
     "electron": "37.3.1",
     "electron-builder": "26.0.12",
     "phaser": "3.90.0",
     "typescript": "5.9.2",
     "vite": "7.1.3",
     "vitest": "3.2.4"
-  },
-  "build": {
-    "appId": "com.orbbound.game",
-    "productName": "Orbbound",
-    "directories": {
-      "output": "最终交付/Orbbound-${version}"
-    },
-    "files": [
-      "dist/**/*",
-      "electron/**/*",
-      "package.json"
-    ],
-    "asar": true,
-    "electronLanguages": [
-      "zh-CN",
-      "en-US"
-    ],
-    "win": {
-      "signAndEditExecutable": false,
-      "target": [
-        {
-          "target": "portable",
-          "arch": [
-            "x64"
-          ]
-        }
-      ]
-    },
-    "portable": {
-      "artifactName": "Orbbound-Portable-${version}.exe"
-    }
   },
   "dependencies": {
     "@capacitor/android": "^8.5.2",
