@@ -1,6 +1,6 @@
 import {afterEach,expect,it,vi} from 'vitest';
 import {loadSettings,DEFAULT_SETTINGS} from '../src/storage/storage';
-import {GameAudio,MUSIC} from '../src/game/audio';
+import {GameAudio,MUSIC,boardMusicPressure} from '../src/game/audio';
 afterEach(()=>{vi.unstubAllGlobals();vi.useRealTimers();});
 it('migrates the old volume to both channels, clamps new controls and preserves mute',()=>{
  let saved={sound:false,reducedMotion:true} as Record<string,unknown>;
@@ -34,7 +34,7 @@ it('independently mutes music and effects without creating duplicate schedulers'
 });
 it('changes melodies and tempo, retires queued voices and never restarts in background',()=>{
  const {audio,ctx,gains,oscillators}=audioFixture();
- expect(MUSIC.play.step).toBeLessThan(MUSIC.menu.step);expect(MUSIC.play.notes).not.toEqual(MUSIC.menu.notes);
+ expect(MUSIC.play).toEqual(MUSIC.menu);
  const original=oscillators[0];audio.setScene('play');expect(original.stop).toHaveBeenLastCalledWith(.085);
  expect(gains[2].gain.cancelScheduledValues).toHaveBeenCalledWith(0);
  vi.advanceTimersByTime(100);expect(oscillators.length).toBe(2);
@@ -73,5 +73,17 @@ it('bounds the final output curve and starts music without a blip',()=>{
  const curve=ctx.createWaveShaper.mock.results[0].value.curve!;
  expect(curve[2048]).toBe(0);expect(Math.max(...curve)).toBeLessThan(1);expect(Math.min(...curve)).toBeGreaterThan(-1);
  for(let i=1;i<curve.length;i++)expect(curve[i]).toBeGreaterThanOrEqual(curve[i-1]);
+ audio.setForeground(false);
+});
+
+it('accelerates the original melody as occupied rows approach the floor',()=>{
+ const board=Array.from({length:19},()=>Array(14).fill(null));
+ expect(boardMusicPressure(board)).toBe(0);board[6][0]=0;expect(boardMusicPressure(board)).toBe(0);
+ board[12][0]=0;expect(boardMusicPressure(board)).toBeCloseTo(6/11);
+ board[17][0]=0;expect(boardMusicPressure(board)).toBe(1);
+ const {audio,ctx,oscillators}=audioFixture();audio.setPressure(1);audio.setScene('play');
+ ctx.currentTime=.1;vi.advanceTimersByTime(100);
+ const starts=oscillators.slice(1).map(o=>o.start.mock.lastCall[0]);
+ expect(starts[1]-starts[0]).toBeCloseTo(.375/2.2);expect(starts[1]-starts[0]).toBeLessThan(.28);
  audio.setForeground(false);
 });

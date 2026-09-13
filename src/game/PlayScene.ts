@@ -6,7 +6,7 @@ import type { Cell, GameEvent, GameState, Point } from '../core/types';
 import { BOARD_GEOMETRY, GAME_HEIGHT, GAME_WIDTH, UI_COLORS } from '../content/game-config';
 import { getOrbTheme } from '../content/theme';
 import { DEFAULT_SETTINGS, type Settings } from '../storage/storage';
-import { gameAudio } from './audio';
+import { gameAudio, boardMusicPressure } from './audio';
 import { fineRotationSpeed } from './rotation';
 import { haptic } from './feedback';
 import { recordRound } from '../storage/history';
@@ -51,6 +51,7 @@ export class PlayScene extends Phaser.Scene {
   private quickTurn: { from: number; to: number; elapsed: number } | null = null;
   private get canSteer(): boolean { return ['READY', 'FLYING', 'RESOLVING'].includes(this.phase); }
   private pausedFrom: ScenePhase = 'READY';
+  private roundEpoch = 0;
   private boardGroup!: Phaser.GameObjects.Container;
   private aimGraphics!: Phaser.GameObjects.Graphics;
   private boardBalls = new Map<string, Phaser.GameObjects.Container>();
@@ -70,9 +71,11 @@ export class PlayScene extends Phaser.Scene {
     this.finishImmediately();
   }
   private finishImmediately(): void {
+    this.roundEpoch++;
     this.stopRotation();
     this.tweens.killAll();
     this.time.removeAllEvents();
+    this.time.clearPendingEvents();
     this.transient.forEach(object => object.destroy());
     this.transient.clear();
     this.phase = this.gameState.status;
@@ -167,15 +170,18 @@ export class PlayScene extends Phaser.Scene {
   }
 
   public begin(state: GameState): void {
+    this.roundEpoch++;
     state = resumeTimed(state);
     this.stopRotation();
     this.tweens.killAll();
     this.tweens.resumeAll();
     this.time.removeAllEvents();
+    this.time.clearPendingEvents();
     this.time.paused = false;
     this.transient.forEach(object => object.destroy());
     this.transient.clear();
     this.pointerActive = false;
+    this.pausedFrom = 'READY';
     state.sessionId ??= crypto.randomUUID();
     state.startedAt ??= Date.now();
     state.elapsedMs = Number.isFinite(state.elapsedMs) ? Math.max(0, state.elapsedMs!) : 0;
@@ -538,6 +544,7 @@ export class PlayScene extends Phaser.Scene {
   private launch(): void {
     this.syncTimedClock();
     if (this.phase !== 'READY') return;
+    const epoch = this.roundEpoch;
     const trace = this.getShotTrace();
     if (!trace.landing) {
       this.showHint('这个角度没有合法落点', UI_COLORS.danger);
@@ -571,6 +578,7 @@ export class PlayScene extends Phaser.Scene {
       duration,
       ease: 'Linear',
       onUpdate: () => {
+        if (epoch !== this.roundEpoch) return;
         const position = driver.progress * (trace.points.length - 1);
         const index = Math.min(trace.points.length - 1, Math.floor(position));
         const point = trace.points[index];
@@ -579,6 +587,7 @@ export class PlayScene extends Phaser.Scene {
         projectile.setPosition(point.x + (next.x - point.x) * fraction, point.y + (next.y - point.y) * fraction);
       },
       onComplete: () => {
+        if (epoch !== this.roundEpoch) return;
         projectile.destroy();
         this.transient.delete(projectile);
         this.phase = 'RESOLVING';
@@ -589,6 +598,7 @@ export class PlayScene extends Phaser.Scene {
   }
 
   private animateResolution(_previous: GameState, events: GameEvent[]): void {
+    const epoch = this.roundEpoch;
     const matched = events.find((event) => event.type === 'match')?.cells ?? [];
     const dropped = events.find((event) => event.type === 'drop')?.cells ?? [];
     const removed = [...matched, ...dropped];
@@ -625,10 +635,12 @@ export class PlayScene extends Phaser.Scene {
 
     const wait = animationGroups.size ? removeDuration + Math.max(...animationGroups.keys()) + 20 : 60;
     this.time.delayedCall(wait, () => {
+      if (epoch !== this.roundEpoch) return;
       const droppedBoard = events.some((event) => event.type === 'board-drop');
       this.renderBoard(droppedBoard ? -BOARD_GEOMETRY.rowStep : 0);
       this.renderLauncher();
       const finish = () => {
+      if (epoch !== this.roundEpoch) return;
 
       const win = events.some((event) => event.type === 'win');
       const lost = events.some((event) => event.type === 'lost');
@@ -706,6 +718,7 @@ export class PlayScene extends Phaser.Scene {
 
   private emitState(): void {
     sendWindowEvent('snood-state', {
+      musicPressure: boardMusicPressure(this.gameState.board),
       phase: this.phase,
       status: this.gameState.status,
       score: this.gameState.score,
@@ -747,4 +760,3 @@ export const PHASER_CONFIG: Phaser.Types.Core.GameConfig = {
   },
   scene: [PlayScene],
 };
-

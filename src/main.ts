@@ -19,6 +19,7 @@ import { formatHeadings } from './ui/typography';
 import { loadHistory, recordRound, formatDuration, rankingKey } from './storage/history';
 
 interface SceneStateDetail {
+  musicPressure: number;
   endReason?: GameState['endReason'];
   mode: GameMode;
   durationMs?: number;
@@ -120,7 +121,6 @@ function showGame(): void {
 function startRound(state: Parameters<PlayScene['begin']>[0] | null, difficulty = selectedDifficulty): void {
   showGame();
   ensureGame();
-  if (game && !game.loop.running) game.loop.wake();
   const beginWhenReady = () => {
     const scene = getScene();
     if (!scene?.ready) {
@@ -129,6 +129,7 @@ function startRound(state: Parameters<PlayScene['begin']>[0] | null, difficulty 
     }
     scene.setSettings(settings);
     scene.begin(state ?? createRound(difficulty, selectedMode, selectedDuration));
+    game?.loop.wake();
   };
   beginWhenReady();
 }
@@ -159,6 +160,7 @@ function formatScore(score: number): string {
 }
 
 function updateGameState(detail: SceneStateDetail): void {
+  gameAudio.setPressure(detail.musicPressure);
   gameAudio.setScene(!gameScreen?.hidden && modalRoot?.hidden && ['READY', 'FLYING', 'RESOLVING'].includes(detail.phase) ? 'play' : 'menu');
   if (scoreValue && scoreValue.textContent !== formatScore(detail.score)) scoreValue.textContent = formatScore(detail.score);
   const timed = detail.mode === 'timed';
@@ -341,6 +343,7 @@ function showResult(state: GameState): void {
     <div class="modal-footer"><button id="result-retry" class="primary-button" type="button"><span>${won ? '再开一局' : '再试一次'}</span><b>↗</b></button><button id="result-home" class="quiet-button" type="button">返回首页</button></div>
   `, `result-card${won ? '' : ' lost'}`);
   modalRoot?.querySelector<HTMLButtonElement>('#result-retry')?.addEventListener('click', () => {
+    resumeAfterModal = false;
     closeModal();
     startRound(null, selectedDifficulty);
   });
@@ -434,9 +437,9 @@ function stopRotation(): void {
 let aimControl: ReturnType<typeof bindSteeringControl> | undefined;
 let fineControl: ReturnType<typeof bindSteeringControl> | undefined;
 const controlActive = () => !gameScreen?.hidden && !!modalRoot?.hidden;
-aimControl = bindSteeringControl(aimSlider, { fine: false, active: controlActive, onStart: stopRotation,
+aimControl = bindSteeringControl(aimSlider, { fine: false, hitArea: aimSlider.closest<HTMLElement>('.steering-control')!, active: controlActive, onStart: stopRotation,
   onValue: value => getScene()?.setAimDegrees(directAimDegrees(value)) });
-fineControl = bindSteeringControl(fineSlider, { fine: true, active: controlActive, onStart: stopRotation,
+fineControl = bindSteeringControl(fineSlider, { fine: true, hitArea: fineSlider.closest<HTMLElement>('.steering-control')!, active: controlActive, onStart: stopRotation,
   onValue: value => getScene()?.setFineRotation(value) });
 const aimAngle = document.querySelector('#aim-angle')!;
 window.addEventListener('snood-angle', event => {

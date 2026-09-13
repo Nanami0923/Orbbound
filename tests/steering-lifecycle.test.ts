@@ -31,3 +31,11 @@ it('breaks long titles at commas and keeps short titles intact',()=>{
  expect(headingLines('调整手感，找到节奏')).toEqual(['调整手感，','找到节奏']);
  expect(headingLines('本局已结算')).toEqual(['本局已结算']);
 });
+
+it('accepts touches on the enlarged label while keeping the slider coordinate scale',()=>{
+ const slider=new Slider(),area=new Slider(),value=vi.fn();
+ const binding=bindSteeringControl(slider as unknown as HTMLInputElement,{fine:false,active:()=>true,onValue:value,hitArea:area as unknown as HTMLElement});
+ send(area,'pointerdown',1,212);expect(value.mock.lastCall![0]).toBe(78);expect(area.captured).toBe(1);
+ send(area,'pointermove',1,12);expect(value.mock.lastCall![0]).toBe(-78);
+ send(area,'pointerup');expect(area.captured).toBe(null);binding.dispose();
+});

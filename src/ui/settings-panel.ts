@@ -12,8 +12,8 @@ export function settingsMarkup(settings: Settings, mobile: boolean): string {
     <button class="quiet-button settings-back" data-settings-back hidden>‹ 返回设置</button>
     <section data-settings-page="sound" hidden><h3 tabindex="-1">声音与音乐</h3>
     ${range('volume', '音效音量', 0, 100, '%', '发射轻一点，消除更清楚；0 为静音。')}
-    ${range('musicVolume', '音乐音量', 0, 100, '%', '菜单保留原曲，对局使用稍快的新曲。')}
-    <div class="sound-preview-actions"><button class="quiet-button" id="preview-menu">试听菜单曲</button><button class="quiet-button" id="preview-play">试听对局曲</button><button class="quiet-button" id="preview-sound">试听消除音效</button></div><p id="music-preview-status" class="mode-note" role="status">当前：菜单曲</p>
+    ${range('musicVolume', '音乐音量', 0, 100, '%', '全局使用原曲，棋盘越接近底部，节奏越快。')}
+    <div class="sound-preview-actions"><button class="quiet-button" id="preview-menu">试听菜单曲</button><button class="quiet-button" id="preview-play">试听紧张节奏</button><button class="quiet-button" id="preview-sound">试听消除音效</button></div><p id="music-preview-status" class="mode-note" role="status">当前：菜单曲</p>
     </section><section data-settings-page="aim" hidden><h3 tabindex="-1">瞄准辅助</h3>
     ${toggle('aimAssist', '瞄准辅助', '显示反弹路线与空心落点圈。')}
     </section>${mobile ? `<section data-settings-page="control" hidden><h3 tabindex="-1">操作与反馈</h3>
@@ -55,8 +55,8 @@ export function bindSettingsPanel(root: HTMLElement, settings: Settings, onChang
     (event.currentTarget as HTMLElement).textContent = settings.controlsSwapped ? '发射在右 ⇄' : '发射在左 ⇄';
   });
   for (const scene of ['menu', 'play'] as const) listen(root.querySelector(`#preview-${scene}`), 'click', () => {
-    gameAudio.unlock(); gameAudio.setScene(scene);
-    root.querySelector('#music-preview-status')!.textContent = `正在试听：${scene === 'menu' ? '菜单曲' : '对局曲'}`;
+    gameAudio.unlock(); gameAudio.setPressure(scene === 'play' ? 1 : 0); gameAudio.setScene(scene);
+    root.querySelector('#music-preview-status')!.textContent = `正在试听：${scene === 'menu' ? '原速' : '紧张节奏'}`;
   });
   listen(root.querySelector('#preview-sound'), 'click', () => gameAudio.blip('match'));
   let raf = 0, lastTime = 0, velocity = 0, angle = 0;

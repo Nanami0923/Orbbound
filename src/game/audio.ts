@@ -1,10 +1,16 @@
 import { DEFAULT_SETTINGS, type Settings } from '../storage/storage';
+import type { GameState } from '../core/types';
 
 export type MusicScene = 'menu' | 'play';
-export const MUSIC = {
-  menu: { step: 0.375, duration: 0.5, notes: [72,76,79,76,74,77,81,77,71,74,79,74,69,72,76,72] },
-  play: { step: 0.28, duration: 0.36, notes: [72,79,76,79,74,81,77,81,76,79,84,79,74,77,81,77,72,76,79,83,74,77,81,84,76,79,83,79,74,71,74,79] },
-} as const;
+const originalTrack = { step: 0.375, duration: 0.5, notes: [72,76,79,76,74,77,81,77,71,74,79,74,69,72,76,72] };
+export const MUSIC = { menu: originalTrack, play: originalTrack } as const;
+export function boardMusicPressure(board: GameState['board']): number {
+  let bottom = -1;
+  for (let row = board.length - 1; row >= 0; row--) {
+    if (board[row].some(cell => cell !== null)) { bottom = row; break; }
+  }
+  return Math.max(0, Math.min(1, (bottom - 6) / 11));
+}
 type Voice = { oscillator: OscillatorNode; gain: GainNode; start: number; kind?: string; retiring?: boolean };
 const clampVolume = (value: number) => Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : 50;
 
@@ -19,6 +25,8 @@ export class GameAudio {
   private nextNote = 0;
   private foreground = true;
   private scene: MusicScene = 'menu';
+  private pressure = 0;
+  public setPressure(value: number): void { this.pressure = Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0; }
   private voices = new Set<Voice>();
   private effectVoices = new Set<Voice>();
 
@@ -113,6 +121,8 @@ export class GameAudio {
     const ctx = this.context;
     if (!ctx || !this.music || ctx.state !== 'running' || !this.foreground) return;
     const track = MUSIC[this.scene];
+    const speed = this.scene === 'play' ? 1 + this.pressure * 1.2 : 1;
+    const duration = track.duration / speed;
     if (!this.musicVolume) { this.nextNote = ctx.currentTime + 0.04; return; }
     if (this.nextNote < ctx.currentTime) this.nextNote = ctx.currentTime + 0.02;
     while (this.nextNote < ctx.currentTime + 0.2) {
@@ -122,13 +132,13 @@ export class GameAudio {
       oscillator.frequency.value = 440 * 2 ** ((track.notes[this.note++ % track.notes.length] - 69) / 12);
       gain.gain.setValueAtTime(0, this.nextNote);
       gain.gain.linearRampToValueAtTime(0.16, this.nextNote + 0.025);
-      gain.gain.linearRampToValueAtTime(0.10, this.nextNote + track.duration * 0.44);
-      gain.gain.exponentialRampToValueAtTime(0.0001, this.nextNote + track.duration - 0.02);
+      gain.gain.linearRampToValueAtTime(0.10, this.nextNote + duration * 0.44);
+      gain.gain.exponentialRampToValueAtTime(0.0001, this.nextNote + duration - 0.02);
       oscillator.connect(gain).connect(this.music);
       const voice: Voice = { oscillator, gain, start: this.nextNote }; this.voices.add(voice);
       oscillator.onended = () => { oscillator.disconnect(); gain.disconnect(); this.voices.delete(voice); };
-      oscillator.start(this.nextNote); oscillator.stop(this.nextNote + track.duration);
-      this.nextNote += track.step;
+      oscillator.start(this.nextNote); oscillator.stop(this.nextNote + duration);
+      this.nextNote += track.step / speed;
     }
   }
   public blip(kind: 'shoot' | 'match' | 'drop' | 'danger' | 'win' | 'lose'): void {

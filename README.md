@@ -1,17 +1,17 @@
 # Orbbound
 
-本地目录已按源码、文档、平台交付整理。当前 Android 为 **2.7.0**，Windows 为 **1.6.0**，两个平台独立编号。
+本地目录已按源码、文档、平台交付整理。当前 Android 为 **2.8.0**，Windows 为 **1.7.0**，两个平台独立编号。
 
 ## 交付位置
 
 | 平台 | 最新版本 | 交付目录 | 主要文件 |
 | --- | --- | --- | --- |
-| Android | 2.7.0 | [Android 交付目录](最终交付/Android/Orbbound-2.7.0/) | APK、SHA-256、更新说明 |
-| Windows | 1.6.0 | [Windows 交付目录](最终交付/Windows/Orbbound-Windows-1.6.0/) | 单文件便携 EXE、7z、SHA-256、完整 win-unpacked 运行目录 |
+| Android | 2.8.0 | [Android 交付目录](最终交付/Android/Orbbound-2.8.0/) | APK、SHA-256、更新说明 |
+| Windows | 1.7.0 | [Windows 交付目录](最终交付/Windows/Orbbound-Windows-1.7.0/) | 单文件便携 EXE、7z、SHA-256、完整 win-unpacked 运行目录 |
 
 所有旧版本保留在对应平台目录内。Windows 1.0.0 的两个不同本地构建按原来源分别保存，不将其视作同一文件。
 
-下载：[Windows 1.6.0 单文件 EXE](https://github.com/Nanami0923/Orbbound/releases/download/windows-v1.6.0/Orbbound-Windows-1.6.0-Portable-x64.exe) · [完整游戏目录 7z](https://github.com/Nanami0923/Orbbound/releases/download/windows-v1.6.0/Orbbound-Windows-1.6.0-x64.7z)
+下载：[Windows 1.7.0 单文件 EXE](https://github.com/Nanami0923/Orbbound/releases/download/windows-v1.7.0/Orbbound-Windows-1.7.0-Portable-x64.exe) · [完整游戏目录 7z](https://github.com/Nanami0923/Orbbound/releases/download/windows-v1.7.0/Orbbound-Windows-1.7.0-x64.7z)
 
 ## 开发与打包
 
@@ -36,8 +36,8 @@ Android 打包需配置 JDK 21 与 Android SDK；签名仍在仓库外的 `%LOCA
 - [本地交付文件索引与校验值](最终交付/版本索引.md)
 - [最初设计方案](docs/design/Snood现代化重构方案.md)
 
-Windows 1.6.0 同步递增计分、悬空奖励、音量与循环音乐、旋转炮口和辅助线性能优化，继续使用鼠标 / 键盘操作。[更新说明](docs/releases/Windows/windows-1.6.0-notes.md)。
+Windows 1.7.0 修复限时触底后重开，统一原版 BGM 并随棋盘高度加速，同步分级设置与音频修复，继续使用鼠标 / 键盘操作。[更新说明](docs/releases/Windows/windows-1.7.0-notes.md)。
 
 单 EXE 为自解压便携程序，无需安装或联网；运行时使用临时目录，退出后清理。存档仍在 `%APPDATA%/orbbound`，不会因临时目录清理而删除。
 
-Android 2.7.0：[APK 下载](https://github.com/Nanami0923/Orbbound/releases/download/v2.7.0/Orbbound-2.7.0-Android.apk) · [更新说明](docs/releases/Android/android-2.7.0-notes.md)。
+Android 2.8.0：[APK 下载](https://github.com/Nanami0923/Orbbound/releases/download/v2.8.0/Orbbound-2.8.0-Android.apk) · [更新说明](docs/releases/Android/android-2.8.0-notes.md)。

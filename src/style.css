@@ -692,3 +692,6 @@ button:focus-visible { outline: 2px solid var(--mint); outline-offset: 3px; }
   .mobile-ui .hero-copy h1 { font-size: 30px; }
   .mobile-ui .home-footer { margin-bottom: 0; }
 }
+
+.mobile-ui .steering-control { touch-action: none; min-height: 62px; }
+.mobile-ui .steering-control input { height: 38px; }

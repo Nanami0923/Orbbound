@@ -3,19 +3,21 @@ export interface SteeringOptions {
   active: () => boolean;
   onValue: (value: number) => void;
   onStart?: () => void;
+  hitArea?: HTMLElement;
 }
 /** Captures only this slider's finger. Reset cancels ownership as well as velocity. */
 export function bindSteeringControl(slider: HTMLInputElement, options: SteeringOptions) {
   let pointer: number | null = null;
   let rect: DOMRect | null = null;
   const listeners: Array<[string, EventListener]> = [];
+  const hitArea = options.hitArea ?? slider;
   const on = (type: string, handler: (event: PointerEvent) => void) => {
     const listener = handler as EventListener;
-    slider.addEventListener(type, listener); listeners.push([type, listener]);
+    hitArea.addEventListener(type, listener, type === 'blur'); listeners.push([type, listener]);
   };
   const reset = () => {
     const previous = pointer; pointer = null; rect = null;
-    if (previous !== null && slider.hasPointerCapture(previous)) slider.releasePointerCapture(previous);
+    if (previous !== null && hitArea.hasPointerCapture(previous)) hitArea.releasePointerCapture(previous);
     if (options.fine) { slider.value = '0'; options.onValue(0); }
   };
   const move = (event: PointerEvent) => {
@@ -28,7 +30,7 @@ export function bindSteeringControl(slider: HTMLInputElement, options: SteeringO
     if (pointer !== null || event.button !== 0 || !options.active()) return;
     event.preventDefault(); options.onStart?.();
     pointer = event.pointerId; rect = slider.getBoundingClientRect();
-    slider.setPointerCapture(pointer); move(event);
+    hitArea.setPointerCapture(pointer); move(event);
   });
   on('pointermove', event => {
     if (pointer !== event.pointerId) return;
@@ -40,5 +42,5 @@ export function bindSteeringControl(slider: HTMLInputElement, options: SteeringO
   on('input', () => { if (options.active()) options.onValue(Number(slider.value)); });
   on('keyup', () => { if (options.fine) reset(); });
   on('blur', () => { if (pointer === null) reset(); });
-  return { reset, dispose: () => { reset(); for (const [type, fn] of listeners) slider.removeEventListener(type, fn); } };
+  return { reset, dispose: () => { reset(); for (const [type, fn] of listeners) hitArea.removeEventListener(type, fn, type === 'blur'); } };
 }

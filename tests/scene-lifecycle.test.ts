@@ -64,7 +64,7 @@ it('keeps the cursor hidden through flight and resolution, and restores it on pa
 it('resumes the animation manager and clock when starting easy mode from a paused scene', () => {
   const scene = new PlayScene();
   const tweens = {paused:true,killAll:vi.fn(),resumeAll(){this.paused=false;}};
-  const clock = {paused:true,removeAllEvents:vi.fn()};
+  const clock = {paused:true,removeAllEvents:vi.fn(),clearPendingEvents:vi.fn()};
   Object.assign(scene,{tweens,time:clock,statusText:{setText:vi.fn()},renderBoard:vi.fn(),renderLauncher:vi.fn(),drawAim:vi.fn(),emitState:vi.fn()});
   scene.begin(createGameState('easy',42));
   expect(tweens.paused).toBe(false); expect(clock.paused).toBe(false);
@@ -131,10 +131,28 @@ it('cancels a pending animation and finishes only once when the timed deadline p
   const state = createRound('normal','timed',300000,Date.now()-300001);
   state.nextDescentAt=Date.now()+1000;
   const killAll=vi.fn(), removeAllEvents=vi.fn(), destroy=vi.fn();
-  Object.assign(scene,{ready:true,gameState:state,phase:'FLYING',tweens:{killAll},time:{removeAllEvents},
+  Object.assign(scene,{ready:true,gameState:state,phase:'FLYING',tweens:{killAll},time:{removeAllEvents,clearPendingEvents:vi.fn()},
     transient:new Set([{destroy}]),renderBoard:vi.fn(),renderLauncher:vi.fn(),drawAim:vi.fn(),emitState:vi.fn()});
   scene.syncTimedClock(); scene.syncTimedClock();
   expect(scene.activeState.endReason).toBe('timeout');
   expect(killAll).toHaveBeenCalledOnce(); expect(removeAllEvents).toHaveBeenCalledOnce(); expect(destroy).toHaveBeenCalledOnce();
 });
 
+
+it('ignores old descent callbacks after bottom-out and a fresh timed round', () => {
+ const scene=new PlayScene();const callbacks:Array<()=>void>=[];
+ const old=createRound('normal','timed',300000);old.status='LOST';
+ const clearPendingEvents=vi.fn();
+ Object.assign(scene,{gameState:old,phase:'RESOLVING',
+ time:{paused:true,delayedCall:(_ms:number,fn:()=>void)=>callbacks.push(fn),removeAllEvents:vi.fn(),clearPendingEvents},
+ tweens:{killAll:vi.fn(),resumeAll:vi.fn()},audio:{blip:vi.fn()},
+ renderBoard:vi.fn(),renderLauncher:vi.fn(),drawAim:vi.fn(),emitState:vi.fn(),persistGame:vi.fn(),
+ statusText:{setText:vi.fn()}});
+ const runtime=scene as unknown as {animateResolution(s:unknown,e:unknown[]):void;finishImmediately():void;phase:string};
+ runtime.animateResolution(old,[{type:'board-drop'}]);runtime.finishImmediately();
+ const fresh=createRound('normal','timed',300000);scene.begin(fresh);
+ callbacks.forEach(fn=>fn());
+ expect(scene.activeState).toBe(fresh);expect(runtime.phase).toBe('READY');expect(scene.isPaused).toBe(false);
+ expect(clearPendingEvents).toHaveBeenCalledTimes(2);
+ const launch=vi.fn();Object.assign(scene,{launch});scene.launchFromButton();expect(launch).toHaveBeenCalledOnce();
+});

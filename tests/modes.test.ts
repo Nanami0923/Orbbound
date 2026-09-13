@@ -160,3 +160,11 @@ describe('2.0 modes', () => {
     local.setItem('orbbound-timed-active-v2',JSON.stringify(bad)); expect(loadGame('timed')).toBeNull();
   });
 });
+
+it('uses identical initial and final descent intervals for both timed durations',()=>{
+ for(const id of ['easy','normal','hard']){
+  expect(descentInterval(id,0,300000)).toBe(descentInterval(id,0,600000));
+  expect(descentInterval(id,300000,300000)).toBe(descentInterval(id,600000,600000));
+  expect(descentInterval(id,150000,300000)).toBe(descentInterval(id,300000,600000));
+ }
+});
