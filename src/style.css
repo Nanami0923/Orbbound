@@ -661,7 +661,18 @@ html.mobile-ui, .mobile-ui body, .mobile-ui #app { width: 100%; height: 100%; mi
 .control-preview label, .control-preview input, .control-preview button { grid-column: 1 / -1; }
 .control-preview label { font-size: 12px; color: var(--muted); }
 .control-preview input { width: 100%; height: 40px; touch-action: none; accent-color: var(--mint); }
-.preview-cannon { height: 68px; display: flex; align-items: end; justify-content: center; }
+.preview-cannon { position: relative; height: 112px; min-width: 130px; overflow: hidden; }
+.preview-cannon span { position: absolute; left: calc(50% - 11px); bottom: 22px; }
+.control-preview output { min-width: 52px; text-align: right; }
+button, input, label, a { -webkit-tap-highlight-color: transparent; }
+button { overflow: hidden; }
+button:active:not(:disabled) { filter: brightness(1.18); }
+button:focus-visible { outline: 2px solid var(--mint); outline-offset: 3px; }
+.settings-categories { display: grid; gap: 10px; margin: 18px 0; }
+.settings-categories button { text-align: left; padding: 16px; }
+.settings-back { margin: 8px 0; }
+.settings-card [hidden] { display: none !important; }
+.settings-card section h3 { margin: 12px 0; }
 .preview-cannon span { width: 22px; height: 54px; display: grid; place-items: start center; border: 2px solid #8096b2; border-top: 6px solid var(--mint); border-radius: 8px; background: #304763; color: white; transform-origin: 50% 85%; }
 .control-preview output { color: var(--mint); font-size: 12px; font-variant-numeric: tabular-nums; }
 .grip-preview { display: grid; grid-template-columns: var(--preview-width, 58px) 1fr; gap: 10px; padding: 10px; border: 1px dashed var(--line); border-radius: 12px; font-size: 12px; text-align: center; }

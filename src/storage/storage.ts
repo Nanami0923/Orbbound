@@ -10,7 +10,6 @@ export interface Settings {
   volume: number;
   musicVolume: number;
   sensitivity: number;
-  centerSnap: boolean;
   hapticShoot: boolean;
   hapticMatch: boolean;
   controlOffset: number;
@@ -24,7 +23,6 @@ export const DEFAULT_SETTINGS: Settings = {
   volume: 50,
   musicVolume: 50,
   sensitivity: 100,
-  centerSnap: true,
   hapticShoot: false,
   hapticMatch: false,
   controlOffset: 0,
@@ -49,7 +47,6 @@ export function loadSettings(): Settings {
     return {
       musicVolume: number(record.musicVolume, oldVolume, 0, 100),
       sensitivity: number(record.sensitivity, 100, 50, 150),
-      centerSnap: record.centerSnap !== false,
       hapticShoot: record.hapticShoot === true,
       hapticMatch: record.hapticMatch === true,
       controlOffset: number(record.controlOffset, 0, 0, 48),

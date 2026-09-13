@@ -21,8 +21,8 @@ it.each(['pointercancel','lostpointercapture','reset'])('stops on %s and rejects
  const count=value.mock.calls.length;send(slider,'pointermove',1,220);expect(value).toHaveBeenCalledTimes(count);
  send(slider,'pointerdown',3,190);expect(value.mock.lastCall![0]).toBeGreaterThan(0);binding.dispose();
 });
-it('uses a small optional center snap and a wider slow steering zone',()=>{
- expect(directAimDegrees(1,true)).toBe(0);expect(directAimDegrees(1,false)).toBe(1);expect(directAimDegrees(3,true)).toBe(3);
+it('preserves direct angles without snapping and uses a wider slow steering zone',()=>{
+ expect(directAimDegrees(1)).toBe(1);expect(directAimDegrees(-0.5)).toBe(-0.5);expect(directAimDegrees(90)).toBe(78);
  expect(fineRotationSpeed(5)).toBe(0);expect(fineRotationSpeed(30)).toBeLessThan(3);
  expect(fineRotationSpeed(100,50)).toBe(30);expect(fineRotationSpeed(-100,150)).toBe(-90);
 });

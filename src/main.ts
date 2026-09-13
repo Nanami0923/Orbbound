@@ -14,7 +14,7 @@ import { gameAudio } from './game/audio';
 import { bindFireButton } from './game/fire-control';
 import { bindSteeringControl } from './game/steering-control';
 import { directAimDegrees } from './game/rotation';
-import { settingsMarkup, bindSettingsPanel } from './ui/settings-panel';
+import { settingsMarkup, bindSettingsPanel, settingsBack } from './ui/settings-panel';
 import { formatHeadings } from './ui/typography';
 import { loadHistory, recordRound, formatDuration, rankingKey } from './storage/history';
 
@@ -65,6 +65,7 @@ if (sideOrbLabel && import.meta.env.MODE === 'windows') sideOrbLabel.textContent
 
 let settings: Settings = loadSettings();
 gameAudio.setMix(settings.volume, settings.musicVolume);
+gameAudio.unlock();
 document.addEventListener('pointerdown', () => gameAudio.unlock());
 document.addEventListener('keydown', () => gameAudio.unlock());
 document.addEventListener('visibilitychange', () => gameAudio.setForeground(!document.hidden));
@@ -265,7 +266,7 @@ function openModal(content: string, className = ''): void {
 }
 
 function handleModalBackdrop(event: MouseEvent): void {
-  if (event.target === modalRoot) closeModal();
+  if (modalRoot && event.target === modalRoot && !settingsBack(modalRoot)) closeModal();
 }
 
 function closeModal(): void {
@@ -434,7 +435,7 @@ let aimControl: ReturnType<typeof bindSteeringControl> | undefined;
 let fineControl: ReturnType<typeof bindSteeringControl> | undefined;
 const controlActive = () => !gameScreen?.hidden && !!modalRoot?.hidden;
 aimControl = bindSteeringControl(aimSlider, { fine: false, active: controlActive, onStart: stopRotation,
-  onValue: value => getScene()?.setAimDegrees(directAimDegrees(value, settings.centerSnap)) });
+  onValue: value => getScene()?.setAimDegrees(directAimDegrees(value)) });
 fineControl = bindSteeringControl(fineSlider, { fine: true, active: controlActive, onStart: stopRotation,
   onValue: value => getScene()?.setFineRotation(value) });
 const aimAngle = document.querySelector('#aim-angle')!;
@@ -490,7 +491,7 @@ if (Capacitor.isNativePlatform()) {
   });
   void App.addListener('backButton', () => {
     if (modalRoot && !modalRoot.hidden) {
-      closeModal();
+      if (!settingsBack(modalRoot)) closeModal();
     } else if (gameScreen && !gameScreen.hidden) {
       getScene()?.pauseGame();
       showHome();

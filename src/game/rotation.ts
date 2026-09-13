@@ -19,7 +19,7 @@ export function fineRotationSpeed(value: number, sensitivity = 100): number {
   return Math.sign(position) * 60 * magnitude ** 2.6 * Math.max(50, Math.min(150, sensitivity)) / 100;
 }
 
-export function directAimDegrees(degrees: number, snap: boolean): number {
+export function directAimDegrees(degrees: number): number {
   if (!Number.isFinite(degrees)) return 0;
-  return snap && Math.abs(degrees) <= 1.2 ? 0 : Math.max(-78, Math.min(78, degrees));
+  return Math.max(-78, Math.min(78, degrees));
 }
