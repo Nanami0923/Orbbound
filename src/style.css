@@ -625,3 +625,59 @@ html.mobile-ui, .mobile-ui body, .mobile-ui #app { width: 100%; height: 100%; mi
 .mobile-ui .game-container { contain: layout paint; box-shadow: none; }
 .mobile-ui .modal-root { backdrop-filter: none; background: rgba(5,9,18,.88); }
 .mobile-ui .mobile-controls { contain: layout style; }
+
+/* 2.6: phrases and touch targets remain readable on narrow screens. */
+.heading-clause, .hero-line { display: block; }
+.modal-card h2 { line-height: 1.25; text-wrap: balance; overflow-wrap: anywhere; padding-right: 44px; }
+.modal-card h3 { margin: 24px 0 4px; font-size: 16px; color: var(--mint); }
+.modal-card p { text-wrap: pretty; line-height: 1.75; }
+.mobile-ui .hero-copy h1 { font-size: clamp(30px, 9vw, 40px); line-height: 1.12; letter-spacing: -.035em; }
+.mobile-ui .hero-description { display: block; margin-top: 12px; font-size: 13px; line-height: 1.7; }
+.mobile-ui .hero-copy { margin-top: 4px; }
+.mobile-ui .home-content { flex-direction: column; }
+.mobile-ui .home-card .hero-orb { opacity: .55; transform: scale(.75); }
+.mobile-ui .home-footer { margin-bottom: clamp(0px, 2dvh, 18px); }
+.mobile-ui .home-actions > button { white-space: normal; text-wrap: balance; }
+.mobile-ui .modal-card { padding: 22px 20px; }
+.mobile-ui .modal-close { min-height: 40px; }
+.mobile-ui .result-card .modal-close { top: 16px; right: 16px; }
+.mobile-ui .result-card h2 { padding-right: 0; margin-top: 6px; }
+.mobile-ui .result-description { font-size: 14px; }
+.mobile-ui .modal-footer { flex-wrap: wrap; }
+.mobile-ui .modal-footer > button { min-width: 0; white-space: normal; }
+.mobile-ui .board-heading { gap: 8px; font-size: 10px; }
+.mobile-ui .board-heading > span:first-child { min-width: 0; }
+.mobile-ui .board-heading > span:last-child { flex-shrink: 0; }
+.setting-row { gap: 14px; }
+.setting-row > div { min-width: 0; }
+.setting-row small { line-height: 1.6; }
+.range-setting { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 12px; }
+.range-setting span strong, .range-setting span small { display: block; }
+.range-setting output { color: var(--mint); font-variant-numeric: tabular-nums; }
+.range-setting input { grid-column: 1 / -1; width: 100%; min-width: 0; height: 38px; margin: 0; accent-color: var(--mint); touch-action: pan-y; }
+.sound-preview-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.sound-preview-actions button { flex: 1 1 110px; padding: 10px; font-size: 12px; }
+.control-preview { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 16px; border: 1px solid var(--line); border-radius: 16px; background: #111a2d; }
+.control-preview label, .control-preview input, .control-preview button { grid-column: 1 / -1; }
+.control-preview label { font-size: 12px; color: var(--muted); }
+.control-preview input { width: 100%; height: 40px; touch-action: none; accent-color: var(--mint); }
+.preview-cannon { height: 68px; display: flex; align-items: end; justify-content: center; }
+.preview-cannon span { width: 22px; height: 54px; display: grid; place-items: start center; border: 2px solid #8096b2; border-top: 6px solid var(--mint); border-radius: 8px; background: #304763; color: white; transform-origin: 50% 85%; }
+.control-preview output { color: var(--mint); font-size: 12px; font-variant-numeric: tabular-nums; }
+.grip-preview { display: grid; grid-template-columns: var(--preview-width, 58px) 1fr; gap: 10px; padding: 10px; border: 1px dashed var(--line); border-radius: 12px; font-size: 12px; text-align: center; }
+.grip-fire { display: grid; place-items: center; background: var(--mint); color: #0d2e32; border-radius: 8px; }
+.grip-sliders { line-height: 2; color: var(--muted); }
+.grip-preview.swapped { grid-template-columns: 1fr var(--preview-width, 58px); }
+.grip-preview.swapped .grip-fire { grid-column: 2; grid-row: 1; }
+.grip-preview.swapped .grip-sliders { grid-column: 1; grid-row: 1; }
+.mobile-ui .mobile-controls { grid-template-columns: var(--fire-width, 96px) minmax(0, 1fr); transform: translateY(var(--control-offset, 0px)); gap: 12px; }
+.controls-swapped.mobile-ui .mobile-controls { grid-template-columns: minmax(0, 1fr) var(--fire-width, 96px); }
+.mobile-ui #mobile-fire:disabled { opacity: .7; background: #304763; color: #c9d7e8; }
+.mobile-ui .steering-control { padding: 4px 10px; font-size: 11px; }
+.mobile-ui .fine-control { font-size: clamp(9px, 2.7vw, 11px); }
+@media (max-height: 740px) {
+  .mobile-ui .home-screen { gap: 10px; padding-top: max(14px, env(safe-area-inset-top)); }
+  .mobile-ui .home-card .hero-orb, .mobile-ui .card-caption { display: none; }
+  .mobile-ui .hero-copy h1 { font-size: 30px; }
+  .mobile-ui .home-footer { margin-bottom: 0; }
+}

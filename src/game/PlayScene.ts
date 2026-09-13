@@ -8,6 +8,7 @@ import { getOrbTheme } from '../content/theme';
 import { DEFAULT_SETTINGS, type Settings } from '../storage/storage';
 import { gameAudio } from './audio';
 import { fineRotationSpeed } from './rotation';
+import { haptic } from './feedback';
 import { recordRound } from '../storage/history';
 import { usesButtonControls } from './input-mode';
 import { heldRotationDegrees } from './rotation';
@@ -33,6 +34,7 @@ export class PlayScene extends Phaser.Scene {
   private aimDirty = false;
   private lastAngleSent = NaN;
   private barrel?: Phaser.GameObjects.Graphics;
+  private recoil = 0;
   private traceCache?: { board: GameState['board']; rowOffset: number; angle: number; trace: ReturnType<typeof traceShot> };
   private getShotTrace(): ReturnType<typeof traceShot> {
     const { board, rowOffset = 0 } = this.gameState;
@@ -102,6 +104,10 @@ export class PlayScene extends Phaser.Scene {
   private transient = new Set<Phaser.GameObjects.GameObject>();
 
   public override update(_time: number, delta: number): void {
+    if (this.recoil > 0) {
+      this.recoil = Math.max(0, this.recoil - delta / 140);
+      this.positionBarrel();
+    }
     if (this.isTimed) this.syncTimedClock();
     if (this.canSteer && this.fineSpeed) this.rotateLauncher(this.fineSpeed < 0 ? -1 : 1, Math.abs(this.fineSpeed) * Math.min(100, Math.max(0, delta)) / 1000);
     if (this.canSteer && this.rotationDirection !== 0) {
@@ -178,6 +184,7 @@ export class PlayScene extends Phaser.Scene {
     this.phase = state.status;
     if (state.status === 'READY') this.phase = 'READY';
     this.angle = 0;
+    this.recoil = 0;
     this.statusText.setText(usesButtonControls() ? '上条定位 · 下条微调 · 侧边发射' : '移动瞄准 · 点击发射');
     this.renderBoard();
     this.renderLauncher();
@@ -195,10 +202,10 @@ export class PlayScene extends Phaser.Scene {
   }
 
   public setSettings(settings: Settings): void {
+    const visualChanged = this.settings.aimAssist !== settings.aimAssist;
     this.settings = { ...settings };
-    this.audio.setVolume(settings.volume);
-    this.renderLauncher();
-    this.drawAim();
+    this.audio.setMix(settings.volume, settings.musicVolume);
+    if (visualChanged) { this.renderLauncher(); this.drawAim(); }
     sendWindowEvent('snood-settings-applied', this.settings);
   }
 
@@ -248,7 +255,7 @@ export class PlayScene extends Phaser.Scene {
   }
   public setFineRotation(value: number): void {
     this.stopRotation();
-    if (this.canSteer) this.fineSpeed = fineRotationSpeed(value);
+    if (this.canSteer) this.fineSpeed = fineRotationSpeed(value, this.settings.sensitivity);
   }
   public startRotation(direction: -1 | 1): void {
     if (!this.canSteer) return;
@@ -381,7 +388,7 @@ export class PlayScene extends Phaser.Scene {
       y: BOARD_GEOMETRY.launcherY,
     });
     this.launcherOrb.setScale(0.93);
-    this.launcherOrb.setRotation?.(this.angle);
+    this.launcherOrb.setRotation?.(0);
 
   }
 
@@ -408,10 +415,16 @@ export class PlayScene extends Phaser.Scene {
     return this.add.container(point.x, point.y, [this.add.image(0, 0, key).setDisplaySize(48,48)]);
   }
 
+  private positionBarrel(): void {
+    if (!this.barrel) return;
+    this.barrel.setRotation(this.angle);
+    this.barrel.setPosition?.(BOARD_GEOMETRY.launcherX - Math.sin(this.angle) * this.recoil * 9,
+      BOARD_GEOMETRY.launcherY + Math.cos(this.angle) * this.recoil * 9);
+  }
   private drawAim(): void {
     this.aimDirty = false;
-    this.barrel?.setRotation(this.angle);
-    this.launcherOrb?.setRotation?.(this.angle);
+    this.positionBarrel();
+    // Keep the ball symbol upright for quick color / pattern recognition.
     if (this.lastAngleSent !== this.angle) {
       this.lastAngleSent = this.angle;
       sendWindowEvent('snood-angle', this.angle * 180 / Math.PI);
@@ -454,9 +467,10 @@ export class PlayScene extends Phaser.Scene {
 
     if (trace.landing) {
       const landingPoint = cellToPoint(trace.landing, this.geometry);
-      this.aimGraphics.lineStyle(2, theme.color, 0.95);
+      this.aimGraphics.lineStyle(2, 0xffffff, 0.85);
       this.aimGraphics.strokeCircle(landingPoint.x, landingPoint.y, BOARD_GEOMETRY.radius);
-      this.aimGraphics.fillStyle(theme.color, 0.18).fillCircle(landingPoint.x, landingPoint.y, BOARD_GEOMETRY.radius);
+      this.aimGraphics.lineStyle(1, theme.color, 0.9);
+      this.aimGraphics.strokeCircle(landingPoint.x, landingPoint.y, BOARD_GEOMETRY.radius - 4);
     }
   }
 
@@ -534,6 +548,9 @@ export class PlayScene extends Phaser.Scene {
     this.drawAim();
     this.pointerActive = false;
     this.audio.blip('shoot');
+    haptic('shoot', this.settings);
+    this.recoil = 1; this.positionBarrel();
+    sendWindowEvent('snood-fired', undefined);
     this.statusText.setText(trace.bounced ? '反弹中 · 等待落点' : '飞行中 · 等待落点');
     this.emitState();
 
@@ -602,6 +619,7 @@ export class PlayScene extends Phaser.Scene {
     if (points > 0) {
       this.showScorePopup(points, dropped.length > 0 ? `消除 ${matched.length} · 悬空 ${dropped.length} 额外 +${events.find(event => event.type === 'drop')?.points ?? 0}` : `同色消除 ${matched.length}`);
       this.audio.blip(dropped.length > 0 ? 'drop' : 'match');
+      haptic('match', this.settings);
     }
     if (events.some((event) => event.type === 'board-drop')) this.audio.blip('danger');
 

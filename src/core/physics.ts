@@ -27,21 +27,21 @@ function doesNotOverlap(occupiedPoints: Point[], candidate: Cell, geometry: Boar
   return occupiedPoints.every((occupied) => distanceSquared(point, occupied) >= minimum * minimum);
 }
 
-function chooseLanding(board: Board, contact: Point, geometry: BoardGeometry, topOnly = false): Cell | null {
-  const occupiedPoints = occupiedCells(board).map(cell => cellToPoint(cell, geometry));
-  const candidates: Array<{ cell: Cell; distance: number }> = [];
+function chooseLanding(board: Board, contact: Point, geometry: BoardGeometry, occupiedPoints: Point[], topOnly = false): Cell | null {
+  let best: Cell | null = null;
+  let bestDistance = Infinity;
   for (let row = 0; row < geometry.maxRows; row += 1) {
     for (let col = 0; col < geometry.columns; col += 1) {
       const cell = { row, col };
       if (topOnly && row !== 0) continue;
       if (!isLegalAttachment(board, cell, geometry.rowOffset) || !doesNotOverlap(occupiedPoints, cell, geometry)) continue;
       const point = cellToPoint(cell, geometry);
-      candidates.push({ cell, distance: distanceSquared(point, contact) });
+      const distance = distanceSquared(point, contact);
+      if (distance < bestDistance) { bestDistance = distance; best = cell; }
     }
   }
 
-  candidates.sort((a, b) => a.distance - b.distance || a.cell.row - b.cell.row || a.cell.col - b.cell.col);
-  return candidates[0]?.cell ?? null;
+  return best;
 }
 
 export function angleToDirection(angle: number): Point {
@@ -57,6 +57,20 @@ export function traceShot(board: Board, angle: number, geometry: BoardGeometry):
   let bounced = false;
   const collisionDistance = geometry.radius * 2 - 0.5;
   const occupiedPoints = occupiedCells(board).map(cell => cellToPoint(cell, geometry));
+  // A projectile can collide only with points in its own or adjacent vertical bands.
+  const bands: Point[][] = [];
+  for (const point of occupiedPoints) (bands[Math.floor(point.y / collisionDistance)] ??= []).push(point);
+  const collides = (next: Point): boolean => {
+    const band = Math.floor(next.y / collisionDistance);
+    for (let index = band - 1; index <= band + 1; index++) {
+      const points = bands[index];
+      if (!points) continue;
+      for (const point of points) {
+        if (Math.abs(next.x - point.x) <= collisionDistance && distanceSquared(next, point) <= collisionDistance * collisionDistance) return true;
+      }
+    }
+    return false;
+  };
 
   for (let step = 0; step < MAX_STEPS; step += 1) {
     const next = { x: position.x + direction.x * STEP, y: position.y + direction.y * STEP };
@@ -79,21 +93,21 @@ export function traceShot(board: Board, angle: number, geometry: BoardGeometry):
     }
 
     if (next.y <= geometry.top + geometry.radius) {
-      const landing = chooseLanding(board, { x: next.x, y: geometry.top + geometry.radius }, geometry, true);
+      const landing = chooseLanding(board, { x: next.x, y: geometry.top + geometry.radius }, geometry, occupiedPoints, true);
       return { points: [...points, { x: next.x, y: geometry.top + geometry.radius }], landing, bounced, reason: landing ? 'top' : 'overflow' };
     }
 
-    const collision = occupiedPoints.some(point => distanceSquared(next, point) <= collisionDistance * collisionDistance);
+    const collision = collides(next);
     points.push({ ...next });
     if (collision) {
-      const landing = chooseLanding(board, next, geometry);
+      const landing = chooseLanding(board, next, geometry, occupiedPoints);
       return { points, landing, bounced, reason: landing ? 'bubble' : 'overflow' };
     }
 
     position = next;
   }
 
-  const fallback = chooseLanding(board, position, geometry);
+  const fallback = chooseLanding(board, position, geometry, occupiedPoints);
   return { points, landing: fallback, bounced, reason: fallback ? 'bubble' : 'overflow' };
 }
 

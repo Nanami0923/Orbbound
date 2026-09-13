@@ -12,6 +12,10 @@ import { clearGame, hasLegacySave, loadGame, loadSettings, saveGame, saveSetting
 import './style.css';
 import { gameAudio } from './game/audio';
 import { bindFireButton } from './game/fire-control';
+import { bindSteeringControl } from './game/steering-control';
+import { directAimDegrees } from './game/rotation';
+import { settingsMarkup, bindSettingsPanel } from './ui/settings-panel';
+import { formatHeadings } from './ui/typography';
 import { loadHistory, recordRound, formatDuration, rankingKey } from './storage/history';
 
 interface SceneStateDetail {
@@ -60,7 +64,7 @@ const sideOrbLabel = document.querySelector('#side-orb-label');
 if (sideOrbLabel && import.meta.env.MODE === 'windows') sideOrbLabel.textContent = '下一球';
 
 let settings: Settings = loadSettings();
-gameAudio.setVolume(settings.volume);
+gameAudio.setMix(settings.volume, settings.musicVolume);
 document.addEventListener('pointerdown', () => gameAudio.unlock());
 document.addEventListener('keydown', () => gameAudio.unlock());
 document.addEventListener('visibilitychange', () => gameAudio.setForeground(!document.hidden));
@@ -70,13 +74,18 @@ let selectedDuration = 300000;
 let game: Phaser.Game | null = null;
 let toastTimer: number | undefined;
 let resumeAfterModal = false;
+let disposeModal: (() => void) | null = null;
 
 function syncMobileLayout(): void {
   document.documentElement.classList.toggle('mobile-ui', usesButtonControls());
   document.documentElement.classList.toggle('controls-swapped', settings.controlsSwapped);
+  document.documentElement.style.setProperty('--fire-width', `${settings.fireSize}px`);
+  // Leave enough room for the system gesture area on short phones.
+  const offset = Math.min(settings.controlOffset, Math.max(0, (window.innerHeight - 640) * 0.24));
+  document.documentElement.style.setProperty('--control-offset', `${offset}px`);
 }
 syncMobileLayout();
-window.addEventListener('resize', syncMobileLayout);
+window.addEventListener('resize', () => { stopRotation(); syncMobileLayout(); });
 
 function getScene(): PlayScene | null {
   if (!game) return null;
@@ -90,6 +99,7 @@ function ensureGame(): void {
 }
 
 function showHome(): void {
+  gameAudio.setScene('menu');
   const scene = getScene();
   scene?.pauseGame();
   getScene()?.persistGame();
@@ -148,6 +158,7 @@ function formatScore(score: number): string {
 }
 
 function updateGameState(detail: SceneStateDetail): void {
+  gameAudio.setScene(!gameScreen?.hidden && modalRoot?.hidden && ['READY', 'FLYING', 'RESOLVING'].includes(detail.phase) ? 'play' : 'menu');
   if (scoreValue && scoreValue.textContent !== formatScore(detail.score)) scoreValue.textContent = formatScore(detail.score);
   const timed = detail.mode === 'timed';
   gameScreen?.classList.toggle('timed-mode', timed);
@@ -199,7 +210,13 @@ function updateGameState(detail: SceneStateDetail): void {
   }
   if (launchButton) launchButton.disabled = detail.phase !== 'READY';
   const mobileFire = document.querySelector<HTMLButtonElement>('#mobile-fire');
-  if (mobileFire) mobileFire.disabled = detail.phase !== 'READY';
+  if (mobileFire) {
+    mobileFire.disabled = detail.phase !== 'READY';
+    const label = detail.phase === 'READY' ? '发射' : detail.phase === 'FLYING' ? '已发射' : detail.phase === 'RESOLVING' ? '装填中' : detail.phase === 'PAUSED' ? '暂停' : '已结束';
+    const text = mobileFire.querySelector('small');
+    if (text && text.textContent !== label) text.textContent = label;
+    mobileFire.setAttribute('aria-label', label);
+  }
   if (['PAUSED', 'WON', 'LOST'].includes(detail.phase)) stopRotation();
   const settleButton = document.querySelector<HTMLButtonElement>('#settle-button');
   if (settleButton) settleButton.disabled = detail.status !== 'READY';
@@ -233,12 +250,16 @@ function showToast(message: string): void {
 
 function openModal(content: string, className = ''): void {
   if (!modalRoot) return;
+  disposeModal?.(); disposeModal = null;
+  stopRotation(); gameAudio.setScene('menu');
   if (modalRoot.hidden) {
     resumeAfterModal = !gameScreen?.hidden && !!getScene() && !getScene()!.isPaused;
     getScene()?.pauseGame();
   }
   modalRoot.innerHTML = `<div class="modal-card ${className}" role="dialog" aria-modal="true">${content}</div>`;
   modalRoot.hidden = false;
+  formatHeadings(modalRoot);
+  game?.loop.sleep();
   modalRoot.querySelectorAll<HTMLElement>('[data-close-modal]').forEach(button => button.addEventListener('click', closeModal));
   modalRoot.onclick = handleModalBackdrop;
 }
@@ -249,10 +270,11 @@ function handleModalBackdrop(event: MouseEvent): void {
 
 function closeModal(): void {
   if (!modalRoot) return;
+  disposeModal?.(); disposeModal = null;
   modalRoot.hidden = true;
   modalRoot.innerHTML = '';
   modalRoot.onclick = null;
-  if (resumeAfterModal && !gameScreen?.hidden) getScene()?.resumeGame();
+  if (resumeAfterModal && !gameScreen?.hidden) { game?.loop.wake(); getScene()?.resumeGame(); }
   resumeAfterModal = false;
 }
 
@@ -262,7 +284,7 @@ function showHistory(top = true, page = 0, board = 'endless'): void {
   const rows = all.slice(page * 20, page * 20 + 20);
   openModal(`<button class="modal-close" data-close-modal type="button">关闭</button>
     <p class="eyebrow">PERSONAL / LOCAL</p><h2 class="history-heading"><button id="history-toggle" type="button" aria-label="${top ? '排行榜，点击切换到历史记录' : '历史记录，点击切换到排行榜'}">${top ? '排行榜' : '历史记录'}<span aria-hidden="true">⇄</span></button></h2>
-    <p>原始分 × 难度系数：简单 ×1、普通 ×1.5、困难 ×2。结算后入榜，重开不入榜；同分时用时短者优先。三个榜单各保留前十。</p>
+    <p>得分 × 难度系数：简单 ×1、普通 ×1.5、困难 ×2。</p><p>结算后入榜，重开不入榜。同分时，用时较短者在前。每个榜单保留前十名。</p>
     <div class="mode-tabs">${[['endless','无尽'],['timed-300000','限时 5 分钟'],['timed-600000','限时 10 分钟']].map(([key,label]) => `<button data-board="${key}" class="quiet-button ${key === board ? 'active' : ''}">${label}</button>`).join('')}</div>
     <div class="history-scroll"><table><thead><tr><th>#</th><th>开始时间</th><th>分数</th><th>难度 / 结果</th><th>用时 / 发射</th></tr></thead><tbody>
     ${rows.map((r,i) => `<tr><td>${page*20+i+1}</td><td>${new Date(r.startedAt).toLocaleString('zh-CN',{hour12:false})}</td><td><strong>${r.score}</strong><small class="score-formula">${r.rawScore ?? r.score} ×${r.multiplier ?? 1}</small></td><td>${getDifficulty(r.difficulty).label} / ${{WON:'清盘',LOST:'触底',ABANDONED:'重开',TIMEOUT:'时间到',SETTLED:'主动结算'}[r.result]}</td><td>${formatDuration(r.elapsedMs)} / ${r.shots}</td></tr>`).join('') || '<tr><td colspan="5">暂无记录，完成一局后会自动保存在这里。</td></tr>'}
@@ -278,48 +300,25 @@ function showTutorial(): void {
     <button class="modal-close" data-close-modal type="button">关闭</button>
     <p class="eyebrow">FIELD GUIDE / 01</p>
     <h2>三步读懂棋盘</h2>
-    <p>两种模式均可独立存档、下次续玩或主动结算；存档本身不入榜。限时模式有 5 / 10 分钟，存档、菜单和后台会冻结进度；发射次数或下落计时任一归零就下降，并同时重置两项倒计时。清盘后补充棋盘继续。结算得分按简单 ×1、普通 ×1.5、困难 ×2 入榜。</p>
+    <p>无尽与限时模式各有独立存档。存档可以续玩，结算后成绩才会入榜。</p><p>限时模式提供 5 / 10 分钟挑战。菜单、存档与后台均暂停计时。次数或下落时间归零时，棋盘下降，两项计数同时重置。限时清盘后继续补充新棋盘。</p>
     <div class="tutorial-steps">
-      <div class="tutorial-step"><b>01</b><div><strong>调整炮口方向</strong><span>${usesButtonControls() ? '上滑条直接定位方向，下滑条以中间为界左右微调，越靠两侧越快，松手停止；侧边按钮发射，设置可调换左右位置。' : '使用鼠标瞄准、点击发射；方向键长按加速，Q / E 平滑快转 30°，空格或发射按钮发射。'}下落期间仍可转向。</span></div></div>
-      <div class="tutorial-step"><b>02</b><div><strong>三个同类连在一起</strong><span>命中后，同色连通区域达到 3 枚就会消失；一次消除 3 / 4 / 5 / 6 枚分别得 30 / 50 / 80 / 120 分，数量越多奖励越高。</span></div></div>
-      <div class="tutorial-step"><b>03</b><div><strong>让悬空小球掉落</strong><span>消除支撑后，不再与顶部相连的小球会掉落，不分颜色，额外奖励：1 / 2 / 3 枚分别加 30 / 70 / 120 分，更多掉落继续递增。顶部显示还可发射几次，归零后棋盘下降一行。</span></div></div>
+      <div class="tutorial-step"><b>01</b><div><strong>调整炮口方向</strong><span>${usesButtonControls() ? '上滑条选择方向，下滑条左右微调。靠近中间更慢，靠近两侧更快；松手立即停止。另一只手可同时按下发射。设置中可调整灵敏度与按键位置。' : '使用鼠标瞄准、点击发射；方向键长按加速，Q / E 平滑快转 30°，空格或发射按钮发射。'}下落期间仍可转向。</span></div></div>
+      <div class="tutorial-step"><b>02</b><div><strong>三个同类连在一起</strong><span>同色相连达到 3 球即可消除。一次消除 3、4、5、6 球，分别得 30、50、80、120 分。</span></div></div>
+      <div class="tutorial-step"><b>03</b><div><strong>让悬空小球掉落</strong><span>切断顶部支撑，悬空球就会掉落。掉落 1、2、3 球，额外加 30、70、120 分；掉落越多，加分越高。</span></div></div>
     </div>
     <div class="modal-footer"><button class="primary-button" data-close-modal type="button"><span>知道了，开始</span><b>↗</b></button></div>
   `);
 }
 
 function showSettings(): void {
-  openModal(`
-    <button class="modal-close" data-close-modal type="button">关闭</button>
-    <p class="eyebrow">PREFERENCES / 02</p>
-    <h2>让节奏适合你</h2>
-    <p>设置会保存在这台设备上。音效采用本地合成，不需要额外下载素材。</p>
-    <div class="setting-row volume-setting"><div><strong>音量 <output id="volume-value">${settings.volume}%</output></strong><small>同时控制音效与循环音乐，0 为静音</small></div><input id="setting-volume" type="range" min="0" max="100" value="${settings.volume}" aria-label="音量" /></div>
-    <div class="setting-row"><div><strong>瞄准辅助</strong><small>显示反弹轨迹与预计落点</small></div><label class="switch"><input id="setting-aim" type="checkbox" ${settings.aimAssist ? 'checked' : ''} /><span></span></label></div>
-    ${usesButtonControls() ? `<div class="setting-row"><div><strong>按键位置</strong><small>调换发射键和双滑条的左右位置</small></div><button id="setting-swap" class="quiet-button">${settings.controlsSwapped ? '发射在右 ⇄' : '发射在左 ⇄'}</button></div>` : ''}
-    <div class="modal-footer"><button class="primary-button" data-close-modal type="button"><span>保存设置</span><b>✓</b></button></div>
-  `);
-  const apply = () => { saveSettings(settings); gameAudio.setVolume(settings.volume); getScene()?.setSettings(settings); syncMobileLayout(); };
-  document.querySelector<HTMLInputElement>('#setting-volume')?.addEventListener('input', event => {
-    settings.volume = Number((event.target as HTMLInputElement).value);
-    document.querySelector('#volume-value')!.textContent = `${settings.volume}%`;
-    apply();
+  openModal(settingsMarkup(settings, usesButtonControls()), 'settings-card');
+  if (!modalRoot) return;
+  disposeModal = bindSettingsPanel(modalRoot, settings, commit => {
+    if (commit) saveSettings(settings);
+    gameAudio.setMix(settings.volume, settings.musicVolume);
+    getScene()?.setSettings(settings);
+    syncMobileLayout();
   });
-  document.querySelector('#setting-swap')?.addEventListener('click', event => {
-    stopRotation(); settings.controlsSwapped = !settings.controlsSwapped; apply();
-    (event.currentTarget as HTMLElement).textContent = settings.controlsSwapped ? '发射在右 ⇄' : '发射在左 ⇄';
-  });
-  const fields: Array<[keyof Settings, string]> = [
-    ['aimAssist', 'setting-aim'],
-  ];
-  for (const [key, id] of fields) {
-    modalRoot?.querySelector<HTMLInputElement>(`#${id}`)?.addEventListener('change', (event) => {
-      settings = { ...settings, [key]: (event.target as HTMLInputElement).checked };
-      saveSettings(settings);
-      getScene()?.setSettings(settings);
-      gameScreen?.classList.toggle('independent-launch', settings.independentLaunch);
-    });
-  }
 }
 
 function showResult(state: GameState): void {
@@ -335,7 +334,7 @@ function showResult(state: GameState): void {
     <div class="result-mark">${won ? '✦' : '!'}</div>
     <p class="eyebrow">${state.endReason ? 'ROUND COMPLETE' : won ? 'BOARD CLEARED' : 'ONE MORE TRY'}</p>
     <h2>${title}</h2>
-    <p class="result-description">${state.endReason ? '<span>每次消除，都已化为成绩。</span><span>下一局，试着突破自己的纪录。</span>' : won ? '<span>整片星群，都已重返夜空。</span><span>下一局，试试更大胆的反弹。</span>' : '<span>留意次数，先消掉上方支撑；</span><span>让成片小球一起掉落。</span>'}</p>
+    <p class="result-description">${state.endReason ? '<span>本局成绩，已为你保存。</span><span>下一局，试着突破自己的纪录。</span>' : won ? '<span>棋盘已清空，这一局很漂亮。</span><span>下一局，试试更大胆的反弹。</span>' : '<span>留意次数，先消掉上方支撑；</span><span>让成片小球一起掉落。</span>'}</p>
     <div class="result-score">${formatScore(weightedScore(state))}</div>
     <div class="result-meta">原始分 ${state.score} × 难度 ${scoreMultiplier(state.difficultyId)}<br>${state.step} 次发射 · 已计入${state.mode === 'timed' ? `限时 ${state.durationMs! / 60000} 分钟` : '无尽'}排行榜</div>
     <div class="modal-footer"><button id="result-retry" class="primary-button" type="button"><span>${won ? '再开一局' : '再试一次'}</span><b>↗</b></button><button id="result-home" class="quiet-button" type="button">返回首页</button></div>
@@ -354,9 +353,9 @@ function showModeSetup(mode: GameMode): void {
   selectedMode = mode;
   openModal(`<button class="modal-close" data-close-modal>关闭</button><p class="eyebrow">${mode === 'timed' ? 'RACE THE CLOCK' : 'FIND YOUR RHYTHM'}</p>
     <h2>${mode === 'timed' ? '限时模式' : '无尽模式'}</h2>
-    <p>${mode === 'timed' ? '选择 5 或 10 分钟。次数或时间先到就下降，两项同时重置。可独立存档退出，读取后继续计时，仅结算成绩入榜。新开限时局会替换限时存档。' : '按自己的节奏消除。可存档退出、跨次续玩，也可随时结算计入排行榜。新开无尽局会替换现有存档。'}</p>
+    <p>${mode === 'timed' ? '选择 5 或 10 分钟，争取更高得分。</p><p>次数或下落时间归零，棋盘就会下降。可随时存档续玩；新开本局会替换限时存档。' : '按自己的节奏，清空棋盘。</p><p>可随时存档续玩，或主动结算入榜。新开本局会替换无尽存档。'}</p>
     <div class="mode-tabs">${['easy','normal','hard'].map(id => `<button class="quiet-button ${id === selectedDifficulty ? 'active' : ''}" data-setup-difficulty="${id}">${getDifficulty(id).label.split(' · ')[0]} ×${scoreMultiplier(id)}</button>`).join('')}</div>
-    ${mode === 'timed' ? `<div class="mode-tabs"><button data-duration="300000" class="quiet-button ${selectedDuration === 300000 ? 'active' : ''}">5 分钟</button><button data-duration="600000" class="quiet-button ${selectedDuration === 600000 ? 'active' : ''}">10 分钟</button></div><p class="mode-note">下落间隔随进度缩短：简单 36→18 秒，普通 30→15 秒，困难 24→12 秒。两条倒计时任一归零就下降。</p>` : ''}
+    ${mode === 'timed' ? `<div class="mode-tabs"><button data-duration="300000" class="quiet-button ${selectedDuration === 300000 ? 'active' : ''}">5 分钟</button><button data-duration="600000" class="quiet-button ${selectedDuration === 600000 ? 'active' : ''}">10 分钟</button></div><p class="mode-note">下落会逐渐加快：简单 36→18 秒，普通 30→15 秒，困难 24→12 秒。</p>` : ''}
     ${loadGame(mode) ? '<button id="mode-continue" class="quiet-button mode-continue">读取此模式存档</button>' : ''}
     <div class="modal-footer"><button id="mode-begin" class="primary-button">开始挑战 ↗</button><button id="mode-ranking" class="quiet-button">查看排行榜</button></div>`);
   document.querySelector('#mode-continue')?.addEventListener('click', () => { closeModal(); continueSaved(mode); });
@@ -417,8 +416,8 @@ document.querySelector('#settle-button')?.addEventListener('click', () => {
 });
 document.querySelector('#mobile-menu-button')?.addEventListener('click', () => {
   openModal(`<button class="modal-close" data-close-modal type="button">继续游戏</button><h2>游戏菜单</h2>
-    <p>本局已临时存档，进度已冻结。可继续或结算计分；存档本身不入榜。</p>
-    <div class="mobile-menu-actions"><button id="menu-settings" class="quiet-button">设置</button><button id="menu-history" class="quiet-button">历史与排行</button><button id="menu-settle" class="quiet-button">结束本局并计入排行榜</button><button id="menu-restart" class="quiet-button">放弃成绩并重开</button><button id="menu-home" class="quiet-button">存档并返回首页</button></div>`);
+    <p>本局已暂停并存档。</p><p>继续游玩，或结算成绩后入榜。</p>
+    <div class="mobile-menu-actions"><button id="menu-settings" class="quiet-button">设置</button><button id="menu-history" class="quiet-button">历史与排行</button><button id="menu-settle" class="quiet-button">结算并入榜</button><button id="menu-restart" class="quiet-button">放弃本局，重新开始</button><button id="menu-home" class="quiet-button">存档并返回首页</button></div>`);
   document.querySelector('#menu-settle')?.addEventListener('click', () => { closeModal(); getScene()?.settleGame(); });
   document.querySelector('#menu-settings')?.addEventListener('click', showSettings);
   document.querySelector('#menu-history')?.addEventListener('click', () => showHistory());
@@ -428,32 +427,16 @@ document.querySelector('#mobile-menu-button')?.addEventListener('click', () => {
 
 const aimSlider = document.querySelector<HTMLInputElement>('#aim-slider')!;
 const fineSlider = document.querySelector<HTMLInputElement>('#fine-slider')!;
-function stopRotation(): void { getScene()?.stopRotation(); fineSlider.value = '0'; }
-function bindSteering(slider: HTMLInputElement, fine: boolean): void {
-  let pointer: number | null = null;
-  let rect: DOMRect;
-  const update = (event: PointerEvent) => {
-    const value = Math.max(0, Math.min(1, (event.clientX - rect.left - 12) / Math.max(1, rect.width - 24)));
-    slider.value = String((value * 2 - 1) * (fine ? 100 : 78));
-    if (fine) getScene()?.setFineRotation(Number(slider.value));
-    else getScene()?.setAimDegrees(Number(slider.value));
-  };
-  slider.addEventListener('pointerdown', event => {
-    if (pointer !== null || event.button !== 0) return;
-    event.preventDefault(); stopRotation(); pointer = event.pointerId;
-    rect = slider.getBoundingClientRect();
-    slider.setPointerCapture(pointer); update(event);
-  });
-  slider.addEventListener('pointermove', event => { if (pointer === event.pointerId) { event.preventDefault(); update(event); } });
-  for (const name of ['pointerup', 'pointercancel', 'lostpointercapture']) slider.addEventListener(name, event => {
-    if ((event as PointerEvent).pointerId !== pointer) return;
-    pointer = null; if (fine) stopRotation();
-  });
-  slider.addEventListener('input', () => fine ? getScene()?.setFineRotation(Number(slider.value)) : getScene()?.setAimDegrees(Number(slider.value)));
-  slider.addEventListener('keyup', () => { if (fine) stopRotation(); });
-  slider.addEventListener('blur', () => { if (pointer === null) stopRotation(); });
+function stopRotation(): void {
+  aimControl?.reset(); fineControl?.reset(); getScene()?.stopRotation();
 }
-bindSteering(aimSlider, false); bindSteering(fineSlider, true);
+let aimControl: ReturnType<typeof bindSteeringControl> | undefined;
+let fineControl: ReturnType<typeof bindSteeringControl> | undefined;
+const controlActive = () => !gameScreen?.hidden && !!modalRoot?.hidden;
+aimControl = bindSteeringControl(aimSlider, { fine: false, active: controlActive, onStart: stopRotation,
+  onValue: value => getScene()?.setAimDegrees(directAimDegrees(value, settings.centerSnap)) });
+fineControl = bindSteeringControl(fineSlider, { fine: true, active: controlActive, onStart: stopRotation,
+  onValue: value => getScene()?.setFineRotation(value) });
 const aimAngle = document.querySelector('#aim-angle')!;
 window.addEventListener('snood-angle', event => {
   const degrees = (event as CustomEvent<number>).detail;
@@ -463,6 +446,13 @@ window.addEventListener('snood-angle', event => {
 });
 window.addEventListener('blur', stopRotation);
 document.addEventListener('visibilitychange', stopRotation);
+window.addEventListener('snood-fired', () => {
+  document.querySelector('#mobile-fire')?.animate([
+    { transform: 'scale(1)', filter: 'brightness(1)' },
+    { transform: 'scale(.95)', filter: 'brightness(1.25)' },
+    { transform: 'scale(1)', filter: 'brightness(1)' },
+  ], { duration: 160 });
+});
 document.querySelector<HTMLButtonElement>('#restart-button')?.addEventListener('click', () => {
   getScene()?.restartGame();
   showToast('新回合已开始');
@@ -494,6 +484,7 @@ document.addEventListener('visibilitychange', () => {
 
 if (Capacitor.isNativePlatform()) {
   void App.addListener('appStateChange', ({ isActive }) => {
+    stopRotation();
     gameAudio.setForeground(isActive);
     if (!isActive && !gameScreen?.hidden) showHome();
   });
@@ -516,6 +507,7 @@ window.addEventListener('keydown', (event) => {
   }
 });
 
+formatHeadings(document);
 updateHomeState();
 window.addEventListener('snood-save-home', saveAndHome);
 document.querySelectorAll('[data-history]').forEach(button => button.addEventListener('click', () => showHistory()));

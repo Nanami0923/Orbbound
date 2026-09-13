@@ -8,6 +8,13 @@ const HIGH_SCORE_KEY = 'orbbound-high-score-v1';
 
 export interface Settings {
   volume: number;
+  musicVolume: number;
+  sensitivity: number;
+  centerSnap: boolean;
+  hapticShoot: boolean;
+  hapticMatch: boolean;
+  controlOffset: number;
+  fireSize: number;
   aimAssist: boolean;
   controlsSwapped: boolean;
   independentLaunch: boolean;
@@ -15,6 +22,13 @@ export interface Settings {
 
 export const DEFAULT_SETTINGS: Settings = {
   volume: 50,
+  musicVolume: 50,
+  sensitivity: 100,
+  centerSnap: true,
+  hapticShoot: false,
+  hapticMatch: false,
+  controlOffset: 0,
+  fireSize: 96,
   aimAssist: true,
   controlsSwapped: false,
   independentLaunch: false,
@@ -30,8 +44,17 @@ export function loadSettings(): Settings {
     const value: unknown = JSON.parse(window.localStorage.getItem(SETTINGS_KEY) ?? 'null');
     if (!value || typeof value !== 'object') return { ...DEFAULT_SETTINGS };
     const record = value as Partial<Settings> & { sound?: boolean };
+    const number = (value: unknown, fallback: number, min: number, max: number) => typeof value === 'number' && Number.isFinite(value) ? Math.max(min, Math.min(max, value)) : fallback;
+    const oldVolume = number(record.volume, record.sound === false ? 0 : 50, 0, 100);
     return {
-      volume: typeof record.volume === 'number' && Number.isFinite(record.volume) ? Math.max(0, Math.min(100, record.volume)) : record.sound === false ? 0 : 50,
+      musicVolume: number(record.musicVolume, oldVolume, 0, 100),
+      sensitivity: number(record.sensitivity, 100, 50, 150),
+      centerSnap: record.centerSnap !== false,
+      hapticShoot: record.hapticShoot === true,
+      hapticMatch: record.hapticMatch === true,
+      controlOffset: number(record.controlOffset, 0, 0, 48),
+      fireSize: number(record.fireSize, 96, 76, 120),
+      volume: oldVolume,
       aimAssist: record.aimAssist !== false,
       controlsSwapped: record.controlsSwapped === true,
       independentLaunch: false,

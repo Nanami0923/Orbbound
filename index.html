@@ -12,14 +12,14 @@
         <div class="home-topline">
           <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
           <span class="brand-name">ORBBOUND</span>
-          <span class="version-pill">2.3 / LOCAL</span>
+          <span class="version-pill">2.6.0 / ANDROID</span>
         </div>
 
         <div class="home-content">
           <div class="hero-copy">
             <p class="eyebrow">A SMALL STRATEGY PUZZLE</p>
-            <h1>瞄准。<br /><em>消除。</em>掉落。</h1>
-            <p class="hero-description">发射小球，凑齐三个相邻同色球即可消除。消掉支撑，让悬空小球一起掉落；在棋盘触底前清空所有小球。</p>
+            <h1><span class="hero-line">瞄准，</span><span class="hero-line"><em>让它掉落。</em></span></h1>
+            <p class="hero-description">同色相连，轻松消除。<br>切断支撑，让悬空球一起掉落。</p>
             <div class="hero-notes" aria-label="游戏特色">
               <span><b>01</b> 瞄准反弹</span>
               <span><b>02</b> 三枚消除</span>
@@ -70,7 +70,7 @@
         </div>
         <header class="game-header">
           <div class="header-brand"><span class="brand-mark small" aria-hidden="true"><i></i><i></i><i></i></span><span>ORBBOUND</span></div>
-          <div class="header-stat score-stat"><small>SCORE</small><strong id="score-value">00000</strong></div>
+          <div class="header-stat score-stat"><small>得分</small><strong id="score-value">00000</strong></div>
           <div class="header-stat danger-stat">
             <small id="descent-caption">距离棋盘下降</small>
             <div class="countdown-label"><small id="shot-countdown-label" hidden>次数</small><strong id="danger-value">再发射 10 次</strong></div>
@@ -94,12 +94,12 @@
 
           <aside class="game-sidebar">
             <div class="sidebar-card next-card">
-              <div class="card-kicker">NEXT ORB</div>
+              <div class="card-kicker">下一球</div>
               <div class="next-preview"><div id="next-orb-preview" class="dom-orb"></div></div>
               <p>下一枚已经准备好</p>
             </div>
             <div class="sidebar-card legend-card">
-              <div class="card-kicker">FIELD NOTES</div>
+              <div class="card-kicker">游玩提示</div>
               <div class="legend-row"><span class="legend-icon">3+</span><div><strong>同色消除</strong><small>三个相邻同色球即可消除</small></div></div>
               <div class="legend-row"><span class="legend-icon slash">↘</span><div><strong>悬空掉落</strong><small>失去顶部支撑，不分颜色掉落</small></div></div>
               <div class="legend-row"><span class="legend-icon warn">!</span><div><strong>留意剩余发射次数</strong><small>倒计时归零，棋盘下降一行</small></div></div>
@@ -117,7 +117,7 @@
           <button id="mobile-fire" class="primary-button" type="button"><span aria-hidden="true">↑</span><small>发射</small></button>
           <div class="steering-sliders">
             <label class="steering-control">炮口方向 <output id="aim-angle">0°</output><input id="aim-slider" type="range" min="-78" max="78" step="0.1" value="0" aria-label="炮口方向" /></label>
-            <label class="steering-control fine-control">左微调 · 松手停止 · 右微调<input id="fine-slider" type="range" min="-100" max="100" value="0" aria-label="左右微调，越靠两侧越快" /></label>
+            <label class="steering-control fine-control">左微调 · 松手停 · 右微调<input id="fine-slider" type="range" min="-100" max="100" value="0" aria-label="左右微调，越靠两侧越快" /></label>
           </div>
         </div>
       </section>

@@ -1,12 +1,12 @@
 # Orbbound
 
-本地目录已按源码、文档、平台交付整理。当前 Android 为 **2.5.0**，Windows 为 **1.6.0**，两个平台独立编号。
+本地目录已按源码、文档、平台交付整理。当前 Android 为 **2.6.0**，Windows 为 **1.6.0**，两个平台独立编号。
 
 ## 交付位置
 
 | 平台 | 最新版本 | 交付目录 | 主要文件 |
 | --- | --- | --- | --- |
-| Android | 2.5.0 | [Android 交付目录](最终交付/Android/Orbbound-2.5.0/) | APK、SHA-256、更新说明 |
+| Android | 2.6.0 | [Android 交付目录](最终交付/Android/Orbbound-2.6.0/) | APK、SHA-256、更新说明 |
 | Windows | 1.6.0 | [Windows 交付目录](最终交付/Windows/Orbbound-Windows-1.6.0/) | 单文件便携 EXE、7z、SHA-256、完整 win-unpacked 运行目录 |
 
 所有旧版本保留在对应平台目录内。Windows 1.0.0 的两个不同本地构建按原来源分别保存，不将其视作同一文件。
@@ -40,4 +40,4 @@ Windows 1.6.0 同步递增计分、悬空奖励、音量与循环音乐、旋转
 
 单 EXE 为自解压便携程序，无需安装或联网；运行时使用临时目录，退出后清理。存档仍在 `%APPDATA%/orbbound`，不会因临时目录清理而删除。
 
-Android 2.5.0：[APK 下载](https://github.com/Nanami0923/Orbbound/releases/download/v2.5.0/Orbbound-2.5.0-Android.apk) · [更新说明](docs/releases/Android/android-2.5.0-notes.md)。
+Android 2.6.0：[APK 下载](https://github.com/Nanami0923/Orbbound/releases/download/v2.6.0/Orbbound-2.6.0-Android.apk) · [更新说明](docs/releases/Android/android-2.6.0-notes.md)。

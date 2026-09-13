@@ -1,5 +1,5 @@
 import {afterEach,expect,it,vi} from 'vitest';
-vi.mock('@capacitor/core',()=>({Capacitor:{isNativePlatform:()=>true}}));
+vi.mock('@capacitor/core',()=>({Capacitor:{isNativePlatform:()=>true},registerPlugin:()=>({pulse:vi.fn()})}));
 import {usesButtonControls} from '../src/game/input-mode';
 import {PlayScene} from '../src/game/PlayScene';
 vi.mock('phaser',()=>({default:{Scene:class {},AUTO:0,Scale:{FIT:0,CENTER_BOTH:0}}}));

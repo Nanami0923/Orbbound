@@ -25,10 +25,10 @@ it('keeps fine steering held through a second-finger shot and blocks shots durin
  scene.launchFromButton();scene.update(0,100);scene.launchFromButton();
  expect(launch).toHaveBeenCalledOnce();expect((scene as unknown as {angle:number}).angle).toBeCloseTo(6*Math.PI/180);
 });
-it('rotates the barrel and loaded icon even without trajectory assistance',()=>{
+it('rotates the barrel while leaving the loaded symbol upright',()=>{
  const scene=new PlayScene();const barrel={setRotation:vi.fn()},orb={setRotation:vi.fn()};
  Object.assign(scene,{barrel,launcherOrb:orb,angle:.7,settings:{aimAssist:false},input:{setDefaultCursor:vi.fn()},aimGraphics:{clear:vi.fn()}});
- (scene as unknown as {drawAim():void}).drawAim();expect(barrel.setRotation).toHaveBeenCalledWith(.7);expect(orb.setRotation).toHaveBeenCalledWith(.7);
+ (scene as unknown as {drawAim():void}).drawAim();expect(barrel.setRotation).toHaveBeenCalledWith(.7);expect(orb.setRotation).not.toHaveBeenCalled();
 });
 
 it('starts the projectile along the rotating barrel axis',()=>{
