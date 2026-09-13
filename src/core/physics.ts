@@ -49,8 +49,10 @@ export function angleToDirection(angle: number): Point {
 }
 
 export function traceShot(board: Board, angle: number, geometry: BoardGeometry): ShotTrace {
-  let position: Point = { x: geometry.launcherX, y: geometry.launcherY - geometry.radius - 3 };
   let direction = angleToDirection(angle);
+  // Keep the trajectory on the rotating barrel axis at every aiming angle.
+  const muzzleOffset = geometry.radius + 3;
+  let position: Point = { x: geometry.launcherX + direction.x * muzzleOffset, y: geometry.launcherY + direction.y * muzzleOffset };
   const points: Point[] = [{ ...position }];
   let bounced = false;
   const collisionDistance = geometry.radius * 2 - 0.5;

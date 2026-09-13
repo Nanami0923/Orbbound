@@ -13,13 +13,17 @@ it('starts a single music scheduler, controls master volume, and suspends in bac
  vi.useFakeTimers();
  const param=()=>({value:0,setTargetAtTime:vi.fn(),setValueAtTime:vi.fn(),linearRampToValueAtTime:vi.fn(),exponentialRampToValueAtTime:vi.fn()});
  const gains:Array<{gain:ReturnType<typeof param>}> = [];
- const ctx={currentTime:0,state:'running',destination:{},
- createGain:()=>{const node={gain:param(),connect:vi.fn(),disconnect:vi.fn()};gains.push(node);return node;},
+ const compressor={threshold:param(),knee:param(),ratio:param(),attack:param(),release:param(),connect:vi.fn()};
+ const ctx={currentTime:0,state:'running',destination:{},createDynamicsCompressor:()=>compressor,
+ createGain:()=>{const node={gain:param(),connect:vi.fn(function(this:unknown){return this;}),disconnect:vi.fn()};gains.push(node);return node;},
  createOscillator:()=>({type:'sine',frequency:param(),connect:vi.fn(function(this:unknown){return this;}),disconnect:vi.fn(),start:vi.fn(),stop:vi.fn()}),
  resume:vi.fn(()=>Promise.resolve()),suspend:vi.fn(()=>Promise.resolve())};
  vi.stubGlobal('window',{AudioContext:class {constructor(){return ctx;}}});
  const audio=new GameAudio(DEFAULT_SETTINGS);audio.unlock();audio.unlock();
- expect(vi.getTimerCount()).toBe(1);expect(gains[0].gain.value).toBe(.5);
+ expect(vi.getTimerCount()).toBe(1);expect(gains[0].gain.value).toBe(.8);
+ expect(compressor.ratio.value).toBe(12);
+ audio.blip('shoot'); expect(gains[2].gain.linearRampToValueAtTime).toHaveBeenCalledWith(.55,.008);
+ audio.setVolume(100);expect(gains[0].gain.setTargetAtTime).toHaveBeenCalledWith(1.6,0,.02);
  audio.setVolume(0);expect(gains[0].gain.setTargetAtTime).toHaveBeenCalledWith(0,0,.02);
  audio.setForeground(false);expect(vi.getTimerCount()).toBe(0);expect(ctx.suspend).toHaveBeenCalledOnce();
  audio.setForeground(true);expect(vi.getTimerCount()).toBe(1);audio.setForeground(false);

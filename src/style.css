@@ -620,3 +620,8 @@ html.mobile-ui, .mobile-ui body, .mobile-ui #app { width: 100%; height: 100%; mi
 .controls-swapped #mobile-fire { grid-column: 2; grid-row: 1; }
 .volume-setting { flex-wrap: wrap; gap: 12px; }
 .volume-setting input { width: 100%; height: 36px; accent-color: var(--mint); }
+
+/* Isolate the frequently changing play surface from the rest of the page. */
+.mobile-ui .game-container { contain: layout paint; box-shadow: none; }
+.mobile-ui .modal-root { backdrop-filter: none; background: rgba(5,9,18,.88); }
+.mobile-ui .mobile-controls { contain: layout style; }

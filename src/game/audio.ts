@@ -15,7 +15,7 @@ export class GameAudio {
 
   public setVolume(volume: number): void {
     this.volume = Number.isFinite(volume) ? Math.max(0, Math.min(100, volume)) : 50;
-    if (this.master && this.context) this.master.gain.setTargetAtTime(this.volume / 100, this.context.currentTime, 0.02);
+    if (this.master && this.context) this.master.gain.setTargetAtTime(this.volume / 100 * 1.6, this.context.currentTime, 0.02);
   }
 
   public unlock(): void {
@@ -26,8 +26,14 @@ export class GameAudio {
       if (!this.context) {
         this.context = new Context();
         this.master = this.context.createGain();
-        this.master.gain.value = this.volume / 100;
-        this.master.connect(this.context.destination);
+        this.master.gain.value = this.volume / 100 * 1.6;
+        const compressor = this.context.createDynamicsCompressor();
+        compressor.threshold.value = -6;
+        compressor.knee.value = 6;
+        compressor.ratio.value = 12;
+        compressor.attack.value = 0.003;
+        compressor.release.value = 0.12;
+        this.master.connect(compressor).connect(this.context.destination);
       }
       if (this.context.state === 'suspended') void this.context.resume().catch(() => {});
       if (!this.timer) {
@@ -54,10 +60,11 @@ export class GameAudio {
     if (this.nextNote < ctx.currentTime) this.nextNote = ctx.currentTime + 0.02;
     while (this.nextNote < ctx.currentTime + 0.2) {
       const osc = ctx.createOscillator(), gain = ctx.createGain();
-      osc.type = 'sine';
+      osc.type = 'triangle';
       osc.frequency.value = 440 * 2 ** ((melody[this.note++ % melody.length] - 69) / 12);
       gain.gain.setValueAtTime(0, this.nextNote);
-      gain.gain.linearRampToValueAtTime(0.035, this.nextNote + 0.025);
+      gain.gain.linearRampToValueAtTime(0.16, this.nextNote + 0.025);
+      gain.gain.linearRampToValueAtTime(0.10, this.nextNote + 0.22);
       gain.gain.exponentialRampToValueAtTime(0.0001, this.nextNote + 0.48);
       osc.connect(gain).connect(this.master);
       osc.onended = () => { osc.disconnect(); gain.disconnect(); };
@@ -89,7 +96,8 @@ export class GameAudio {
       oscillator.frequency.setValueAtTime(preset.frequency, now);
       oscillator.frequency.exponentialRampToValueAtTime(preset.frequency * (kind === 'lose' ? 0.52 : 1.45), now + preset.duration);
       gain.gain.setValueAtTime(0.0001, now);
-      gain.gain.exponentialRampToValueAtTime(0.24, now + 0.01);
+      gain.gain.linearRampToValueAtTime(0.55, now + 0.008);
+      gain.gain.setValueAtTime(0.40, now + preset.duration * 0.6);
       gain.gain.exponentialRampToValueAtTime(0.0001, now + preset.duration);
       oscillator.connect(gain).connect(this.master);
       oscillator.onended = () => { oscillator.disconnect(); gain.disconnect(); };

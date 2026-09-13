@@ -11,6 +11,7 @@ import { getOrbTheme } from './content/theme';
 import { clearGame, hasLegacySave, loadGame, loadSettings, saveGame, saveSettings, setHighScore, type Settings } from './storage/storage';
 import './style.css';
 import { gameAudio } from './game/audio';
+import { bindFireButton } from './game/fire-control';
 import { loadHistory, recordRound, formatDuration, rankingKey } from './storage/history';
 
 interface SceneStateDetail {
@@ -407,7 +408,7 @@ function saveAndHome(): void {
 }
 document.querySelector<HTMLButtonElement>('#pause-button')?.addEventListener('click', saveAndHome);
 launchButton?.addEventListener('click', () => getScene()?.launchFromButton());
-document.querySelector('#mobile-fire')?.addEventListener('click', () => getScene()?.launchFromButton());
+bindFireButton(document.querySelector<HTMLButtonElement>('#mobile-fire')!, () => { gameAudio.unlock(); getScene()?.launchFromButton(); });
 document.querySelector('#mobile-pause-button')?.addEventListener('click', saveAndHome);
 document.querySelector('#mobile-help-button')?.addEventListener('click', showTutorial);
 document.querySelector('#settle-button')?.addEventListener('click', () => {
@@ -430,8 +431,8 @@ const fineSlider = document.querySelector<HTMLInputElement>('#fine-slider')!;
 function stopRotation(): void { getScene()?.stopRotation(); fineSlider.value = '0'; }
 function bindSteering(slider: HTMLInputElement, fine: boolean): void {
   let pointer: number | null = null;
+  let rect: DOMRect;
   const update = (event: PointerEvent) => {
-    const rect = slider.getBoundingClientRect();
     const value = Math.max(0, Math.min(1, (event.clientX - rect.left - 12) / Math.max(1, rect.width - 24)));
     slider.value = String((value * 2 - 1) * (fine ? 100 : 78));
     if (fine) getScene()?.setFineRotation(Number(slider.value));
@@ -440,6 +441,7 @@ function bindSteering(slider: HTMLInputElement, fine: boolean): void {
   slider.addEventListener('pointerdown', event => {
     if (pointer !== null || event.button !== 0) return;
     event.preventDefault(); stopRotation(); pointer = event.pointerId;
+    rect = slider.getBoundingClientRect();
     slider.setPointerCapture(pointer); update(event);
   });
   slider.addEventListener('pointermove', event => { if (pointer === event.pointerId) { event.preventDefault(); update(event); } });
@@ -449,13 +451,15 @@ function bindSteering(slider: HTMLInputElement, fine: boolean): void {
   });
   slider.addEventListener('input', () => fine ? getScene()?.setFineRotation(Number(slider.value)) : getScene()?.setAimDegrees(Number(slider.value)));
   slider.addEventListener('keyup', () => { if (fine) stopRotation(); });
-  slider.addEventListener('blur', stopRotation);
+  slider.addEventListener('blur', () => { if (pointer === null) stopRotation(); });
 }
 bindSteering(aimSlider, false); bindSteering(fineSlider, true);
+const aimAngle = document.querySelector('#aim-angle')!;
 window.addEventListener('snood-angle', event => {
   const degrees = (event as CustomEvent<number>).detail;
-  aimSlider.value = String(degrees);
-  document.querySelector('#aim-angle')!.textContent = `${degrees.toFixed(1)}°`;
+  const value = degrees.toFixed(1);
+  if (aimSlider.value !== value) aimSlider.value = value;
+  if (aimAngle.textContent !== `${value}°`) aimAngle.textContent = `${value}°`;
 });
 window.addEventListener('blur', stopRotation);
 document.addEventListener('visibilitychange', stopRotation);

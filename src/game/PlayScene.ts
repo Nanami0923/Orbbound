@@ -30,6 +30,18 @@ export class PlayScene extends Phaser.Scene {
   private settings: Settings = { ...DEFAULT_SETTINGS };
   private audio = gameAudio;
   private angle = 0;
+  private aimDirty = false;
+  private lastAngleSent = NaN;
+  private barrel?: Phaser.GameObjects.Graphics;
+  private traceCache?: { board: GameState['board']; rowOffset: number; angle: number; trace: ReturnType<typeof traceShot> };
+  private getShotTrace(): ReturnType<typeof traceShot> {
+    const { board, rowOffset = 0 } = this.gameState;
+    const cache = this.traceCache;
+    if (cache && cache.board === board && cache.rowOffset === rowOffset && cache.angle === this.angle) return cache.trace;
+    const trace = traceShot(board, this.angle, this.geometry);
+    this.traceCache = { board, rowOffset, angle: this.angle, trace };
+    return trace;
+  }
   private pointerActive = false;
   private rotationDirection: -1 | 0 | 1 = 0;
   private rotationHeldSeconds = 0;
@@ -104,8 +116,9 @@ export class PlayScene extends Phaser.Scene {
       const t = Math.min(1, turn.elapsed / 260);
       this.angle = turn.from + (turn.to - turn.from) * t * t * (3 - 2 * t);
       if (t === 1) this.quickTurn = null;
-      this.drawAim();
+      this.aimDirty = true;
     }
+    if (this.aimDirty) { this.aimDirty = false; this.drawAim(); }
     if (['READY', 'FLYING', 'RESOLVING'].includes(this.phase)) {
       if (!this.isTimed) this.gameState.elapsedMs = (this.gameState.elapsedMs ?? 0) + delta;
       this.clockTick += delta;
@@ -125,6 +138,7 @@ export class PlayScene extends Phaser.Scene {
     this.boardGroup = this.add.container(0, 0);
     this.aimGraphics = this.add.graphics();
     this.launcherBase = this.add.graphics();
+    this.barrel = this.add.graphics().setPosition(BOARD_GEOMETRY.launcherX, BOARD_GEOMETRY.launcherY);
     this.statusText = this.add.text(0, 0, '', {
       resolution: 2,
       color: '#98a1b8',
@@ -229,8 +243,8 @@ export class PlayScene extends Phaser.Scene {
   public setAimDegrees(degrees: number): void {
     if (!this.canSteer || !Number.isFinite(degrees)) return;
     this.stopRotation();
-    this.angle = Math.max(-78, Math.min(78, degrees)) * Math.PI / 180;
-    this.drawAim();
+    const angle = Math.max(-78, Math.min(78, degrees)) * Math.PI / 180;
+    if (this.angle !== angle) { this.angle = angle; this.aimDirty = true; }
   }
   public setFineRotation(value: number): void {
     this.stopRotation();
@@ -257,7 +271,7 @@ export class PlayScene extends Phaser.Scene {
     const angle = Math.max(-limit, Math.min(limit, this.angle + direction * degrees * Math.PI / 180));
     if (angle === this.angle) return;
     this.angle = angle;
-    this.drawAim();
+    this.aimDirty = true;
   }
 
   public quickRotate(direction: -1 | 1): void {
@@ -343,7 +357,16 @@ export class PlayScene extends Phaser.Scene {
     this.launcherBase.clear();
     this.nextOrb = this.createOrb(import.meta.env.MODE === 'windows' ? this.gameState.currentColor : this.gameState.nextColor, { x: 478, y: 698 });
     this.nextOrb.setScale(1.35);
-    if (!this.settings.aimAssist) return;
+    const theme = getOrbTheme(this.gameState.currentColor);
+    if (this.barrel) {
+      this.barrel.clear();
+      this.barrel.fillStyle(0x080e1a, 1).fillRoundedRect(-17, -62, 34, 68, 10);
+      this.barrel.lineStyle(2, 0x7d91ad, 1).strokeRoundedRect(-17, -62, 34, 68, 10);
+      this.barrel.fillStyle(0x304763, 1).fillRoundedRect(-12, -57, 24, 51, 7);
+      this.barrel.fillStyle(theme.color, 1).fillRoundedRect(-11, -60, 22, 9, 3);
+      this.barrel.fillStyle(0xf5f2eb, 0.8).fillTriangle(-5, -36, 5, -36, 0, -44);
+      this.barrel.setRotation(this.angle);
+    }
     this.launcherBase.fillStyle(0x0b1120, 0.95);
     this.launcherBase.fillCircle(BOARD_GEOMETRY.launcherX, BOARD_GEOMETRY.launcherY + 3, 42);
     this.launcherBase.lineStyle(2, UI_COLORS.line, 0.9);
@@ -358,6 +381,7 @@ export class PlayScene extends Phaser.Scene {
       y: BOARD_GEOMETRY.launcherY,
     });
     this.launcherOrb.setScale(0.93);
+    this.launcherOrb.setRotation?.(this.angle);
 
   }
 
@@ -385,7 +409,13 @@ export class PlayScene extends Phaser.Scene {
   }
 
   private drawAim(): void {
-    sendWindowEvent('snood-angle', this.angle * 180 / Math.PI);
+    this.aimDirty = false;
+    this.barrel?.setRotation(this.angle);
+    this.launcherOrb?.setRotation?.(this.angle);
+    if (this.lastAngleSent !== this.angle) {
+      this.lastAngleSent = this.angle;
+      sendWindowEvent('snood-angle', this.angle * 180 / Math.PI);
+    }
     this.aimGraphics.clear();
     // Keep the cursor hidden for the entire shot, including flight and resolution.
     const playing = this.phase === 'READY' || this.phase === 'FLYING' || this.phase === 'RESOLVING';
@@ -393,13 +423,14 @@ export class PlayScene extends Phaser.Scene {
     if (!playing) return;
     // During board animation show direction only; trace the settled board when ready.
     if (!this.settings.aimAssist || this.phase !== 'READY') {
+      if (this.barrel) return; // The rotating barrel itself shows direction.
       const x = BOARD_GEOMETRY.launcherX, y = BOARD_GEOMETRY.launcherY - BOARD_GEOMETRY.radius - 3;
       this.aimGraphics.lineStyle(4, getOrbTheme(this.gameState.currentColor).color, 1);
       this.aimGraphics.lineBetween(x, y, x + Math.sin(this.angle) * 84, y - Math.cos(this.angle) * 84);
       return;
     }
 
-    const trace = traceShot(this.gameState.board, this.angle, this.geometry);
+    const trace = this.getShotTrace();
     const theme = getOrbTheme(this.gameState.currentColor);
     // Use the projectile's physical trace, with uniform spacing across reflections.
     let distance = 0, nextDot = 34;
@@ -456,7 +487,7 @@ export class PlayScene extends Phaser.Scene {
     const nextAngle = Math.atan2(dx, -dy);
     const limit = Phaser.Math.DegToRad(78);
     this.angle = Phaser.Math.Clamp(Number.isFinite(nextAngle) ? nextAngle : 0, -limit, limit);
-    this.drawAim();
+    this.aimDirty = true;
   }
 
   private handleKeyDown(event: KeyboardEvent): void {
@@ -493,7 +524,7 @@ export class PlayScene extends Phaser.Scene {
   private launch(): void {
     this.syncTimedClock();
     if (this.phase !== 'READY') return;
-    const trace = traceShot(this.gameState.board, this.angle, this.geometry);
+    const trace = this.getShotTrace();
     if (!trace.landing) {
       this.showHint('这个角度没有合法落点', UI_COLORS.danger);
       return;
