@@ -114,12 +114,11 @@
           </aside>
         </main>
         <div class="mobile-controls" role="group" aria-label="炮口控制">
-          <button id="rotate-left" class="rotate-button" type="button" aria-label="炮口左转，长按加速"><span aria-hidden="true">↶</span><small>左转</small></button>
           <button id="mobile-fire" class="primary-button" type="button"><span aria-hidden="true">↑</span><small>发射</small></button>
-          <button id="rotate-right" class="rotate-button" type="button" aria-label="炮口右转，长按加速"><span aria-hidden="true">↷</span><small>右转</small></button>
-          <button id="quick-left" class="quick-turn" type="button" aria-label="向左快转30度">↶ <span>快转 30°</span></button>
-          <span class="control-hint">点按微调<br>长按加速</span>
-          <button id="quick-right" class="quick-turn" type="button" aria-label="向右快转30度">↷ <span>快转 30°</span></button>
+          <div class="steering-sliders">
+            <label class="steering-control">炮口方向 <output id="aim-angle">0°</output><input id="aim-slider" type="range" min="-78" max="78" step="0.1" value="0" aria-label="炮口方向" /></label>
+            <label class="steering-control fine-control">左微调 · 松手停止 · 右微调<input id="fine-slider" type="range" min="-100" max="100" value="0" aria-label="左右微调，越靠两侧越快" /></label>
+          </div>
         </div>
       </section>
 

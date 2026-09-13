@@ -297,9 +297,7 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
   .mobile-launch-row > span { color: var(--soft); font-size: 10px; line-height: 1.4; }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: 0.01ms !important; }
-}
+
 
 .current-card { display: grid; justify-items: center; gap: 16px; color: var(--soft); }
 .current-card p { font-size: 11px; }
@@ -434,9 +432,6 @@ html.mobile-ui, .mobile-ui body, .mobile-ui #app { width: 100%; height: 100%; mi
 .mobile-ui .next-card p { display: none; }
 .mobile-ui .mobile-controls { display: grid; grid-template-columns: 1fr 1.4fr 1fr; gap: 12px; align-self: stretch; }
 .mobile-ui .mobile-controls .primary-button { min-height: 0; justify-content: center; font-size: 20px; }
-.rotate-button { border: 1px solid var(--line); border-radius: 16px; background: #1a2743; color: var(--cream); font-size: 26px; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.1; }
-.rotate-button small { font-size: 10px; margin-top: 3px; }
-.rotate-button:active { background: #354563; }
 .mobile-menu-actions { display: grid; gap: 10px; margin-top: 24px; }
 .mobile-ui .modal-root { padding: max(16px, env(safe-area-inset-top)) 14px max(16px, env(safe-area-inset-bottom)); }
 .mobile-ui .modal-card { max-height: 100%; touch-action: pan-y; overscroll-behavior: contain; }
@@ -588,12 +583,6 @@ html.mobile-ui, .mobile-ui body, .mobile-ui #app { width: 100%; height: 100%; mi
 .result-description span { display: block; }
 .mobile-ui .mobile-controls { grid-template-columns: 1fr 1.2fr 1fr; grid-template-rows: 84px 44px; gap: 8px; }
 .mobile-ui .mobile-controls > button { min-width: 0; min-height: 0; margin: 0; border: 1px solid rgba(152,161,184,.2); border-radius: 16px; box-shadow: none; touch-action: none; }
-.mobile-ui .mobile-controls > .rotate-button, .mobile-ui #mobile-fire { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 8px; }
-.mobile-ui .mobile-controls > .rotate-button > span, .mobile-ui #mobile-fire > span { display: block; font-size: 30px; line-height: 32px; font-weight: 500; }
-.mobile-ui .mobile-controls > .rotate-button > small, .mobile-ui #mobile-fire > small { display: block; font-size: 13px; line-height: 18px; font-weight: 600; margin: 0; }
-.mobile-ui .quick-turn { display: flex; align-items: center; justify-content: center; gap: 5px; padding: 4px; background: #202c44; color: var(--mint); font-size: 22px; cursor: pointer; }
-.mobile-ui .quick-turn span { font-size: 11px; color: var(--cream); }
-.mobile-ui .control-hint { align-self: center; text-align: center; font-size: 10px; line-height: 1.6; color: var(--muted); }
 .mobile-ui .mobile-controls > button:active { transform: scale(.97); filter: brightness(1.15); }
 
 /* Windows 1.4: desktop actions alongside the board, with independent time bars. */
@@ -615,3 +604,19 @@ html.mobile-ui, .mobile-ui body, .mobile-ui #app { width: 100%; height: 100%; mi
   html:not(.mobile-ui) .current-card .dom-orb { width: 38px; height: 38px; }
   html:not(.mobile-ui) .current-card { display: grid; gap: 5px; }
 }
+
+/* Android 2.4: one thumb fires, the other controls direction and steering speed. */
+.mobile-ui .mobile-controls { grid-template-columns: minmax(76px, .8fr) minmax(0, 2fr); grid-template-rows: 128px; gap: 14px; }
+.mobile-ui #mobile-fire { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; }
+.mobile-ui #mobile-fire span { font-size: 32px; }
+.mobile-ui #mobile-fire small { font-size: 16px; }
+.steering-sliders { display: grid; gap: 8px; min-width: 0; }
+.steering-control { position: relative; display: flex; flex-wrap: wrap; justify-content: space-between; align-content: center; padding: 4px 12px; border: 1px solid var(--line); border-radius: 14px; background: #1a2743; color: var(--muted); font-size: 11px; }
+.steering-control output { color: var(--mint); font-variant-numeric: tabular-nums; }
+.steering-control input { width: 100%; height: 32px; margin: 0; touch-action: none; accent-color: var(--mint); }
+.fine-control::after { content: ''; position: absolute; left: 50%; bottom: 12px; height: 16px; width: 2px; background: #f5f2eb; pointer-events: none; }
+.controls-swapped.mobile-ui .mobile-controls { grid-template-columns: minmax(0, 2fr) minmax(76px, .8fr); }
+.controls-swapped .steering-sliders { grid-column: 1; grid-row: 1; }
+.controls-swapped #mobile-fire { grid-column: 2; grid-row: 1; }
+.volume-setting { flex-wrap: wrap; gap: 12px; }
+.volume-setting input { width: 100%; height: 36px; accent-color: var(--mint); }

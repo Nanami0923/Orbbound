@@ -6,6 +6,8 @@ export const RULES_VERSION = 'classic-v2';
 export const SCHEMA_VERSION = 1;
 export const MATCH_THRESHOLD = 3;
 export const DANGER_MAX = 100;
+export const matchPoints = (n: number): number => n < 3 ? 0 : n * 10 + (n - 3) * (n - 2) * 5;
+export const dropPoints = (n: number): number => n * 30 + n * Math.max(0, n - 1) * 5;
 
 export interface DifficultyConfig {
   id: string;
@@ -156,17 +158,17 @@ export function resolveShot(input: GameState, landing: Cell): ResolveResult {
   if (group.length >= MATCH_THRESHOLD) {
     matched = group;
     removeCells(state.board, matched);
-    events.push({ type: 'match', cells: matched, points: matched.length * 10 });
+    events.push({ type: 'match', cells: matched, points: matchPoints(matched.length) });
   }
 
   const connected = findTopConnected(state.board, state.rowOffset);
   const floating = occupiedCells(state.board).filter((cell) => !connected.has(cellKey(cell)));
   if (floating.length > 0) {
     removeCells(state.board, floating);
-    events.push({ type: 'drop', cells: floating, points: floating.length * 20 });
+    events.push({ type: 'drop', cells: floating, points: dropPoints(floating.length) });
   }
 
-  state.score += matched.length * 10 + floating.length * 20;
+  state.score += matchPoints(matched.length) + dropPoints(floating.length);
   state.step += 1;
 
   if (boardIsEmpty(state.board)) {

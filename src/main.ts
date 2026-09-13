@@ -10,6 +10,7 @@ import { PHASER_CONFIG, PlayScene } from './game/PlayScene';
 import { getOrbTheme } from './content/theme';
 import { clearGame, hasLegacySave, loadGame, loadSettings, saveGame, saveSettings, setHighScore, type Settings } from './storage/storage';
 import './style.css';
+import { gameAudio } from './game/audio';
 import { loadHistory, recordRound, formatDuration, rankingKey } from './storage/history';
 
 interface SceneStateDetail {
@@ -58,6 +59,10 @@ const sideOrbLabel = document.querySelector('#side-orb-label');
 if (sideOrbLabel && import.meta.env.MODE === 'windows') sideOrbLabel.textContent = '下一球';
 
 let settings: Settings = loadSettings();
+gameAudio.setVolume(settings.volume);
+document.addEventListener('pointerdown', () => gameAudio.unlock());
+document.addEventListener('keydown', () => gameAudio.unlock());
+document.addEventListener('visibilitychange', () => gameAudio.setForeground(!document.hidden));
 let selectedDifficulty = 'normal';
 let selectedMode: GameMode = 'endless';
 let selectedDuration = 300000;
@@ -67,6 +72,7 @@ let resumeAfterModal = false;
 
 function syncMobileLayout(): void {
   document.documentElement.classList.toggle('mobile-ui', usesButtonControls());
+  document.documentElement.classList.toggle('controls-swapped', settings.controlsSwapped);
 }
 syncMobileLayout();
 window.addEventListener('resize', syncMobileLayout);
@@ -191,6 +197,9 @@ function updateGameState(detail: SceneStateDetail): void {
     clock.classList.toggle('clock-urgent', detail.mode === 'timed' && detail.durationMs! - detail.elapsedMs <= 30000);
   }
   if (launchButton) launchButton.disabled = detail.phase !== 'READY';
+  const mobileFire = document.querySelector<HTMLButtonElement>('#mobile-fire');
+  if (mobileFire) mobileFire.disabled = detail.phase !== 'READY';
+  if (['PAUSED', 'WON', 'LOST'].includes(detail.phase)) stopRotation();
   const settleButton = document.querySelector<HTMLButtonElement>('#settle-button');
   if (settleButton) settleButton.disabled = detail.status !== 'READY';
 }
@@ -270,9 +279,9 @@ function showTutorial(): void {
     <h2>三步读懂棋盘</h2>
     <p>两种模式均可独立存档、下次续玩或主动结算；存档本身不入榜。限时模式有 5 / 10 分钟，存档、菜单和后台会冻结进度；发射次数或下落计时任一归零就下降，并同时重置两项倒计时。清盘后补充棋盘继续。结算得分按简单 ×1、普通 ×1.5、困难 ×2 入榜。</p>
     <div class="tutorial-steps">
-      <div class="tutorial-step"><b>01</b><div><strong>调整炮口方向</strong><span>手机版使用底部 ↶ / ↷ 调整方向，可长按连续转动；中间按钮发射。电脑版使用鼠标瞄准、点击发射；方向键长按加速，Q / E 平滑快转 30°，空格发射。下落期间仍可转向。</span></div></div>
-      <div class="tutorial-step"><b>02</b><div><strong>三个同类连在一起</strong><span>命中后，同色连通区域达到 3 枚就会消失；每枚 10 分。</span></div></div>
-      <div class="tutorial-step"><b>03</b><div><strong>让悬空小球掉落</strong><span>消除支撑后，不再与顶部相连的小球会掉落，不分颜色，每枚 20 分。顶部显示还可发射几次，归零后棋盘下降一行。</span></div></div>
+      <div class="tutorial-step"><b>01</b><div><strong>调整炮口方向</strong><span>手机版上滑条直接定位方向，下滑条以中间为界左右微调，越靠两侧越快，松手停止；侧边按钮发射，设置可调换左右位置。电脑版使用鼠标瞄准、点击发射；方向键长按加速，Q / E 平滑快转 30°，空格发射。下落期间仍可转向。</span></div></div>
+      <div class="tutorial-step"><b>02</b><div><strong>三个同类连在一起</strong><span>命中后，同色连通区域达到 3 枚就会消失；一次消除 3 / 4 / 5 / 6 枚分别得 30 / 50 / 80 / 120 分，数量越多奖励越高。</span></div></div>
+      <div class="tutorial-step"><b>03</b><div><strong>让悬空小球掉落</strong><span>消除支撑后，不再与顶部相连的小球会掉落，不分颜色，额外奖励：1 / 2 / 3 枚分别加 30 / 70 / 120 分，更多掉落继续递增。顶部显示还可发射几次，归零后棋盘下降一行。</span></div></div>
     </div>
     <div class="modal-footer"><button class="primary-button" data-close-modal type="button"><span>知道了，开始</span><b>↗</b></button></div>
   `);
@@ -284,15 +293,23 @@ function showSettings(): void {
     <p class="eyebrow">PREFERENCES / 02</p>
     <h2>让节奏适合你</h2>
     <p>设置会保存在这台设备上。音效采用本地合成，不需要额外下载素材。</p>
-    <div class="setting-row"><div><strong>音效</strong><small>发射、消除、棋盘下降和结算提示</small></div><label class="switch"><input id="setting-sound" type="checkbox" ${settings.sound ? 'checked' : ''} /><span></span></label></div>
+    <div class="setting-row volume-setting"><div><strong>音量 <output id="volume-value">${settings.volume}%</output></strong><small>同时控制音效与循环音乐，0 为静音</small></div><input id="setting-volume" type="range" min="0" max="100" value="${settings.volume}" aria-label="音量" /></div>
     <div class="setting-row"><div><strong>瞄准辅助</strong><small>显示反弹轨迹与预计落点</small></div><label class="switch"><input id="setting-aim" type="checkbox" ${settings.aimAssist ? 'checked' : ''} /><span></span></label></div>
-    <div class="setting-row"><div><strong>减少动态效果</strong><small>缩短动画，关闭大幅反馈</small></div><label class="switch"><input id="setting-motion" type="checkbox" ${settings.reducedMotion ? 'checked' : ''} /><span></span></label></div>
+    ${usesButtonControls() ? `<div class="setting-row"><div><strong>按键位置</strong><small>调换发射键和双滑条的左右位置</small></div><button id="setting-swap" class="quiet-button">${settings.controlsSwapped ? '发射在右 ⇄' : '发射在左 ⇄'}</button></div>` : ''}
     <div class="modal-footer"><button class="primary-button" data-close-modal type="button"><span>保存设置</span><b>✓</b></button></div>
   `);
+  const apply = () => { saveSettings(settings); gameAudio.setVolume(settings.volume); getScene()?.setSettings(settings); syncMobileLayout(); };
+  document.querySelector<HTMLInputElement>('#setting-volume')?.addEventListener('input', event => {
+    settings.volume = Number((event.target as HTMLInputElement).value);
+    document.querySelector('#volume-value')!.textContent = `${settings.volume}%`;
+    apply();
+  });
+  document.querySelector('#setting-swap')?.addEventListener('click', event => {
+    stopRotation(); settings.controlsSwapped = !settings.controlsSwapped; apply();
+    (event.currentTarget as HTMLElement).textContent = settings.controlsSwapped ? '发射在右 ⇄' : '发射在左 ⇄';
+  });
   const fields: Array<[keyof Settings, string]> = [
-    ['sound', 'setting-sound'],
     ['aimAssist', 'setting-aim'],
-    ['reducedMotion', 'setting-motion'],
   ];
   for (const [key, id] of fields) {
     modalRoot?.querySelector<HTMLInputElement>(`#${id}`)?.addEventListener('change', (event) => {
@@ -408,20 +425,38 @@ document.querySelector('#mobile-menu-button')?.addEventListener('click', () => {
   document.querySelector('#menu-home')?.addEventListener('click', () => { resumeAfterModal = false; closeModal(); showHome(); });
 });
 
-function stopRotation(): void { getScene()?.stopRotation(); }
-for (const [id, direction] of [['rotate-left', -1], ['rotate-right', 1]] as const) {
-  const button = document.getElementById(id)!;
-  button.addEventListener('pointerdown', (event) => {
-    if (event.button !== 0) return;
-    event.preventDefault(); stopRotation(); button.setPointerCapture(event.pointerId);
-    getScene()?.startRotation(direction);
+const aimSlider = document.querySelector<HTMLInputElement>('#aim-slider')!;
+const fineSlider = document.querySelector<HTMLInputElement>('#fine-slider')!;
+function stopRotation(): void { getScene()?.stopRotation(); fineSlider.value = '0'; }
+function bindSteering(slider: HTMLInputElement, fine: boolean): void {
+  let pointer: number | null = null;
+  const update = (event: PointerEvent) => {
+    const rect = slider.getBoundingClientRect();
+    const value = Math.max(0, Math.min(1, (event.clientX - rect.left - 12) / Math.max(1, rect.width - 24)));
+    slider.value = String((value * 2 - 1) * (fine ? 100 : 78));
+    if (fine) getScene()?.setFineRotation(Number(slider.value));
+    else getScene()?.setAimDegrees(Number(slider.value));
+  };
+  slider.addEventListener('pointerdown', event => {
+    if (pointer !== null || event.button !== 0) return;
+    event.preventDefault(); stopRotation(); pointer = event.pointerId;
+    slider.setPointerCapture(pointer); update(event);
   });
-  for (const name of ['pointerup', 'pointercancel', 'lostpointercapture']) button.addEventListener(name, stopRotation);
-  button.addEventListener('click', (event) => { if (event.detail === 0) getScene()?.rotateLauncher(direction); });
+  slider.addEventListener('pointermove', event => { if (pointer === event.pointerId) { event.preventDefault(); update(event); } });
+  for (const name of ['pointerup', 'pointercancel', 'lostpointercapture']) slider.addEventListener(name, event => {
+    if ((event as PointerEvent).pointerId !== pointer) return;
+    pointer = null; if (fine) stopRotation();
+  });
+  slider.addEventListener('input', () => fine ? getScene()?.setFineRotation(Number(slider.value)) : getScene()?.setAimDegrees(Number(slider.value)));
+  slider.addEventListener('keyup', () => { if (fine) stopRotation(); });
+  slider.addEventListener('blur', stopRotation);
 }
-for (const [id, direction] of [['quick-left', -1], ['quick-right', 1]] as const) {
-  document.getElementById(id)?.addEventListener('click', () => getScene()?.quickRotate(direction));
-}
+bindSteering(aimSlider, false); bindSteering(fineSlider, true);
+window.addEventListener('snood-angle', event => {
+  const degrees = (event as CustomEvent<number>).detail;
+  aimSlider.value = String(degrees);
+  document.querySelector('#aim-angle')!.textContent = `${degrees.toFixed(1)}°`;
+});
 window.addEventListener('blur', stopRotation);
 document.addEventListener('visibilitychange', stopRotation);
 document.querySelector<HTMLButtonElement>('#restart-button')?.addEventListener('click', () => {
@@ -455,6 +490,7 @@ document.addEventListener('visibilitychange', () => {
 
 if (Capacitor.isNativePlatform()) {
   void App.addListener('appStateChange', ({ isActive }) => {
+    gameAudio.setForeground(isActive);
     if (!isActive && !gameScreen?.hidden) showHome();
   });
   void App.addListener('backButton', () => {

@@ -57,8 +57,8 @@ describe('classic rule engine', () => {
     const dropEvent = result.events.find((event) => event.type === 'drop');
 
     expect(dropEvent?.cells).toHaveLength(2);
-    expect(dropEvent?.points).toBe(40);
-    expect(result.state.score).toBe(70);
+    expect(dropEvent?.points).toBe(70);
+    expect(result.state.score).toBe(100);
     expect(result.state.status).toBe('WON');
   });
 

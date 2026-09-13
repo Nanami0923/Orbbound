@@ -7,16 +7,16 @@ const SETTINGS_KEY = 'orbbound-settings-v1';
 const HIGH_SCORE_KEY = 'orbbound-high-score-v1';
 
 export interface Settings {
-  sound: boolean;
+  volume: number;
   aimAssist: boolean;
-  reducedMotion: boolean;
+  controlsSwapped: boolean;
   independentLaunch: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
-  sound: true,
+  volume: 50,
   aimAssist: true,
-  reducedMotion: false,
+  controlsSwapped: false,
   independentLaunch: false,
 };
 
@@ -29,11 +29,11 @@ export function loadSettings(): Settings {
   try {
     const value: unknown = JSON.parse(window.localStorage.getItem(SETTINGS_KEY) ?? 'null');
     if (!value || typeof value !== 'object') return { ...DEFAULT_SETTINGS };
-    const record = value as Partial<Settings>;
+    const record = value as Partial<Settings> & { sound?: boolean };
     return {
-      sound: record.sound !== false,
+      volume: typeof record.volume === 'number' && Number.isFinite(record.volume) ? Math.max(0, Math.min(100, record.volume)) : record.sound === false ? 0 : 50,
       aimAssist: record.aimAssist !== false,
-      reducedMotion: record.reducedMotion === true,
+      controlsSwapped: record.controlsSwapped === true,
       independentLaunch: false,
     };
   } catch {

@@ -129,3 +129,16 @@ it('mobile board touches cannot aim or fire, including an existing pointer gestu
   scene.update(0, 100);
   expect(runtime.angle).toBeLessThan(15 * Math.PI / 180);
  });
+
+it('direct aiming clamps and fine steering follows position then stops on release', () => {
+  const {scene,runtime} = setup();
+  scene.setAimDegrees(100); expect(runtime.angle).toBeCloseTo(78*Math.PI/180);
+  scene.setAimDegrees(0); scene.setFineRotation(100);
+  for(let i=0;i<10;i++) scene.update(0,100);
+  expect(runtime.angle).toBeCloseTo(60*Math.PI/180);
+  scene.stopRotation(); scene.update(0,100); expect(runtime.angle).toBeCloseTo(60*Math.PI/180);
+  scene.setAimDegrees(0); scene.setFineRotation(-50); scene.update(0,100);
+  expect(runtime.angle).toBeLessThan(0); expect(runtime.angle).toBeGreaterThan(-3*Math.PI/180);
+  runtime.phase='PAUSED'; scene.update(0,100); runtime.phase='READY';
+  const angle=runtime.angle; scene.update(0,100); expect(runtime.angle).toBe(angle);
+});

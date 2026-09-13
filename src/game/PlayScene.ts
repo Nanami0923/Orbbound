@@ -6,7 +6,8 @@ import type { Cell, GameEvent, GameState, Point } from '../core/types';
 import { BOARD_GEOMETRY, GAME_HEIGHT, GAME_WIDTH, UI_COLORS } from '../content/game-config';
 import { getOrbTheme } from '../content/theme';
 import { DEFAULT_SETTINGS, type Settings } from '../storage/storage';
-import { GameAudio } from './audio';
+import { gameAudio } from './audio';
+import { fineRotationSpeed } from './rotation';
 import { recordRound } from '../storage/history';
 import { usesButtonControls } from './input-mode';
 import { heldRotationDegrees } from './rotation';
@@ -27,11 +28,12 @@ export class PlayScene extends Phaser.Scene {
   private get geometry() { return { ...BOARD_GEOMETRY, rowOffset: this.gameState.rowOffset ?? 0 }; }
   private phase: ScenePhase = 'READY';
   private settings: Settings = { ...DEFAULT_SETTINGS };
-  private audio = new GameAudio(this.settings);
+  private audio = gameAudio;
   private angle = 0;
   private pointerActive = false;
   private rotationDirection: -1 | 0 | 1 = 0;
   private rotationHeldSeconds = 0;
+  private fineSpeed = 0;
   private quickTurn: { from: number; to: number; elapsed: number } | null = null;
   private get canSteer(): boolean { return ['READY', 'FLYING', 'RESOLVING'].includes(this.phase); }
   private pausedFrom: ScenePhase = 'READY';
@@ -89,6 +91,7 @@ export class PlayScene extends Phaser.Scene {
 
   public override update(_time: number, delta: number): void {
     if (this.isTimed) this.syncTimedClock();
+    if (this.canSteer && this.fineSpeed) this.rotateLauncher(this.fineSpeed < 0 ? -1 : 1, Math.abs(this.fineSpeed) * Math.min(100, Math.max(0, delta)) / 1000);
     if (this.canSteer && this.rotationDirection !== 0) {
       const before = this.rotationHeldSeconds;
       this.rotationHeldSeconds += Math.max(0, delta) / 1000;
@@ -161,7 +164,7 @@ export class PlayScene extends Phaser.Scene {
     this.phase = state.status;
     if (state.status === 'READY') this.phase = 'READY';
     this.angle = 0;
-    this.statusText.setText(usesButtonControls() ? '底部按钮转向 · 中间按钮发射' : '移动瞄准 · 点击发射');
+    this.statusText.setText(usesButtonControls() ? '上条定位 · 下条微调 · 侧边发射' : '移动瞄准 · 点击发射');
     this.renderBoard();
     this.renderLauncher();
     this.drawAim();
@@ -179,7 +182,7 @@ export class PlayScene extends Phaser.Scene {
 
   public setSettings(settings: Settings): void {
     this.settings = { ...settings };
-    this.audio.setEnabled(settings.sound);
+    this.audio.setVolume(settings.volume);
     this.renderLauncher();
     this.drawAim();
     sendWindowEvent('snood-settings-applied', this.settings);
@@ -205,7 +208,7 @@ export class PlayScene extends Phaser.Scene {
     if (this.phase !== 'PAUSED') return;
     this.gameState = resumeTimed(this.gameState);
     this.phase = this.pausedFrom;
-    this.statusText.setText(this.phase === 'READY' ? (usesButtonControls() ? '底部按钮转向 · 中间按钮发射' : '选择角度 · 点击发射') : '等待本次发射结算');
+    this.statusText.setText(this.phase === 'READY' ? (usesButtonControls() ? '上条定位 · 下条微调 · 侧边发射' : '选择角度 · 点击发射') : '等待本次发射结算');
     this.tweens.resumeAll();
     this.time.paused = false;
     this.drawAim();
@@ -223,6 +226,16 @@ export class PlayScene extends Phaser.Scene {
     this.launch();
   }
 
+  public setAimDegrees(degrees: number): void {
+    if (!this.canSteer || !Number.isFinite(degrees)) return;
+    this.stopRotation();
+    this.angle = Math.max(-78, Math.min(78, degrees)) * Math.PI / 180;
+    this.drawAim();
+  }
+  public setFineRotation(value: number): void {
+    this.stopRotation();
+    if (this.canSteer) this.fineSpeed = fineRotationSpeed(value);
+  }
   public startRotation(direction: -1 | 1): void {
     if (!this.canSteer) return;
     this.stopRotation();
@@ -233,6 +246,7 @@ export class PlayScene extends Phaser.Scene {
 
   public stopRotation(): void {
     this.quickTurn = null;
+    this.fineSpeed = 0;
     this.rotationDirection = 0;
     this.rotationHeldSeconds = 0;
   }
@@ -371,6 +385,7 @@ export class PlayScene extends Phaser.Scene {
   }
 
   private drawAim(): void {
+    sendWindowEvent('snood-angle', this.angle * 180 / Math.PI);
     this.aimGraphics.clear();
     // Keep the cursor hidden for the entire shot, including flight and resolution.
     const playing = this.phase === 'READY' || this.phase === 'FLYING' || this.phase === 'RESOLVING';
@@ -386,11 +401,20 @@ export class PlayScene extends Phaser.Scene {
 
     const trace = traceShot(this.gameState.board, this.angle, this.geometry);
     const theme = getOrbTheme(this.gameState.currentColor);
-    this.aimGraphics.lineStyle(3, theme.color, 0.62);
-    this.aimGraphics.beginPath();
-    this.aimGraphics.moveTo(trace.points[0].x, trace.points[0].y);
-    for (const point of trace.points.slice(1)) this.aimGraphics.lineTo(point.x, point.y);
-    this.aimGraphics.strokePath();
+    // Use the projectile's physical trace, with uniform spacing across reflections.
+    let distance = 0, nextDot = 34;
+    for (let i = 1; i < trace.points.length; i++) {
+      const a = trace.points[i - 1], b = trace.points[i];
+      const length = Math.hypot(b.x - a.x, b.y - a.y);
+      while (length > 0 && nextDot <= distance + length) {
+        const t = (nextDot - distance) / length;
+        const x = a.x + (b.x - a.x) * t, y = a.y + (b.y - a.y) * t;
+        this.aimGraphics.fillStyle(0x0b1120, 0.9).fillCircle(x, y, 3.5);
+        this.aimGraphics.fillStyle(theme.color, 0.85).fillCircle(x, y, 2.2);
+        nextDot += 15;
+      }
+      distance += length;
+    }
 
     if (trace.bounced && trace.points.length > 2) {
       const bounce = trace.points.find((point, index) => index > 0 && (point.x <= BOARD_GEOMETRY.left + BOARD_GEOMETRY.radius + 0.1 || point.x >= BOARD_GEOMETRY.right - BOARD_GEOMETRY.radius - 0.1));
@@ -400,8 +424,8 @@ export class PlayScene extends Phaser.Scene {
     if (trace.landing) {
       const landingPoint = cellToPoint(trace.landing, this.geometry);
       this.aimGraphics.lineStyle(2, theme.color, 0.95);
-      this.aimGraphics.strokeCircle(landingPoint.x, landingPoint.y, BOARD_GEOMETRY.radius + 5);
-      this.aimGraphics.fillStyle(theme.color, 0.18).fillCircle(landingPoint.x, landingPoint.y, BOARD_GEOMETRY.radius + 2);
+      this.aimGraphics.strokeCircle(landingPoint.x, landingPoint.y, BOARD_GEOMETRY.radius);
+      this.aimGraphics.fillStyle(theme.color, 0.18).fillCircle(landingPoint.x, landingPoint.y, BOARD_GEOMETRY.radius);
     }
   }
 
@@ -486,7 +510,7 @@ export class PlayScene extends Phaser.Scene {
     this.transient.add(projectile);
     projectile.setScale(0.93);
     const driver: ProgressDriver = { progress: 0 };
-    const duration = this.settings.reducedMotion ? 90 : Math.min(920, Math.max(220, trace.points.length * 2.8));
+    const duration = Math.min(920, Math.max(220, trace.points.length * 2.8));
     // Commit once on launch: process termination cannot replay a shot or lose its score.
     const previous = this.gameState;
     const result = resolveShot(previous, trace.landing);
@@ -520,9 +544,8 @@ export class PlayScene extends Phaser.Scene {
     const matched = events.find((event) => event.type === 'match')?.cells ?? [];
     const dropped = events.find((event) => event.type === 'drop')?.cells ?? [];
     const removed = [...matched, ...dropped];
-    const reduced = this.settings.reducedMotion;
-    const removeDuration = reduced ? 80 : 170;
-    const removeDelay = reduced ? 0 : 36;
+    const removeDuration = 170;
+    const removeDelay = 36;
 
     const animationGroups = new Map<number, Phaser.GameObjects.Container[]>();
     for (const [index, cell] of removed.entries()) {
@@ -546,7 +569,7 @@ export class PlayScene extends Phaser.Scene {
 
     const points = events.reduce((total, event) => total + (event.points ?? 0), 0);
     if (points > 0) {
-      this.showScorePopup(points, dropped.length > 0 ? '同色消除 + 悬空掉落' : '同色消除');
+      this.showScorePopup(points, dropped.length > 0 ? `消除 ${matched.length} · 悬空 ${dropped.length} 额外 +${events.find(event => event.type === 'drop')?.points ?? 0}` : `同色消除 ${matched.length}`);
       this.audio.blip(dropped.length > 0 ? 'drop' : 'match');
     }
     if (events.some((event) => event.type === 'board-drop')) this.audio.blip('danger');
@@ -570,7 +593,7 @@ export class PlayScene extends Phaser.Scene {
         this.statusText.setText('触底 · 再试一次');
       } else {
         this.phase = 'READY';
-        this.statusText.setText(usesButtonControls() ? '底部按钮转向 · 中间按钮发射' : '移动瞄准 · 点击发射');
+        this.statusText.setText(usesButtonControls() ? '上条定位 · 下条微调 · 侧边发射' : '移动瞄准 · 点击发射');
       }
       this.drawAim();
       this.emitState();
@@ -580,7 +603,7 @@ export class PlayScene extends Phaser.Scene {
         sendWindowEvent('snood-finished', this.gameState);
       }
       };
-      if (droppedBoard && !reduced) {
+      if (droppedBoard) {
         this.tweens.add({ targets: this.boardGroup, y: 0, duration: 360, ease: 'Cubic.Out', onComplete: finish });
       } else { this.boardGroup.setY(0); finish(); }
     });
@@ -594,7 +617,7 @@ export class PlayScene extends Phaser.Scene {
       targets: flash,
       scale: 1.75,
       alpha: 0,
-      duration: this.settings.reducedMotion ? 80 : 220,
+      duration: 220,
       ease: 'Cubic.Out',
       onComplete: () => { flash.destroy(); this.transient.delete(flash); },
     });
@@ -615,7 +638,7 @@ export class PlayScene extends Phaser.Scene {
       targets: text,
       y: 550,
       alpha: 0,
-      duration: this.settings.reducedMotion ? 120 : 620,
+      duration: 620,
       ease: 'Cubic.Out',
       onComplete: () => { text.destroy(); this.transient.delete(text); },
     });
@@ -627,7 +650,7 @@ export class PlayScene extends Phaser.Scene {
     this.time.delayedCall(1000, () => {
       if (this.phase === 'READY') {
         this.statusText.setColor('#98a1b8');
-        this.statusText.setText((usesButtonControls() ? '底部按钮转向 · 中间按钮发射' : '选择角度 · 点击发射'));
+        this.statusText.setText((usesButtonControls() ? '上条定位 · 下条微调 · 侧边发射' : '选择角度 · 点击发射'));
       }
     });
   }
