@@ -783,3 +783,30 @@ button:focus-visible { outline: 2px solid var(--mint); outline-offset: 3px; }
 
 /* Match the native inset backdrop in both gesture and three-button modes. */
 .mobile-ui body { background: #111a2d; }
+
+/* Shared 3.0 home content in the desktop's two-column layout. */
+.desktop-ui .home-screen { min-height: 100dvh; padding: 24px clamp(28px, 5vw, 76px) 18px; }
+.desktop-ui .home-screen::before, .desktop-ui .home-screen::after { display: none; }
+.desktop-ui .home-content { grid-template-columns: minmax(0, 1fr) minmax(350px, .85fr); gap: clamp(30px, 5vw, 80px); margin: 24px auto; }
+.desktop-ui .hero-copy h1 { font-size: clamp(54px, 6.2vw, 84px); line-height: 1.12; }
+.desktop-ui .hero-description { font-size: 15px; margin-top: 24px; }
+.desktop-ui .home-card { min-height: 0; padding: 20px; gap: 18px; }
+.desktop-ui .home-card::before { display: none; }
+.desktop-ui .mechanism-demo { display: flex; min-height: 0; }
+.desktop-ui .mechanism-demo svg { height: clamp(140px, 24dvh, 230px); }
+.desktop-ui .mechanism-demo > span { font-size: 11px; }
+.desktop-ui .home-actions { grid-template-columns: 1fr; gap: 10px; }
+.desktop-ui .mode-main { min-height: 88px; cursor: pointer; }
+.desktop-ui .mode-main:hover { background: rgba(245, 242, 235, .04); }
+.desktop-ui .mode-card:has(.mode-new:not([hidden])) .mode-main { min-height: 106px; }
+.desktop-ui .home-footer { justify-content: flex-end; margin-top: 0; }
+.desktop-ui .home-footer > div { display: flex; gap: 24px; }
+.desktop-ui .home-footer button { min-height: 40px; }
+@media (max-height: 680px) {
+  .desktop-ui .home-screen { padding-block: 16px 10px; }
+  .desktop-ui .home-content { margin-block: 12px; }
+  .desktop-ui .home-card { padding: 14px; gap: 12px; }
+  .desktop-ui .mechanism-demo svg { height: 126px; }
+  .desktop-ui .mode-main { min-height: 78px; }
+  .desktop-ui .mode-card:has(.mode-new:not([hidden])) .mode-main { min-height: 96px; }
+}

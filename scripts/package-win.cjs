@@ -8,6 +8,7 @@ const { path7za } = require('7zip-bin');
 async function main() {
   const root = path.resolve(__dirname, '..');
   const manifest = require('../electron/windows-package.json');
+  if (manifest.version !== require('../package.json').version) throw new Error('Windows and Android release versions must match');
   const output = path.join(root, '最终交付', 'Windows', `Orbbound-Windows-${manifest.version}`);
   const stagingRoot = path.join(root, '.build', 'windows');
   fs.mkdirSync(stagingRoot, { recursive: true });

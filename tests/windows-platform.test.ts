@@ -1,9 +1,14 @@
 import {afterEach,expect,it,vi} from 'vitest';
+import windowsManifest from '../electron/windows-package.json';
+import appManifest from '../package.json';
 vi.mock('@capacitor/core',()=>({Capacitor:{isNativePlatform:()=>true},registerPlugin:()=>({pulse:vi.fn()})}));
 import {usesButtonControls} from '../src/game/input-mode';
 import {PlayScene} from '../src/game/PlayScene';
 vi.mock('phaser',()=>({default:{Scene:class {},AUTO:0,Scale:{FIT:0,CENTER_BOTH:0}}}));
 afterEach(()=>{vi.unstubAllEnvs();vi.unstubAllGlobals();});
+it('Windows and Android share the release version',()=>{
+ expect(windowsManifest.version).toBe(appManifest.version);
+});
 it('Windows always retains desktop input even on a narrow touch display',()=>{
  vi.stubEnv('MODE','windows');vi.stubGlobal('window',{matchMedia:()=>({matches:true})});
  expect(usesButtonControls()).toBe(false);

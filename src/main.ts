@@ -10,7 +10,7 @@ import { PHASER_CONFIG, PlayScene } from './game/PlayScene';
 import { getOrbTheme } from './content/theme';
 import { clearGame, hasLegacySave, loadGame, loadSettings, saveGame, saveSettings, setHighScore, type Settings } from './storage/storage';
 import './style.css';
-import { buildMobileHome, updateMobileHome } from './ui/mobile-home';
+import { buildHome, updateHome } from './ui/home';
 import { gameAudio } from './game/audio';
 import { bindFireButton } from './game/fire-control';
 import { bindSteeringControl } from './game/steering-control';
@@ -37,7 +37,7 @@ interface SceneStateDetail {
   elapsedMs: number;
 }
 
-if (usesButtonControls()) buildMobileHome();
+buildHome(usesButtonControls());
 const homeScreen = document.querySelector<HTMLElement>('#home-screen');
 const gameScreen = document.querySelector<HTMLElement>('#game-screen');
 const modalRoot = document.querySelector<HTMLElement>('#modal-root');
@@ -81,6 +81,7 @@ let resumeAfterModal = false;
 let disposeModal: (() => void) | null = null;
 
 function syncMobileLayout(): void {
+  document.documentElement.classList.toggle("desktop-ui", !usesButtonControls());
   document.documentElement.classList.toggle('mobile-ui', usesButtonControls());
   document.documentElement.classList.toggle('controls-swapped', settings.controlsSwapped);
   document.documentElement.style.setProperty('--fire-width', `${settings.fireSize}px`);
@@ -137,7 +138,7 @@ function startRound(state: Parameters<PlayScene['begin']>[0] | null, difficulty 
 }
 
 function updateHomeState(): void {
-  updateMobileHome();
+  updateHome();
   const saved = loadGame();
   const note = document.querySelector<HTMLElement>('#save-note');
   if (note) { note.hidden = !hasLegacySave(); note.textContent = '旧版未完成对局使用旧网格规则，无法继续；历史记录和设置不受影响。'; }
@@ -379,8 +380,8 @@ function showModeSetup(mode: GameMode): void {
     clearGame(mode); closeModal(); startRound(null);
   });
 }
-document.querySelector('#start-button')?.addEventListener('click', () => usesButtonControls() && loadGame('endless') ? continueSaved('endless') : showModeSetup('endless'));
-document.querySelector('#timed-button')?.addEventListener('click', () => usesButtonControls() && loadGame('timed') ? continueSaved('timed') : showModeSetup('timed'));
+document.querySelector('#start-button')?.addEventListener('click', () => loadGame('endless') ? continueSaved('endless') : showModeSetup('endless'));
+document.querySelector('#timed-button')?.addEventListener('click', () => loadGame('timed') ? continueSaved('timed') : showModeSetup('timed'));
 document.querySelectorAll<HTMLElement>('[data-new-mode]').forEach(button => button.addEventListener('click', () => showModeSetup(button.dataset.newMode as GameMode)));
 
 function continueSaved(mode: GameMode): void {

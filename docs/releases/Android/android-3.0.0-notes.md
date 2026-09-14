@@ -32,4 +32,4 @@
 
 系统边距处理参考 [Android 官方 edge-to-edge 文档](https://developer.android.com/develop/ui/views/layout/edge-to-edge)；音频修复避开具有兼容性限制的 [AudioParam.cancelAndHoldAtTime](https://developer.mozilla.org/en-US/docs/Web/API/AudioParam/cancelAndHoldAtTime)，采用独立淡出节点。
 
-本次将两轮 Android 更新合并为一个 3.0.0 源码提交。签名 APK 保存在本地交付目录。Windows 版本号保持 1.7.0，未生成新的 Windows 安装包。
+两轮 Android 更新先合并为 3.0.0 源码提交，随后 Windows 同步通用功能并统一为 3.0.0。两端安装包发布在同一 [3.0.0 下载页](https://github.com/Nanami0923/Orbbound/releases/tag/v3.0.0)，也保存在本地交付目录。

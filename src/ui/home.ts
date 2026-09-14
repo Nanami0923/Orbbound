@@ -1,12 +1,12 @@
 import { loadGame } from '../storage/storage';
 import { loadHistory, rankingKey, formatDuration } from '../storage/history';
 
-export function buildMobileHome(): void {
+export function buildHome(touch: boolean): void {
   document.querySelector('.hero-copy .eyebrow')?.remove();
   document.querySelector('.hero-notes')?.remove();
   document.querySelector('.hero-description')!.textContent = '同色连接 · 切断支撑 · 连锁坠落';
   document.querySelector('.home-card')!.innerHTML = `
-    <button class="mechanism-demo" type="button" aria-label="轻触重播：中心向左发射展示同色消除，向右发射展示消除后掉落">
+    <button class="mechanism-demo" type="button" aria-label="${touch ? '轻触' : '点击'}重播：中心向左发射展示同色消除，向右发射展示消除后掉落">
       <svg viewBox="0 0 320 200" aria-hidden="true">
         <g class="demo-orbits" fill="none" stroke="currentColor"><path d="M-30 120 Q150 -80 350 95"/><path d="M-10 160 Q160 20 340 155"/></g>
         <path class="demo-route-left" d="M160 165L108 68"/><path class="demo-route-right" d="M160 165L212 40"/>
@@ -17,7 +17,7 @@ export function buildMobileHome(): void {
         <g class="demo-shot demo-shot-left"><circle cx="160" cy="165" r="14" fill="#63d7bd"/><text x="160" y="170" fill="#182239" font-size="13" text-anchor="middle">◆</text></g>
         <g class="demo-shot demo-shot-right"><circle cx="160" cy="165" r="14" fill="#f6c85f"/><text x="160" y="170" fill="#182239" font-size="13" text-anchor="middle">✦</text></g>
         <g fill="#a7b4c9" font-size="10" text-anchor="middle"><text x="87" y="190">同色消除</text><text x="260" y="190">消除后掉落</text></g>
-      </svg><span>从中心出发，轻触重播</span>
+      </svg><span>从中心出发，${touch ? '轻触' : '点击'}重播</span>
     </button>
     <div class="home-actions mobile-mode-cards">
       ${(['endless', 'timed'] as const).map(mode => `<div class="mode-card ${mode}">
@@ -33,7 +33,7 @@ export function buildMobileHome(): void {
   });
 }
 
-export function updateMobileHome(): void {
+export function updateHome(): void {
   const history = loadHistory();
   for (const mode of ['endless', 'timed'] as const) {
     const saved = loadGame(mode);
