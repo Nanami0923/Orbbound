@@ -2,55 +2,55 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { createHash } = require('node:crypto');
-const { build, Platform, Arch } = require('electron-builder');
 const { path7za } = require('7zip-bin');
-
+const root = path.resolve(__dirname, '..');
+const sdkVersion = '1.0.4022.49';
+const sdkHash = 'ee9de67e5bb9ef3a96c5689b2efc8188e2df160a0e79234c0404243782fde5fb';
+function run(command, args, cwd = root) {
+  const result = spawnSync(command, args, { cwd, stdio: 'inherit', windowsHide: true });
+  if (result.status !== 0) throw new Error(`Build command failed: ${command}`);
+}
 async function main() {
-  const root = path.resolve(__dirname, '..');
-  const manifest = require('../electron/windows-package.json');
-  if (manifest.version !== require('../package.json').version) throw new Error('Windows and Android release versions must match');
-  const output = path.join(root, '最终交付', 'Windows', `Orbbound-Windows-${manifest.version}`);
-  const stagingRoot = path.join(root, '.build', 'windows');
-  fs.mkdirSync(stagingRoot, { recursive: true });
-  // A minimal desktop manifest prevents Android dependencies entering the desktop archive.
-  const staging = fs.mkdtempSync(path.join(stagingRoot, 'windows-app-'));
-  fs.cpSync(path.join(root, '.build', 'windows', 'web'), path.join(staging, 'dist'), { recursive: true });
-  fs.mkdirSync(path.join(staging, 'electron'));
-  fs.copyFileSync(path.join(root, 'electron/main.cjs'), path.join(staging, 'electron/main.cjs'));
-  fs.writeFileSync(path.join(staging, 'package.json'), JSON.stringify(manifest, null, 2));
-  await build({
-    projectDir: staging,
-    publish: 'never',
-    targets: Platform.WINDOWS.createTarget(['dir', 'portable'], Arch.x64),
-    config: {
-      appId: 'com.orbbound.game',
-      productName: 'Orbbound',
-      electronVersion: require('../package.json').devDependencies.electron,
-      directories: { output },
-      files: ['dist/**/*', 'electron/main.cjs', 'package.json'],
-      asar: true,
-      compression: 'maximum',
-      portable: { artifactName: `Orbbound-Windows-${manifest.version}-Portable-x64.exe`, requestExecutionLevel: 'user', unpackDirName: false },
-      npmRebuild: false,
-      electronLanguages: ['zh-CN', 'en-US'],
-      win: { signAndEditExecutable: false },
-    },
-  });
-  const gameDir = path.join(output, 'win-unpacked');
-  fs.writeFileSync(path.join(gameDir, '开始游戏.txt'),
-    `Orbbound Windows ${manifest.version}\r\n双击 Orbbound.exe 开始游戏，无需安装和联网。\r\n请保留整个目录。存档位于 %APPDATA%/orbbound，与旧 Windows 版共用。\r\n`);
-  const archive = path.join(output, `Orbbound-Windows-${manifest.version}-x64.7z`);
-  // Remove only this exact generated archive before rebuilding.
-  if (path.dirname(archive) !== output) throw new Error('Invalid archive path');
+  const version = require('../package.json').version;
+  if (require('../electron/windows-package.json').version !== version) throw new Error('Platform versions must match');
+  const sdkRoot = path.join(root, '.build', 'webview2-sdk');
+  const sdk = path.join(sdkRoot, sdkVersion);
+  if (!fs.existsSync(path.join(sdk, 'lib/net462/Microsoft.Web.WebView2.Core.dll'))) {
+    fs.mkdirSync(sdkRoot, { recursive: true });
+    const response = await fetch(`https://api.nuget.org/v3-flatcontainer/microsoft.web.webview2/${sdkVersion}/microsoft.web.webview2.${sdkVersion}.nupkg`);
+    if (!response.ok) throw new Error(`WebView2 SDK download failed: ${response.status}`);
+    const bytes = Buffer.from(await response.arrayBuffer());
+    if (createHash('sha256').update(bytes).digest('hex') !== sdkHash) throw new Error('WebView2 SDK checksum mismatch');
+    const archive = path.join(sdkRoot, 'sdk.zip'); fs.writeFileSync(archive, bytes);
+    run(path7za, ['x', archive, `-o${sdk}`, '-y']);
+  }
+  const output = path.join(root, '最终交付', 'Windows', `Orbbound-Windows-${version}`);
+  const game = path.join(output, 'Orbbound');
+  const stagingRoot = path.join(root, '.build', 'windows'); fs.mkdirSync(stagingRoot, { recursive:true });
+  const staging = fs.mkdtempSync(path.join(stagingRoot, 'webview2-app-'));
+  fs.cpSync(path.join(stagingRoot, 'web'), path.join(staging, 'web'), { recursive: true });
+  const libraries = ['Microsoft.Web.WebView2.Core.dll', 'Microsoft.Web.WebView2.WinForms.dll'];
+  for (const name of libraries) fs.copyFileSync(path.join(sdk, 'lib/net462', name), path.join(staging, name));
+  fs.copyFileSync(path.join(sdk, 'runtimes/win-x64/native/WebView2Loader.dll'), path.join(staging, 'WebView2Loader.dll'));
+  const metadata = path.join(stagingRoot, 'AssemblyInfo.cs');
+  fs.writeFileSync(metadata, `using System.Reflection;\n[assembly:AssemblyTitle("Orbbound")]\n[assembly:AssemblyProduct("Orbbound")]\n[assembly:AssemblyVersion("${version}.0")]\n[assembly:AssemblyFileVersion("${version}.0")]\n`);
+  const compiler = path.join(process.env.WINDIR || 'C:/Windows', 'Microsoft.NET/Framework64/v4.0.30319/csc.exe');
+  run(compiler, ['/nologo', '/target:winexe', '/platform:x64', '/optimize+', `/out:${path.join(staging, 'Orbbound.exe')}`, `/win32manifest:${path.join(root, 'windows/app.manifest')}`, '/reference:System.Windows.Forms.dll', '/reference:System.Drawing.dll', '/reference:System.Web.Extensions.dll', ...libraries.map(name => `/reference:${path.join(staging, name)}`), path.join(root, 'windows/Program.cs'), metadata]);
+  fs.writeFileSync(path.join(staging, 'Orbbound.exe.config'), '<?xml version="1.0"?><configuration><startup><supportedRuntime version="v4.0" sku=".NETFramework,Version=v4.8"/></startup></configuration>');
+  fs.writeFileSync(path.join(staging, '开始游戏.txt'), `Orbbound ${version} · Windows 10/11 x64\r\n解压完整目录，双击 Orbbound.exe。无需安装游戏。\r\n本包不含 Electron、Chromium、WebView2 Runtime 或 .NET 安装环境；使用系统 .NET Framework 4.8 和共享 WebView2 Evergreen。缺失时游戏提供微软官方补装入口。\r\nWebView2 官方补装：https://developer.microsoft.com/en-us/microsoft-edge/webview2#download-section\r\n保存于 %LOCALAPPDATA%/Orbbound。旧版数据保留在 %APPDATA%/orbbound，可在设置→存档备份与迁移中导入。F11 切换全屏。\r\n`);
+  fs.copyFileSync(path.join(sdk, 'LICENSE.txt'), path.join(staging, 'WebView2-SDK-LICENSE.txt'));
+  fs.copyFileSync(path.join(sdk, 'NOTICE.txt'), path.join(staging, 'WebView2-SDK-NOTICE.txt'));
+  const licenses = ['phaser/LICENSE.md', '@capacitor/core/LICENSE', '@capacitor/app/LICENSE'];
+  fs.writeFileSync(path.join(staging, 'Game-LICENSES.txt'), licenses.map(file => `${file}\n\n${fs.readFileSync(path.join(root, 'node_modules', file), 'utf8')}`).join('\n\n---\n\n'));
+  fs.mkdirSync(output, { recursive: true });
+  if (path.dirname(path.resolve(game)) !== path.resolve(output)) throw new Error('Invalid output directory');
+  if (fs.existsSync(game)) fs.rmSync(game, { recursive: true });
+  fs.renameSync(staging, game);
+  const archive = path.join(output, `Orbbound-Windows-${version}-x64.zip`);
   if (fs.existsSync(archive)) fs.unlinkSync(archive);
-  const zip = spawnSync(path7za, ['a', '-t7z', '-mx=9', '-ms=on', archive, 'win-unpacked'], { cwd: output, stdio: 'inherit' });
-  if (zip.status !== 0) throw new Error('7z packaging failed');
+  run(path7za, ['a', '-tzip', '-mx=9', archive, 'Orbbound'], output);
   const hash = createHash('sha256').update(fs.readFileSync(archive)).digest('hex');
   fs.writeFileSync(`${archive}.sha256`, `${hash}  ${path.basename(archive)}\n`);
-  const portable = path.join(output, `Orbbound-Windows-${manifest.version}-Portable-x64.exe`);
-  const portableHash = createHash('sha256').update(fs.readFileSync(portable)).digest('hex');
-  fs.writeFileSync(`${portable}.sha256`, `${portableHash}  ${path.basename(portable)}\n`);
-  console.log(`Portable EXE: ${portable}`);
-  console.log(`Game directory: ${gameDir}\nArchive: ${archive}`);
+  console.log(JSON.stringify({ version, archive, bytes: fs.statSync(archive).size, sha256: hash, bundledRuntime: false }));
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

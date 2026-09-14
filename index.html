@@ -1,9 +1,10 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" class="booting">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#0d1221" />
+    <style>html,body{margin:0;background:#0d1221}.booting #app{visibility:hidden}</style>
     <title>Orbbound · 泡泡消除</title>
   </head>
   <body>
@@ -12,7 +13,7 @@
         <div class="home-topline">
           <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
           <span class="brand-name">ORBBOUND</span>
-          <span class="version-pill">3.0.0</span>
+          <span class="version-pill"></span>
         </div>
 
         <div class="home-content">
@@ -27,29 +28,7 @@
             </div>
           </div>
 
-          <div class="home-card">
-            <div class="orb-orbit orbit-one"></div>
-            <div class="orb-orbit orbit-two"></div>
-            <div class="hero-orb coral"><span>●</span><i></i><i></i></div>
-            <div class="hero-orb mint"><span>◆</span><i></i><i></i></div>
-            <div class="hero-orb gold"><span>✦</span><i></i><i></i></div>
-            <div class="card-caption"><span>READY?</span><strong>让它掉下来。</strong></div>
-            <div class="home-actions">
-              <button id="start-button" class="primary-button" type="button"><span>无尽模式<small>自由节奏 · 随时存档</small></span><b>∞</b></button>
-              <button id="timed-button" class="primary-button timed-entry" type="button"><span>限时模式<small>5 / 10 分钟 · 争分夺秒</small></span><b>◷</b></button>
-              <div class="save-actions"><button id="continue-button" class="quiet-button" type="button" disabled>无尽 · 暂无存档</button><button id="timed-continue-button" class="quiet-button" type="button" disabled>限时 · 暂无存档</button></div>
-            </div>
-            <p id="save-note" hidden></p>
-            <div class="difficulty-picker">
-              <span>选择节奏</span>
-              <div class="difficulty-options" role="group" aria-label="选择难度">
-                <button class="difficulty-option" data-difficulty="easy" type="button">简单 · 漫游</button>
-                <button class="difficulty-option active" data-difficulty="normal" type="button">普通 · 经典</button>
-                <button class="difficulty-option" data-difficulty="hard" type="button">困难 · 风暴</button>
-              </div>
-            </div>
-            <p id="difficulty-description"></p>
-          </div>
+          <div class="home-card"></div>
         </div>
 
         <footer class="home-footer">

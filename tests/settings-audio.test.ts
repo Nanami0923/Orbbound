@@ -98,3 +98,17 @@ it('accelerates the original melody as occupied rows approach the floor',()=>{
  expect(starts[1]-starts[0]).toBeCloseTo(.375/2.2);expect(starts[1]-starts[0]).toBeLessThan(.28);
  audio.setForeground(false);
 });
+
+it('persists the acceleration toggle and keeps the melody at original speed when disabled',()=>{
+ vi.stubGlobal('window',{localStorage:{getItem:()=>JSON.stringify({adaptiveMusic:false})}});
+ expect(loadSettings().adaptiveMusic).toBe(false);
+ const {audio,ctx,oscillators}=audioFixture();audio.setAdaptiveMusic(false);audio.setPressure(1);audio.setScene('play');
+ for(let i=1;i<=10;i++){ctx.currentTime=i*.1;vi.advanceTimersByTime(100);}
+ const starts=oscillators.map(o=>o.start.mock.lastCall[0]);
+ for(let i=1;i<starts.length;i++)expect(starts[i]-starts[i-1]).toBeCloseTo(.375);
+ const count=oscillators.length;audio.setAdaptiveMusic(true);
+ for(let i=11;i<=17;i++){ctx.currentTime=i*.1;vi.advanceTimersByTime(100);}
+ const accelerated=oscillators.slice(count).map(o=>o.start.mock.lastCall[0]);
+ expect(accelerated.at(-1)-accelerated.at(-2)).toBeCloseTo(.375/2.2);
+ audio.setForeground(false);
+});

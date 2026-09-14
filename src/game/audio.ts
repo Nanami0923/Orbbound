@@ -27,6 +27,8 @@ export class GameAudio {
   private foreground = true;
   private scene: MusicScene = 'menu';
   private pressure = 0;
+  private adaptiveMusic = true;
+  public setAdaptiveMusic(enabled: boolean): void { this.adaptiveMusic = enabled; }
   public setPressure(value: number): void { this.pressure = Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0; }
   private voices = new Set<Voice>();
   private effectVoices = new Set<Voice>();
@@ -34,6 +36,7 @@ export class GameAudio {
   public constructor(settings: Settings) {
     this.volume = settings.volume;
     this.musicVolume = settings.musicVolume;
+    this.adaptiveMusic = settings.adaptiveMusic;
   }
   public setMix(volume: number, musicVolume: number): void {
     const effectsChanged = this.volume !== clampVolume(volume);
@@ -129,7 +132,7 @@ export class GameAudio {
     const ctx = this.context;
     if (!ctx || !this.music || ctx.state !== 'running' || !this.foreground) return;
     const track = MUSIC[this.scene];
-    const speed = this.scene === 'play' ? 1 + this.pressure * 1.2 : 1;
+    const speed = this.scene === 'play' && this.adaptiveMusic ? 1 + this.pressure * 1.2 : 1;
     const duration = track.duration / speed;
     if (!this.musicVolume) { this.nextNote = ctx.currentTime + 0.04; return; }
     if (this.nextNote < ctx.currentTime) this.nextNote = ctx.currentTime + 0.02;

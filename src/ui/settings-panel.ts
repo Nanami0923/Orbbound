@@ -8,11 +8,12 @@ export function settingsMarkup(settings: Settings, mobile: boolean): string {
   const range = (key: keyof Settings, title: string, min: number, max: number, unit: string, hint: string) => `<label class="setting-row range-setting" for="setting-${key}"><span><strong>${title}</strong><small>${hint}</small></span><output id="value-${key}">${settings[key]}${unit}</output><input id="setting-${key}" data-setting="${key}" data-unit="${unit}" type="range" min="${min}" max="${max}" value="${settings[key]}" aria-label="${title}"></label>`;
   const toggle = (key: keyof Settings, title: string, hint: string) => `<div class="setting-row"><div><strong>${title}</strong><small>${hint}</small></div><label class="switch"><input data-setting="${key}" type="checkbox" aria-label="${title}" ${settings[key] ? 'checked' : ''}><span></span></label></div>`;
   return `<button class="modal-close" data-close-modal>完成</button><p class="eyebrow">声音与操作</p><h2>调整手感，找到节奏</h2><p>设置自动保存，随时可以再调整。</p>
-    <nav class="settings-categories" data-settings-page="root" aria-label="设置分类"><button class="quiet-button" data-settings-open="sound">声音与音乐 ›</button><button class="quiet-button" data-settings-open="aim">瞄准辅助 ›</button>${mobile ? '<button class="quiet-button" data-settings-open="control">操作与反馈 ›</button><button class="quiet-button" data-settings-open="layout">按键布局 ›</button>' : ''}<button class="quiet-button" data-settings-open="reset">恢复默认设置 ›</button></nav>
+    <nav class="settings-categories" data-settings-page="root" aria-label="设置分类"><button class="quiet-button" data-settings-open="sound">声音与音乐 ›</button><button class="quiet-button" data-settings-open="aim">瞄准辅助 ›</button>${mobile ? '<button class="quiet-button" data-settings-open="control">操作与反馈 ›</button><button class="quiet-button" data-settings-open="layout">按键布局 ›</button>' : ''}${!mobile ? '<button class="quiet-button" data-settings-open="backup">存档备份与迁移 ›</button>' : ''}<button class="quiet-button" data-settings-open="reset">恢复默认设置 ›</button></nav>
     <button class="quiet-button settings-back" data-settings-back hidden>‹ 返回设置</button>
     <section data-settings-page="sound" hidden><h3 tabindex="-1">声音与音乐</h3>
     ${range('volume', '音效音量', 0, 100, '%', '发射轻一点，消除更清楚；0 为静音。')}
     ${range('musicVolume', '音乐音量', 0, 100, '%', '全局使用原曲，棋盘越接近底部，节奏越快。')}
+    ${toggle('adaptiveMusic', '局内音乐加速', '开启后随棋盘压力加快；关闭后始终使用原速，音高不变。')}
     <div class="sound-preview-actions"><button class="quiet-button" id="preview-menu">试听菜单曲</button><button class="quiet-button" id="preview-play">试听紧张节奏</button><button class="quiet-button" id="preview-sound">试听消除音效</button></div><p id="music-preview-status" class="mode-note" role="status">当前：菜单曲</p>
     </section><section data-settings-page="aim" hidden><h3 tabindex="-1">瞄准辅助</h3>
     ${toggle('aimAssist', '瞄准辅助', '显示反弹路线与空心落点圈。')}
@@ -26,6 +27,7 @@ export function settingsMarkup(settings: Settings, mobile: boolean): string {
       ${range('fireSize', '发射键宽度', 76, 120, 'px', '按手指大小调整。')}
       ${range('controlOffset', '控制区下移', 0, 48, 'px', '小屏会自动限制下移距离。')}
       <div class="grip-preview" aria-label="按键位置预览"><span class="grip-fire">发射</span><span class="grip-sliders">方向 ━━━<br>微调 ━━━</span></div></section>` : ''}
+    ${!mobile ? '<section data-settings-page="backup" hidden><h3 tabindex="-1">存档备份与迁移</h3><p>导出记录、对局和设置，或从旧版 Electron 读取本机存档。原存档不会删除。</p><div class="settings-categories"><button class="quiet-button" data-backup="export">导出备份</button><button class="quiet-button" data-backup="import">导入备份</button><button class="quiet-button" data-backup="legacy">导入旧 Windows 版存档</button></div></section>' : ''}
     <section data-settings-page="reset" hidden><h3 tabindex="-1">恢复默认设置</h3><p>恢复音量、操作和显示设置。存档、得分和排行榜不会改变。</p><button class="primary-button" id="settings-reset">恢复默认设置</button><p id="settings-reset-status" role="status"></p></section>
     <div class="modal-footer"><button class="primary-button" data-close-modal>完成设置 ✓</button></div>`;
 }
@@ -56,7 +58,7 @@ export function bindSettingsPanel(root: HTMLElement, settings: Settings, onChang
   });
   for (const scene of ['menu', 'play'] as const) listen(root.querySelector(`#preview-${scene}`), 'click', () => {
     gameAudio.unlock(); gameAudio.setPressure(scene === 'play' ? 1 : 0); gameAudio.setScene(scene);
-    root.querySelector('#music-preview-status')!.textContent = `正在试听：${scene === 'menu' ? '原速' : '紧张节奏'}`;
+    root.querySelector('#music-preview-status')!.textContent = `正在试听：${scene === 'menu' || !settings.adaptiveMusic ? '原速' : '紧张节奏'}`;
   });
   listen(root.querySelector('#preview-sound'), 'click', () => gameAudio.blip('match'));
   let raf = 0, lastTime = 0, velocity = 0, angle = 0;

@@ -1,17 +1,21 @@
 # Orbbound
 
-本地目录已按源码、文档、平台交付整理。Android 与 Windows 当前统一为 **3.0.0**。
+本地目录已按源码、文档、平台交付整理。Android 与 Windows 当前统一为 **3.1.0**。
 
 ## 交付位置
 
 | 平台 | 最新版本 | 交付目录 | 主要文件 |
 | --- | --- | --- | --- |
-| Android | 3.0.0 | [Android 交付目录](最终交付/Android/Orbbound-3.0.0/) | APK、SHA-256、更新说明 |
-| Windows | 3.0.0 | [Windows 交付目录](最终交付/Windows/Orbbound-Windows-3.0.0/) | 单文件便携 EXE、7z、SHA-256、完整 win-unpacked 运行目录 |
+| Android | 3.1.0 | [Android 交付目录](最终交付/Android/Orbbound-3.1.0/) | APK、SHA-256、更新说明 |
+| Windows | 3.1.0 | [Windows 交付目录](最终交付/Windows/Orbbound-Windows-3.1.0/) | 轻量 ZIP、SHA-256、完整 Orbbound 运行目录 |
 
 所有旧版本保留在对应平台目录内。Windows 1.0.0 的两个不同本地构建按原来源分别保存，不将其视作同一文件。
 
-下载：[Windows 3.0.0 单文件 EXE](https://github.com/Nanami0923/Orbbound/releases/download/v3.0.0/Orbbound-Windows-3.0.0-Portable-x64.exe) · [完整游戏目录 7z](https://github.com/Nanami0923/Orbbound/releases/download/v3.0.0/Orbbound-Windows-3.0.0-x64.7z)
+下载：[Windows 3.1.0 ZIP](https://github.com/Nanami0923/Orbbound/releases/download/v3.1.0/Orbbound-Windows-3.1.0-x64.zip) · [Android 3.1.0 APK](https://github.com/Nanami0923/Orbbound/releases/download/v3.1.0/Orbbound-3.1.0-Android.apk) · [发布页](https://github.com/Nanami0923/Orbbound/releases/tag/v3.1.0)
+
+Windows 请完整解压 ZIP 后运行 `Orbbound/Orbbound.exe`。轻量包约 0.62 MB，不包含运行环境，使用本机 .NET Framework 4.8 和共享 WebView2 Evergreen Runtime；具备环境后可离线游玩。缺少 WebView2 时程序提供[微软官方补装入口](https://developer.microsoft.com/en-us/microsoft-edge/webview2#download-section)，本次发布不上传环境安装包。
+
+Windows 从 3.0.0 升级后，在「设置 → 存档备份与迁移 → 导入旧版存档」读取旧数据。旧目录 `%APPDATA%/orbbound` 保留，新版数据位于 `%LOCALAPPDATA%/Orbbound`。迁移前关闭旧版，导入前会保留恢复备份；也可导出 JSON 备份用于换机。Android 沿用原签名，可直接覆盖安装保留数据。
 
 ## 开发与打包
 
@@ -44,7 +48,7 @@ npm run package:win
 
 Android 打包需配置 JDK 21 与 Android SDK；签名仍在仓库外的 `%LOCALAPPDATA%/Orbbound/signing`。Windows 运行目录必须完整保留，不能只复制 EXE。
 
-两个打包命令只生成本地文件，不上传。Windows 版本号读取 `electron/windows-package.json`，Android 版本号读取 `package.json`，并须与 `android/app/build.gradle` 一致；正式发布时三个位置必须使用同一个版本号。
+两个打包命令只生成本地文件，不上传。版本号以 `package.json` 为准，与 `electron/windows-package.json`、`windows/app.manifest`、`android/app/build.gradle` 保持一致。Windows 使用系统 .NET Framework C# 编译器；首次构建下载并校验 WebView2 SDK 到忽略目录 `.build/webview2-sdk/`，仅将接口 DLL 和加载器打包，不下载或打包运行环境。
 
 ## 导航
 
@@ -55,10 +59,4 @@ Android 打包需配置 JDK 21 与 Android SDK；签名仍在仓库外的 `%LOCA
 - [本地交付文件索引与校验值](最终交付/版本索引.md)
 - [最初设计方案](docs/design/Snood现代化重构方案.md)
 
-Windows 3.0.0 同步新版首页、中心左右发射动画、存档卡片与音频淡出修复，保留鼠标 / 键盘操作。[更新说明](docs/releases/Windows/windows-3.0.0-notes.md)。
-
-单 EXE 为自解压便携程序，无需安装或联网；运行时使用临时目录，退出后清理。存档仍在 `%APPDATA%/orbbound`，不会因临时目录清理而删除。
-
-Android 2.8.0：[APK 下载](https://github.com/Nanami0923/Orbbound/releases/download/v2.8.0/Orbbound-2.8.0-Android.apk) · [更新说明](docs/releases/Android/android-2.8.0-notes.md)。
-
-Android 3.0.0：手机首页与操作区重构、原生系统安全区域、连续音乐和音效淡出修复。[APK 下载](https://github.com/Nanami0923/Orbbound/releases/download/v3.0.0/Orbbound-3.0.0-Android.apk) · [更新与验证说明](docs/releases/Android/android-3.0.0-notes.md)。
+3.1.0：两端增加「局内音乐加速」开关；Windows 修复旧界面闪现、优化首次设置/记录加载并改用轻量外壳；Android 压缩排行榜布局并启用正式包裁剪。[Windows 说明](docs/releases/Windows/windows-3.1.0-notes.md) · [Android 说明](docs/releases/Android/android-3.1.0-notes.md) · [验证记录](docs/releases/3.1.0-validation.md)。

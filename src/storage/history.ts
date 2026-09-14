@@ -8,6 +8,8 @@ export interface RoundRecord {
 }
 export interface HistoryData { recent: RoundRecord[]; top: RoundRecord[] }
 const KEY = 'orbbound-history-v1';
+let cachedRaw: string | null | undefined;
+let cachedData: HistoryData | undefined;
 export const rankingKey = (r: Pick<RoundRecord, 'mode' | 'durationMs'>): string => r.mode === 'timed' ? `timed-${r.durationMs}` : 'endless';
 function ranked(records: RoundRecord[]): RoundRecord[] {
   return ['endless', 'timed-300000', 'timed-600000'].flatMap(key => records.filter(r => rankingKey(r) === key && r.result !== 'ABANDONED')
@@ -21,16 +23,22 @@ export function mergeRecord(data: HistoryData, record: RoundRecord): HistoryData
 }
 export function loadHistory(): HistoryData {
   try {
-    const raw = JSON.parse(localStorage.getItem(KEY) ?? 'null');
+    const source = localStorage.getItem(KEY);
+    if (source === cachedRaw && cachedData) return cachedData;
+    const raw = JSON.parse(source ?? 'null');
     const valid = (x: RoundRecord) => x && typeof x.id === 'string' && ['easy','normal','hard'].includes(x.difficulty)
       && ['WON','LOST','ABANDONED','TIMEOUT','SETTLED'].includes(x.result)
       && (x.mode === undefined || x.mode === 'endless' || (x.mode === 'timed' && [300000,600000].includes(x.durationMs!)))
-      && [x.score,x.startedAt,x.endedAt,x.elapsedMs,x.shots].every(n => Number.isFinite(n) && n >= 0);
+      && [x.score,x.startedAt,x.endedAt,x.elapsedMs,x.shots].every(n => Number.isFinite(n) && n >= 0)
+      && x.startedAt <= 8_640_000_000_000_000 && x.endedAt <= 8_640_000_000_000_000
+      && (x.rawScore === undefined || (Number.isFinite(x.rawScore) && x.rawScore >= 0))
+      && (x.multiplier === undefined || [1,1.5,2].includes(x.multiplier));
     const migrate = (r: RoundRecord): RoundRecord => r.rawScore === undefined ? {...r, mode: r.mode ?? 'endless', rawScore:r.score,
       multiplier:scoreMultiplier(r.difficulty), score:Math.round(r.score*scoreMultiplier(r.difficulty))} : r;
     const recent = Array.isArray(raw?.recent) ? raw.recent.filter(valid).slice(0,500).map(migrate) : [];
     const candidates: RoundRecord[] = [...recent, ...(Array.isArray(raw?.top) ? raw.top.filter(valid).map(migrate) : [])];
-    return { recent, top: ranked([...new Map(candidates.map(r => [r.id,r])).values()]) };
+    cachedRaw = source;
+    return cachedData = { recent, top: ranked([...new Map(candidates.map(r => [r.id,r])).values()]) };
   } catch { return { recent: [], top: [] }; }
 }
 export function recordRound(state: GameState, abandoned = false): void {

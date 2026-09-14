@@ -1,3 +1,4 @@
+import { readStorage, writeStorage } from './safe-storage';
 import type { GameState } from '../core/types';
 import { freezeTimed } from '../core/modes';
 
@@ -9,6 +10,7 @@ const HIGH_SCORE_KEY = 'orbbound-high-score-v1';
 export interface Settings {
   volume: number;
   musicVolume: number;
+  adaptiveMusic: boolean;
   sensitivity: number;
   hapticShoot: boolean;
   hapticMatch: boolean;
@@ -22,6 +24,7 @@ export interface Settings {
 export const DEFAULT_SETTINGS: Settings = {
   volume: 50,
   musicVolume: 50,
+  adaptiveMusic: true,
   sensitivity: 100,
   hapticShoot: false,
   hapticMatch: false,
@@ -33,19 +36,20 @@ export const DEFAULT_SETTINGS: Settings = {
 };
 
 function storageAvailable(): boolean {
-  return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
+  return typeof window !== 'undefined';
 }
 
 export function loadSettings(): Settings {
   if (!storageAvailable()) return { ...DEFAULT_SETTINGS };
   try {
-    const value: unknown = JSON.parse(window.localStorage.getItem(SETTINGS_KEY) ?? 'null');
+    const value: unknown = JSON.parse(readStorage(SETTINGS_KEY) ?? 'null');
     if (!value || typeof value !== 'object') return { ...DEFAULT_SETTINGS };
     const record = value as Partial<Settings> & { sound?: boolean };
     const number = (value: unknown, fallback: number, min: number, max: number) => typeof value === 'number' && Number.isFinite(value) ? Math.max(min, Math.min(max, value)) : fallback;
     const oldVolume = number(record.volume, record.sound === false ? 0 : 50, 0, 100);
     return {
       musicVolume: number(record.musicVolume, oldVolume, 0, 100),
+      adaptiveMusic: record.adaptiveMusic !== false,
       sensitivity: number(record.sensitivity, 100, 50, 150),
       hapticShoot: record.hapticShoot === true,
       hapticMatch: record.hapticMatch === true,
@@ -63,19 +67,19 @@ export function loadSettings(): Settings {
 
 export function saveSettings(settings: Settings): void {
   if (!storageAvailable()) return;
-  window.localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+  writeStorage(SETTINGS_KEY, JSON.stringify(settings));
 }
 
 export function saveGame(state: GameState): void {
   if (!storageAvailable() || state.status !== 'READY') return;
-  try { window.localStorage.setItem(state.mode === 'timed' ? TIMED_KEY : SAVE_KEY, JSON.stringify(freezeTimed(state))); }
+  try { writeStorage(state.mode === 'timed' ? TIMED_KEY : SAVE_KEY, JSON.stringify(freezeTimed(state))); }
   catch { window.dispatchEvent(new CustomEvent('snood-storage-error')); }
 }
 
 export function loadGame(mode: 'endless' | 'timed' = 'endless'): GameState | null {
   if (!storageAvailable()) return null;
   try {
-    const value: unknown = JSON.parse(window.localStorage.getItem(mode === 'timed' ? TIMED_KEY : SAVE_KEY) ?? 'null');
+    const value: unknown = JSON.parse(readStorage(mode === 'timed' ? TIMED_KEY : SAVE_KEY) ?? 'null');
     if (!isGameState(value)) return null;
     // Upgrade the last 2.0 checkpoint without consuming time while the app was closed.
     if (value.mode === 'timed' && value.timedSavedAt === undefined) {
@@ -88,26 +92,26 @@ export function loadGame(mode: 'endless' | 'timed' = 'endless'): GameState | nul
 }
 
 export function hasLegacySave(): boolean {
-  try { return JSON.parse(window.localStorage.getItem(SAVE_KEY) ?? 'null')?.rulesVersion === 'classic-v1'; }
+  try { return JSON.parse(readStorage(SAVE_KEY) ?? 'null')?.rulesVersion === 'classic-v1'; }
   catch { return false; }
 }
 
 export function clearGame(mode: 'endless' | 'timed' = 'endless'): void {
-  if (storageAvailable()) window.localStorage.removeItem(mode === 'timed' ? TIMED_KEY : SAVE_KEY);
+  if (storageAvailable()) writeStorage(mode === 'timed' ? TIMED_KEY : SAVE_KEY, null);
 }
 
 export function getHighScore(): number {
   if (!storageAvailable()) return 0;
-  const value = Number(window.localStorage.getItem(HIGH_SCORE_KEY) ?? 0);
+  const value = Number(readStorage(HIGH_SCORE_KEY) ?? 0);
   return Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
 }
 
 export function setHighScore(score: number): void {
   if (!storageAvailable()) return;
-  if (score > getHighScore()) window.localStorage.setItem(HIGH_SCORE_KEY, String(Math.floor(score)));
+  if (score > getHighScore()) writeStorage(HIGH_SCORE_KEY, String(Math.floor(score)));
 }
 
-function isGameState(value: unknown): value is GameState {
+export function isGameState(value: unknown): value is GameState {
   if (!value || typeof value !== 'object') return false;
   const candidate = value as Partial<GameState>;
   if (candidate.mode !== undefined && !['endless', 'timed'].includes(candidate.mode)) return false;
@@ -118,7 +122,11 @@ function isGameState(value: unknown): value is GameState {
   if (candidate.schemaVersion !== 1 || candidate.rulesVersion !== 'classic-v2') return false;
   if (candidate.rowOffset !== 0 && candidate.rowOffset !== 1) return false;
   if (!Array.isArray(candidate.board) || candidate.board.length !== 19) return false;
-  if (!candidate.board.every((row) => Array.isArray(row) && row.length === 14 && row.every((cell) => cell === null || (typeof cell === 'number' && cell >= 0 && cell <= 5)))) return false;
+  if (!candidate.board.every((row) => Array.isArray(row) && row.length === 14 && row.every((cell) => cell === null || (Number.isInteger(cell) && cell >= 0 && cell <= 5)))) return false;
+  if (![candidate.seed, candidate.rngState, candidate.score, candidate.danger, candidate.step, candidate.currentColor, candidate.nextColor].every(n => Number.isSafeInteger(n) && n! >= 0)) return false;
+  if (!['easy', 'normal', 'hard'].includes(candidate.difficultyId!)) return false;
+  if (candidate.currentColor! > 5 || candidate.nextColor! > 5 || candidate.danger! > 1000) return false;
+  for (const n of [candidate.startedAt, candidate.elapsedMs]) if (n !== undefined && (!Number.isFinite(n) || n < 0)) return false;
   return candidate.status === 'READY'
     && typeof candidate.difficultyId === 'string'
     && typeof candidate.seed === 'number'

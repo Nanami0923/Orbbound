@@ -1,4 +1,6 @@
-import Phaser from 'phaser';
+import { bindDesktopBridge } from './ui/desktop-bridge';
+import { historyMarkup } from './ui/history-panel';
+import type Phaser from 'phaser';
 import { Capacitor } from '@capacitor/core';
 import { App } from '@capacitor/app';
 import { usesButtonControls } from './game/input-mode';
@@ -6,7 +8,7 @@ import { countdownProgress } from './game/countdown';
 import { DANGER_MAX, getDifficulty, shotsUntilDescent } from './core/engine';
 import { createRound, scoreMultiplier, weightedScore, type GameMode } from './core/modes';
 import type { GameState } from './core/types';
-import { PHASER_CONFIG, PlayScene } from './game/PlayScene';
+import type { PlayScene } from './game/PlayScene';
 import { getOrbTheme } from './content/theme';
 import { clearGame, hasLegacySave, loadGame, loadSettings, saveGame, saveSettings, setHighScore, type Settings } from './storage/storage';
 import './style.css';
@@ -68,10 +70,11 @@ if (sideOrbLabel && import.meta.env.MODE === 'windows') sideOrbLabel.textContent
 
 let settings: Settings = loadSettings();
 gameAudio.setMix(settings.volume, settings.musicVolume);
+gameAudio.setAdaptiveMusic(settings.adaptiveMusic);
 gameAudio.unlock();
 document.addEventListener('pointerdown', () => gameAudio.unlock());
 document.addEventListener('keydown', () => gameAudio.unlock());
-document.addEventListener('visibilitychange', () => gameAudio.setForeground(!document.hidden));
+document.addEventListener('visibilitychange', () => { gameAudio.setForeground(!document.hidden); document.documentElement.classList.toggle('app-inactive', document.hidden); });
 let selectedDifficulty = 'normal';
 let selectedMode: GameMode = 'endless';
 let selectedDuration = 300000;
@@ -79,6 +82,7 @@ let game: Phaser.Game | null = null;
 let toastTimer: number | undefined;
 let resumeAfterModal = false;
 let disposeModal: (() => void) | null = null;
+let roundRequest = 0;
 
 function syncMobileLayout(): void {
   document.documentElement.classList.toggle("desktop-ui", !usesButtonControls());
@@ -95,15 +99,20 @@ window.addEventListener('resize', () => { stopRotation(); syncMobileLayout(); })
 function getScene(): PlayScene | null {
   if (!game) return null;
   const scene = game.scene.getScene('PlayScene');
-  return scene instanceof PlayScene ? scene : null;
+  return scene as PlayScene | null;
 }
 
-function ensureGame(): void {
+let runtime: Promise<typeof import('./game/runtime')> | null = null;
+function loadRuntime() { return runtime ??= import('./game/runtime').catch(error => { runtime = null; throw error; }); }
+async function ensureGame(): Promise<void> {
   if (game) return;
-  game = new Phaser.Game(PHASER_CONFIG);
+  const module = await loadRuntime();
+  if (!game) game = module.createGame();
 }
 
 function showHome(): void {
+  roundRequest++;
+  document.documentElement.classList.remove('game-loading');
   gameAudio.setScene('menu');
   const scene = getScene();
   scene?.pauseGame();
@@ -121,17 +130,24 @@ function showGame(): void {
   if (gameScreen) gameScreen.hidden = false;
 }
 
-function startRound(state: Parameters<PlayScene['begin']>[0] | null, difficulty = selectedDifficulty): void {
+async function startRound(state: Parameters<PlayScene['begin']>[0] | null, difficulty = selectedDifficulty): Promise<void> {
+  const request = ++roundRequest, mode = selectedMode, duration = selectedDuration;
+  document.documentElement.classList.add('game-loading');
+  await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+  try { await ensureGame(); }
+  catch { document.documentElement.classList.remove('game-loading'); showToast('游戏加载失败，请重试'); return; }
+  if (request !== roundRequest) return;
   showGame();
-  ensureGame();
   const beginWhenReady = () => {
+    if (request !== roundRequest) return;
     const scene = getScene();
     if (!scene?.ready) {
       window.setTimeout(beginWhenReady, 30);
       return;
     }
     scene.setSettings(settings);
-    scene.begin(state ?? createRound(difficulty, selectedMode, selectedDuration));
+    scene.begin(state ?? createRound(difficulty, mode, duration));
+    document.documentElement.classList.remove('game-loading');
     game?.loop.wake();
   };
   beginWhenReady();
@@ -265,6 +281,7 @@ function openModal(content: string, className = ''): void {
   }
   modalRoot.innerHTML = `<div class="modal-card ${className}" role="dialog" aria-modal="true">${content}</div>`;
   modalRoot.hidden = false;
+  document.documentElement.classList.add('modal-open');
   formatHeadings(modalRoot);
   game?.loop.sleep();
   modalRoot.querySelectorAll<HTMLElement>('[data-close-modal]').forEach(button => button.addEventListener('click', closeModal));
@@ -279,6 +296,7 @@ function closeModal(): void {
   if (!modalRoot) return;
   disposeModal?.(); disposeModal = null;
   modalRoot.hidden = true;
+  document.documentElement.classList.remove('modal-open');
   modalRoot.innerHTML = '';
   modalRoot.onclick = null;
   if (resumeAfterModal && !gameScreen?.hidden) { game?.loop.wake(); getScene()?.resumeGame(); }
@@ -287,15 +305,7 @@ function closeModal(): void {
 
 function showHistory(top = true, page = 0, board = 'endless'): void {
   const data = loadHistory();
-  const all = (top ? data.top : data.recent).filter(r => rankingKey(r) === board);
-  const rows = all.slice(page * 20, page * 20 + 20);
-  openModal(`<button class="modal-close" data-close-modal type="button">关闭</button>
-    <p class="eyebrow">PERSONAL / LOCAL</p><h2 class="history-heading"><button id="history-toggle" type="button" aria-label="${top ? '排行榜，点击切换到历史记录' : '历史记录，点击切换到排行榜'}">${top ? '排行榜' : '历史记录'}<span aria-hidden="true">⇄</span></button></h2>
-    <p>得分 × 难度系数：简单 ×1、普通 ×1.5、困难 ×2。</p><p>结算后入榜，重开不入榜。同分时，用时较短者在前。每个榜单保留前十名。</p>
-    <div class="mode-tabs">${[['endless','无尽'],['timed-300000','限时 5 分钟'],['timed-600000','限时 10 分钟']].map(([key,label]) => `<button data-board="${key}" class="quiet-button ${key === board ? 'active' : ''}">${label}</button>`).join('')}</div>
-    <div class="history-scroll"><table><thead><tr><th>#</th><th>开始时间</th><th>分数</th><th>难度 / 结果</th><th>用时 / 发射</th></tr></thead><tbody>
-    ${rows.map((r,i) => `<tr><td>${page*20+i+1}</td><td>${new Date(r.startedAt).toLocaleString('zh-CN',{hour12:false})}</td><td><strong>${r.score}</strong><small class="score-formula">${r.rawScore ?? r.score} ×${r.multiplier ?? 1}</small></td><td>${getDifficulty(r.difficulty).label} / ${{WON:'清盘',LOST:'触底',ABANDONED:'重开',TIMEOUT:'时间到',SETTLED:'主动结算'}[r.result]}</td><td>${formatDuration(r.elapsedMs)} / ${r.shots}</td></tr>`).join('') || '<tr><td colspan="5">暂无记录，完成一局后会自动保存在这里。</td></tr>'}
-    </tbody></table></div><div class="history-tabs"><button id="history-prev" class="quiet-button" ${page === 0 ? 'disabled' : ''}>上一页</button><span>${page+1} / ${Math.max(1,Math.ceil(all.length/20))}</span><button id="history-next" class="quiet-button" ${(page+1)*20 >= all.length ? 'disabled' : ''}>下一页</button></div>`, 'history-card');
+  openModal(historyMarkup(data, top, board, page, usesButtonControls()), 'history-card');
   document.querySelectorAll<HTMLElement>('[data-board]').forEach(button => button.addEventListener('click', () => showHistory(top, 0, button.dataset.board)));
   document.querySelector('#history-toggle')?.addEventListener('click', () => showHistory(!top,0,board));
   document.querySelector('#history-prev')?.addEventListener('click', () => showHistory(top,page-1,board));
@@ -323,6 +333,7 @@ function showSettings(): void {
   disposeModal = bindSettingsPanel(modalRoot, settings, commit => {
     if (commit) saveSettings(settings);
     gameAudio.setMix(settings.volume, settings.musicVolume);
+    gameAudio.setAdaptiveMusic(settings.adaptiveMusic);
     getScene()?.setSettings(settings);
     syncMobileLayout();
   });
@@ -379,6 +390,8 @@ function showModeSetup(mode: GameMode): void {
     if (previous) recordRound(previous, true);
     clearGame(mode); closeModal(); startRound(null);
   });
+  // Warm the engine after the setup panel paints, when play intent is explicit.
+  requestAnimationFrame(() => requestAnimationFrame(() => { void loadRuntime().catch(() => {}); }));
 }
 document.querySelector('#start-button')?.addEventListener('click', () => loadGame('endless') ? continueSaved('endless') : showModeSetup('endless'));
 document.querySelector('#timed-button')?.addEventListener('click', () => loadGame('timed') ? continueSaved('timed') : showModeSetup('timed'));
@@ -524,3 +537,13 @@ window.addEventListener('snood-storage-error', () => showToast('本地记录未�
 window.addEventListener('beforeunload', () => getScene()?.persistGame());
 window.addEventListener('snood-settings-applied', () => gameScreen?.classList.toggle('independent-launch', settings.independentLaunch));
 
+
+requestAnimationFrame(() => {
+  document.documentElement.classList.remove('booting');
+  performance.mark('orbbound-home-ready');
+  window.dispatchEvent(new Event('orbbound-ready'));
+});
+
+bindDesktopBridge(() => { settings = loadSettings(); gameAudio.setMix(settings.volume, settings.musicVolume); gameAudio.setAdaptiveMusic(settings.adaptiveMusic); syncMobileLayout(); closeModal(); updateHomeState(); }, showToast);
+window.addEventListener('orbbound-host-background', () => { gameAudio.setForeground(false); if (!gameScreen?.hidden) showHome(); });
+window.addEventListener('orbbound-host-foreground', () => gameAudio.setForeground(true));
