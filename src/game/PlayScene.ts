@@ -35,6 +35,7 @@ export class PlayScene extends Phaser.Scene {
   private lastAngleSent = NaN;
   private barrel?: Phaser.GameObjects.Graphics;
   private recoil = 0;
+  private dangerLine?: Phaser.GameObjects.Graphics;
   private traceCache?: { board: GameState['board']; rowOffset: number; angle: number; trace: ReturnType<typeof traceShot> };
   private getShotTrace(): ReturnType<typeof traceShot> {
     const { board, rowOffset = 0 } = this.gameState;
@@ -328,13 +329,16 @@ export class PlayScene extends Phaser.Scene {
       letterSpacing: 1,
     }).setOrigin(0.5);
     floorLabel.setAlpha(0.85);
-    this.add.text(478, 649, import.meta.env.MODE === 'windows' ? '当前球' : '下一球', {
+    this.dangerLine = this.add.graphics();
+    this.add.text(import.meta.env.MODE === 'windows' ? 478 : 405, 661, import.meta.env.MODE === 'windows' ? '当前球' : '下一球', {
       resolution: 2, color: '#98a1b8', fontFamily: 'Segoe UI, Microsoft YaHei, sans-serif', fontSize: '14px',
     }).setOrigin(0.5);
 
   }
 
   private renderBoard(offsetY = 0): void {
+    const pressure = boardMusicPressure(this.gameState.board);
+    this.dangerLine?.clear().lineStyle(2, UI_COLORS.danger, .18 + pressure * .65).lineBetween(48, 608, 592, 608);
     this.boardGroup.setY(offsetY);
     const retained = new Set<string>();
 
@@ -368,8 +372,8 @@ export class PlayScene extends Phaser.Scene {
     this.nextOrb?.destroy();
 
     this.launcherBase.clear();
-    this.nextOrb = this.createOrb(import.meta.env.MODE === 'windows' ? this.gameState.currentColor : this.gameState.nextColor, { x: 478, y: 698 });
-    this.nextOrb.setScale(1.35);
+    this.nextOrb = this.createOrb(import.meta.env.MODE === 'windows' ? this.gameState.currentColor : this.gameState.nextColor, { x: import.meta.env.MODE === 'windows' ? 478 : 405, y: 698 });
+    this.nextOrb.setScale(import.meta.env.MODE === 'windows' ? 1.35 : .72);
     const theme = getOrbTheme(this.gameState.currentColor);
     if (this.barrel) {
       this.barrel.clear();
@@ -460,7 +464,7 @@ export class PlayScene extends Phaser.Scene {
         const t = (nextDot - distance) / length;
         const x = a.x + (b.x - a.x) * t, y = a.y + (b.y - a.y) * t;
         this.aimGraphics.fillStyle(0x0b1120, 0.9).fillCircle(x, y, 3.5);
-        this.aimGraphics.fillStyle(theme.color, 0.85).fillCircle(x, y, 2.2);
+        this.aimGraphics.fillStyle(0xc5d7e0, 0.65).fillCircle(x, y, 2.2);
         nextDot += 15;
       }
       distance += length;
@@ -602,14 +606,19 @@ export class PlayScene extends Phaser.Scene {
     const matched = events.find((event) => event.type === 'match')?.cells ?? [];
     const dropped = events.find((event) => event.type === 'drop')?.cells ?? [];
     const removed = [...matched, ...dropped];
-    const removeDuration = 170;
+    const removeDuration = dropped.length ? 330 : 170;
     const removeDelay = 36;
 
     const animationGroups = new Map<number, Phaser.GameObjects.Container[]>();
     for (const [index, cell] of removed.entries()) {
       const orb = this.boardBalls.get(cellKey(cell));
       if (!orb) continue;
-      const delay = dropped.includes(cell) ? Math.min(index, 8) * removeDelay : 0;
+      const falling = dropped.includes(cell);
+      const delay = falling ? 90 + Math.min(index, 6) * removeDelay : 0;
+      if (falling) {
+        this.tweens.add({ targets: orb, y: orb.y + 150, angle: 18,
+          duration: removeDuration, delay, ease: 'Quad.In' });
+      }
       const group = animationGroups.get(delay) ?? [];
       group.push(orb);
       animationGroups.set(delay, group);
@@ -617,11 +626,11 @@ export class PlayScene extends Phaser.Scene {
     for (const [delay, targets] of animationGroups) {
       this.tweens.add({
         targets,
-        scale: 0.05,
+        scale: delay > 0 ? .85 : 0.05,
         alpha: 0,
         duration: removeDuration,
         delay,
-        ease: 'Back.In',
+        ease: delay > 0 ? 'Quad.In' : 'Back.In',
       });
     }
 

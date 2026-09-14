@@ -11,7 +11,7 @@ export function boardMusicPressure(board: GameState['board']): number {
   }
   return Math.max(0, Math.min(1, (bottom - 6) / 11));
 }
-type Voice = { oscillator: OscillatorNode; gain: GainNode; start: number; kind?: string; retiring?: boolean };
+type Voice = { oscillator: OscillatorNode; gain: GainNode; release: GainNode; start: number; kind?: string; retiring?: boolean };
 const clampVolume = (value: number) => Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : 50;
 
 export class GameAudio {
@@ -21,6 +21,7 @@ export class GameAudio {
   private volume: number;
   private musicVolume: number;
   private timer: ReturnType<typeof setInterval> | null = null;
+  private suspendTimer: ReturnType<typeof setTimeout> | null = null;
   private note = 0;
   private nextNote = 0;
   private foreground = true;
@@ -50,24 +51,22 @@ export class GameAudio {
     for (const voice of this.effectVoices) {
       if (scene !== 'menu' || (voice.kind !== 'win' && voice.kind !== 'lose')) this.retire(voice);
     }
-    this.scene = scene; this.note = 0;
-    this.retireMusic(0.08);
-    this.nextNote = (this.context?.currentTime ?? 0) + 0.1;
+    // Both scenes share a melody: keep its phase and pending notes continuous.
+    this.scene = scene;
   }
   private retire(voice: Voice, fade = 0.025): void {
     if (voice.retiring) return;
     voice.retiring = true;
     const now = this.context?.currentTime ?? 0;
-    const param = voice.gain.gain;
+    // Fade a separate, unautomated gate. Older Android WebViews cannot reliably
+    // hold an in-flight exponential envelope via AudioParam.value.
+    const param = voice.release.gain;
     if (voice.start > now) {
       param.cancelScheduledValues(now);
       param.setValueAtTime(0, now);
-    } else if (typeof param.cancelAndHoldAtTime === 'function') {
-      param.cancelAndHoldAtTime(now);
     } else {
-      const current = param.value;
       param.cancelScheduledValues(now);
-      param.setValueAtTime(current, now);
+      param.setValueAtTime(1, now);
     }
     param.linearRampToValueAtTime(0, now + fade);
     voice.oscillator.stop(now + fade + 0.005);
@@ -108,13 +107,22 @@ export class GameAudio {
     } catch { /* Unavailable audio never interrupts a game. */ }
   }
   public setForeground(active: boolean): void {
+    if (this.foreground === active) return;
     this.foreground = active;
+    if (this.suspendTimer) clearTimeout(this.suspendTimer);
+    this.suspendTimer = null;
     if (!active) {
       if (this.timer) clearInterval(this.timer);
       this.timer = null; this.retireMusic();
-      for (const voice of this.effectVoices) { voice.gain.gain.cancelScheduledValues(this.context?.currentTime ?? 0); voice.gain.gain.value = 0; voice.oscillator.stop(); }
-      this.effectVoices.clear();
-      if (this.context) void this.context.suspend().catch(() => {});
+      this.stopEffects();
+      // Let the release reach silence before suspending the audio device.
+      this.suspendTimer = setTimeout(() => {
+        this.suspendTimer = null;
+        if (!this.foreground && this.context) void this.context.suspend().then(() => {
+          // A foreground event can arrive while suspend is still in flight.
+          if (this.foreground) this.unlock();
+        }).catch(() => {});
+      }, 120);
     } else if (this.context) this.unlock();
   }
   private scheduleMusic(): void {
@@ -134,9 +142,10 @@ export class GameAudio {
       gain.gain.linearRampToValueAtTime(0.16, this.nextNote + 0.025);
       gain.gain.linearRampToValueAtTime(0.10, this.nextNote + duration * 0.44);
       gain.gain.exponentialRampToValueAtTime(0.0001, this.nextNote + duration - 0.02);
-      oscillator.connect(gain).connect(this.music);
-      const voice: Voice = { oscillator, gain, start: this.nextNote }; this.voices.add(voice);
-      oscillator.onended = () => { oscillator.disconnect(); gain.disconnect(); this.voices.delete(voice); };
+      const release = ctx.createGain();
+      oscillator.connect(gain).connect(release).connect(this.music);
+      const voice: Voice = { oscillator, gain, release, start: this.nextNote }; this.voices.add(voice);
+      oscillator.onended = () => { oscillator.disconnect(); gain.disconnect(); release.disconnect(); this.voices.delete(voice); };
       oscillator.start(this.nextNote); oscillator.stop(this.nextNote + duration);
       this.nextNote += track.step / speed;
     }
@@ -174,9 +183,10 @@ export class GameAudio {
       gain.gain.linearRampToValueAtTime(preset.peak, now + 0.008);
       gain.gain.linearRampToValueAtTime(preset.peak * 0.75, now + preset.duration * 0.6);
       gain.gain.exponentialRampToValueAtTime(0.0001, now + preset.duration);
-      oscillator.connect(gain).connect(this.effects);
-      const voice: Voice = { oscillator, gain, start: now, kind }; this.effectVoices.add(voice);
-      oscillator.onended = () => { oscillator.disconnect(); gain.disconnect(); this.effectVoices.delete(voice); };
+      const release = this.context.createGain();
+      oscillator.connect(gain).connect(release).connect(this.effects);
+      const voice: Voice = { oscillator, gain, release, start: now, kind }; this.effectVoices.add(voice);
+      oscillator.onended = () => { oscillator.disconnect(); gain.disconnect(); release.disconnect(); this.effectVoices.delete(voice); };
       oscillator.start(now); oscillator.stop(now + preset.duration + 0.02);
     } catch { /* Sound is optional. */ }
   }

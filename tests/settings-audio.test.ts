@@ -30,27 +30,38 @@ it('independently mutes music and effects without creating duplicate schedulers'
  expect(gains[1].gain.setTargetAtTime).toHaveBeenLastCalledWith(0,0,.08);
  const count=oscillators.length;audio.blip('shoot');expect(oscillators.length).toBe(count+1);
  audio.setMix(0,60);audio.blip('match');expect(oscillators.length).toBe(count+1);
- audio.setForeground(false);expect(ctx.suspend).toHaveBeenCalledOnce();expect(vi.getTimerCount()).toBe(0);
+ audio.setForeground(false);expect(ctx.suspend).not.toHaveBeenCalled();vi.advanceTimersByTime(120);expect(ctx.suspend).toHaveBeenCalledOnce();expect(vi.getTimerCount()).toBe(0);
 });
-it('changes melodies and tempo, retires queued voices and never restarts in background',()=>{
+it('preserves melody phase across rapid scene switches and never starts in background',()=>{
  const {audio,ctx,gains,oscillators}=audioFixture();
  expect(MUSIC.play).toEqual(MUSIC.menu);
- const original=oscillators[0];audio.setScene('play');expect(original.stop).toHaveBeenLastCalledWith(.085);
- expect(gains[2].gain.cancelScheduledValues).toHaveBeenCalledWith(0);
- vi.advanceTimersByTime(100);expect(oscillators.length).toBe(2);
+ const original=oscillators[0];for(let i=0;i<100;i++){audio.setScene('play');audio.setScene('menu');}
+ expect(original.stop).toHaveBeenCalledTimes(1);
+ expect(gains[2].gain.cancelScheduledValues).not.toHaveBeenCalled();
+ vi.advanceTimersByTime(100);expect(oscillators.length).toBe(1);
  const count=oscillators.length;audio.setScene('play');vi.advanceTimersByTime(100);expect(oscillators.length).toBe(count);
  audio.setForeground(false);audio.setScene('menu');audio.unlock();vi.advanceTimersByTime(3000);expect(oscillators.length).toBe(count);
  ctx.currentTime=10;audio.setForeground(true);expect(vi.getTimerCount()).toBe(1);
  expect(oscillators.at(-1).start).toHaveBeenCalledWith(10.04);audio.setForeground(false);
 });
 
-it('cancels future notes at zero and holds playing envelopes before fading',()=>{
+it('fades a separate gate without disturbing scheduled envelopes, including on old WebViews',()=>{
  const {audio,ctx,gains}=audioFixture();
  expect(gains[2].gain.value).toBe(0);
- audio.setScene('play');expect(gains[2].gain.setValueAtTime).toHaveBeenLastCalledWith(0,0);
- vi.advanceTimersByTime(100);ctx.currentTime=.15;audio.setScene('menu');
- expect(gains[3].gain.cancelAndHoldAtTime).toHaveBeenCalledWith(.15);
+ audio.setForeground(false);expect(gains[3].gain.setValueAtTime).toHaveBeenLastCalledWith(0,0);
+ expect(gains[2].gain.cancelScheduledValues).not.toHaveBeenCalled();
+ audio.setForeground(true);ctx.currentTime=.15;audio.blip('match');
+ const envelope=gains.at(-2), gate=gains.at(-1);delete gate.gain.cancelAndHoldAtTime;
+ audio.stopEffects();expect(envelope.gain.cancelScheduledValues).not.toHaveBeenCalled();
+ expect(gate.gain.setValueAtTime).toHaveBeenLastCalledWith(1,.15);
+ expect(gate.gain.linearRampToValueAtTime).toHaveBeenLastCalledWith(0,.175);
  audio.setForeground(false);
+});
+it('cancels pending suspension on rapid background/foreground and ignores duplicate lifecycle events',()=>{
+ const {audio,ctx}=audioFixture();audio.setForeground(false);audio.setForeground(false);
+ vi.advanceTimersByTime(60);audio.setForeground(true);vi.advanceTimersByTime(200);
+ expect(ctx.suspend).not.toHaveBeenCalled();expect(vi.getTimerCount()).toBe(1);
+ audio.setForeground(false);vi.advanceTimersByTime(120);expect(ctx.suspend).toHaveBeenCalledOnce();
 });
 it('does not schedule volume automation when unrelated settings change',()=>{
  const {audio,gains}=audioFixture();
@@ -82,7 +93,7 @@ it('accelerates the original melody as occupied rows approach the floor',()=>{
  board[12][0]=0;expect(boardMusicPressure(board)).toBeCloseTo(6/11);
  board[17][0]=0;expect(boardMusicPressure(board)).toBe(1);
  const {audio,ctx,oscillators}=audioFixture();audio.setPressure(1);audio.setScene('play');
- ctx.currentTime=.1;vi.advanceTimersByTime(100);
+ for(let i=1;i<=6;i++){ctx.currentTime=i*.1;vi.advanceTimersByTime(100);}
  const starts=oscillators.slice(1).map(o=>o.start.mock.lastCall[0]);
  expect(starts[1]-starts[0]).toBeCloseTo(.375/2.2);expect(starts[1]-starts[0]).toBeLessThan(.28);
  audio.setForeground(false);

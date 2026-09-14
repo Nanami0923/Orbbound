@@ -10,6 +10,7 @@ import { PHASER_CONFIG, PlayScene } from './game/PlayScene';
 import { getOrbTheme } from './content/theme';
 import { clearGame, hasLegacySave, loadGame, loadSettings, saveGame, saveSettings, setHighScore, type Settings } from './storage/storage';
 import './style.css';
+import { buildMobileHome, updateMobileHome } from './ui/mobile-home';
 import { gameAudio } from './game/audio';
 import { bindFireButton } from './game/fire-control';
 import { bindSteeringControl } from './game/steering-control';
@@ -36,6 +37,7 @@ interface SceneStateDetail {
   elapsedMs: number;
 }
 
+if (usesButtonControls()) buildMobileHome();
 const homeScreen = document.querySelector<HTMLElement>('#home-screen');
 const gameScreen = document.querySelector<HTMLElement>('#game-screen');
 const modalRoot = document.querySelector<HTMLElement>('#modal-root');
@@ -59,7 +61,7 @@ const nextOrbPreview = document.querySelector<HTMLElement>('#next-orb-preview');
 const homeHighScore = document.querySelector<HTMLElement>('#home-high-score');
 
 const versionPill = document.querySelector('.version-pill');
-if (versionPill) versionPill.textContent = `${import.meta.env.VITE_APP_VERSION} / ${import.meta.env.MODE === 'windows' ? 'WINDOWS' : 'LOCAL'}`;
+if (versionPill) versionPill.textContent = `${import.meta.env.VITE_APP_VERSION} / ${import.meta.env.MODE === 'windows' ? 'WINDOWS' : Capacitor.isNativePlatform() ? 'ANDROID' : 'LOCAL'}`;
 
 const sideOrbLabel = document.querySelector('#side-orb-label');
 if (sideOrbLabel && import.meta.env.MODE === 'windows') sideOrbLabel.textContent = '下一球';
@@ -135,6 +137,7 @@ function startRound(state: Parameters<PlayScene['begin']>[0] | null, difficulty 
 }
 
 function updateHomeState(): void {
+  updateMobileHome();
   const saved = loadGame();
   const note = document.querySelector<HTMLElement>('#save-note');
   if (note) { note.hidden = !hasLegacySave(); note.textContent = '旧版未完成对局使用旧网格规则，无法继续；历史记录和设置不受影响。'; }
@@ -376,8 +379,9 @@ function showModeSetup(mode: GameMode): void {
     clearGame(mode); closeModal(); startRound(null);
   });
 }
-document.querySelector('#start-button')?.addEventListener('click', () => showModeSetup('endless'));
-document.querySelector('#timed-button')?.addEventListener('click', () => showModeSetup('timed'));
+document.querySelector('#start-button')?.addEventListener('click', () => usesButtonControls() && loadGame('endless') ? continueSaved('endless') : showModeSetup('endless'));
+document.querySelector('#timed-button')?.addEventListener('click', () => usesButtonControls() && loadGame('timed') ? continueSaved('timed') : showModeSetup('timed'));
+document.querySelectorAll<HTMLElement>('[data-new-mode]').forEach(button => button.addEventListener('click', () => showModeSetup(button.dataset.newMode as GameMode)));
 
 function continueSaved(mode: GameMode): void {
   const saved = loadGame(mode);

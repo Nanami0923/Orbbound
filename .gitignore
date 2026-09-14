@@ -25,3 +25,6 @@ npm-debug.log*
 Thumbs.db
 .idea/
 .vscode/
+
+# Device QA captures may contain personal system UI
+artifacts/

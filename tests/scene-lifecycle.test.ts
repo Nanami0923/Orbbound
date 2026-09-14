@@ -115,15 +115,15 @@ it('freezes timed gameplay and resumes both clocks with the same remaining budge
   } finally { now.mockRestore(); }
 });
 
-it.each([true,false])('shows the enlarged next orb even with aim assist %s', aimAssist => {
+it.each([true,false])('shows the smaller next orb beside the cannon even with aim assist %s', aimAssist => {
   const scene = new PlayScene();
   const next = {setScale:vi.fn()};
   const createOrb=vi.fn(()=>next);
   const graphics={clear:vi.fn(),fillStyle:vi.fn(),fillCircle:vi.fn(),lineStyle:vi.fn(),strokeCircle:vi.fn()};
   Object.assign(scene,{settings:{aimAssist},createOrb,launcherBase:graphics});
   (scene as unknown as {renderLauncher():void}).renderLauncher();
-  expect(createOrb).toHaveBeenCalledWith(scene.activeState.nextColor,{x:478,y:698});
-  expect(next.setScale).toHaveBeenCalledWith(1.35);
+  expect(createOrb).toHaveBeenCalledWith(scene.activeState.nextColor,{x:405,y:698});
+  expect(next.setScale).toHaveBeenCalledWith(.72);
 });
 
 it('cancels a pending animation and finishes only once when the timed deadline passes', () => {

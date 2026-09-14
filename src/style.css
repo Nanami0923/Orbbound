@@ -695,3 +695,91 @@ button:focus-visible { outline: 2px solid var(--mint); outline-offset: 3px; }
 
 .mobile-ui .steering-control { touch-action: none; min-height: 62px; }
 .mobile-ui .steering-control input { height: 38px; }
+
+/* Android 3.0: native WindowInsets fit the viewport; CSS adds design spacing. */
+.mobile-ui .home-screen { min-height: 0; height: 100dvh; padding: calc(env(safe-area-inset-top) + 20px) calc(env(safe-area-inset-right) + 22px) calc(env(safe-area-inset-bottom) + 16px) calc(env(safe-area-inset-left) + 22px); gap: 18px; overflow: hidden; }
+.mobile-ui .home-topline { flex-basis: 32px; }
+.mobile-ui .version-pill { margin-left: auto; padding: 0; border: 0; font-size: 9px; }
+.mobile-ui .home-content { width: 100%; flex: 1; margin: 0; gap: 0; align-items: stretch; }
+.mobile-ui .hero-copy { margin: 0; max-width: none; }
+.mobile-ui .hero-copy h1 { font-size: clamp(32px, 9vw, 46px); line-height: 1.16; }
+.mobile-ui .hero-description { margin: 12px 0 0; font-size: 12px; }
+.mobile-ui .home-card { min-height: 0; gap: 16px; justify-content: flex-end; border-radius: 0; }
+.mobile-ui .home-footer { margin: 0; padding: 0; display: block; }
+.mobile-ui .home-footer > div { display: grid; grid-template-columns: repeat(3, 1fr); }
+.mobile-ui .home-footer .text-button { font-size: 13px; min-height: 44px; }
+.mechanism-demo { display: flex; flex-direction: column; align-items: center; justify-content: center; flex: 1; min-height: 116px; width: 100%; padding: 0; border: 0; background: transparent; color: var(--muted); cursor: pointer; }
+.mechanism-demo svg { width: 100%; height: clamp(88px, 22dvh, 210px); overflow: hidden; }
+.mechanism-demo > span { font-size: 10px; color: var(--muted); margin-top: 4px; }
+.demo-orbits { opacity: .18; transform-origin: center; animation: orbit-drift 32s ease-in-out infinite alternate; }
+.demo-shot-left { animation: demo-left-shot 10s linear infinite; }
+.demo-shot-right { animation: demo-right-shot 10s linear infinite; }
+.demo-match-left { animation: demo-left-clear 10s linear infinite; }
+.demo-match-right { animation: demo-right-clear 10s linear infinite; }
+.demo-falling { animation: demo-fall 10s linear infinite; }
+.demo-route-left, .demo-route-right { fill: none; stroke: #a7b4c9; stroke-dasharray: 2 7; stroke-opacity: .23; }
+.demo-route-left { animation: demo-left-clear 10s linear infinite; }
+.demo-route-right { animation: demo-right-clear 10s linear infinite; }
+@keyframes orbit-drift { to { transform: rotate(9deg) translateY(4px); } }
+@keyframes demo-left-shot { 0%, 10% { transform: translate(0, 0); opacity: 1; } 26%, 30% { transform: translate(-52px, -97px); opacity: 1; } 34%, 98% { transform: translate(-52px, -97px); opacity: 0; } 99% { transform: translate(0, 0); opacity: 0; } 100% { transform: translate(0, 0); opacity: 1; } }
+@keyframes demo-right-shot { 0%, 45% { transform: translate(0, 0); opacity: 0; } 50%, 54% { transform: translate(0, 0); opacity: 1; } 70%, 74% { transform: translate(52px, -125px); opacity: 1; } 78%, 100% { transform: translate(52px, -125px); opacity: 0; } }
+@keyframes demo-left-clear { 0%, 30%, 100% { opacity: 1; } 34%, 94% { opacity: 0; } }
+@keyframes demo-right-clear { 0%, 74%, 100% { opacity: 1; } 78%, 94% { opacity: 0; } }
+@keyframes demo-fall { 0%, 78%, 100% { transform: translateY(0); opacity: 1; } 80% { transform: translateY(2px); opacity: 1; animation-timing-function: ease-in; } 92%, 94% { transform: translateY(86px); opacity: 0; } 95% { transform: translateY(0); opacity: 0; } }
+.mobile-ui .mobile-mode-cards { gap: 10px; }
+.mode-card { position: relative; --mode-accent: var(--mint); border: 1px solid #33475a; border-left: 3px solid var(--mode-accent); border-radius: 16px; background: #151f32; overflow: hidden; }
+.mode-card.timed { --mode-accent: var(--gold); }
+.mode-main { width: 100%; display: flex; align-items: center; gap: 14px; min-height: 88px; padding: 14px; background: transparent; border: 0; color: var(--cream); text-align: left; }
+.mode-symbol { color: var(--mode-accent); font-size: 27px; font-weight: 500; }
+.mode-main > span { flex: 1; min-width: 0; }
+.mode-main strong { display: block; font-size: 17px; font-weight: 650; }
+.mode-main small { display: block; color: #a7b4c9; font-size: 11px; margin-top: 5px; line-height: 1.4; }
+.mode-main .mode-best { font-size: 10px; color: #a7b4c9; font-variant-numeric: tabular-nums; }
+.mode-action { font-size: 12px; color: var(--mode-accent); white-space: nowrap; }
+.mode-card .mode-new { min-height: 44px; display: block; margin-left: auto; padding: 6px 16px; font-size: 12px; color: #a7b4c9; }
+.mobile-ui #save-note { display: block; }
+.mobile-ui .game-screen, .mobile-ui .game-screen.timed-mode { height: 100dvh; min-height: 0; padding: calc(env(safe-area-inset-top) + 6px) calc(env(safe-area-inset-right) + 16px) calc(env(safe-area-inset-bottom) + 16px + var(--control-offset, 0px)) calc(env(safe-area-inset-left) + 16px); grid-template-rows: 44px 64px auto 120px minmax(0, 1fr); gap: 6px; }
+.mobile-ui .mobile-topbar button { background: transparent; border-color: transparent; box-shadow: none; color: #b4c0d3; }
+.mobile-ui .game-header { align-items: center; }
+.mobile-ui .score-stat strong { font-size: 26px; font-variant-numeric: tabular-nums; }
+.mobile-ui #round-clock { font-size: 20px; font-variant-numeric: tabular-nums; }
+.mobile-ui .board-wrap { justify-content: flex-end; align-items: center; }
+.mobile-ui .board-heading { width: 100%; color: #a0aec3; }
+.mobile-ui .game-container { width: min(100%, calc((100dvh - 294px - env(safe-area-inset-top) - env(safe-area-inset-bottom) - var(--control-offset, 0px)) * 640 / 760)); height: auto; max-height: calc(100% - 22px); aspect-ratio: 640 / 760; }
+.mobile-ui .mobile-controls { grid-template-rows: 120px; transform: none; align-items: stretch; gap: 10px; }
+.mobile-ui #mobile-fire { align-self: center; height: 72px; border-radius: 14px; gap: 2px; }
+.mobile-ui #mobile-fire span { font-size: 26px; }
+.mobile-ui #mobile-fire small { font-size: 14px; }
+.mobile-ui .steering-sliders { grid-template-rows: 68px 48px; gap: 4px; }
+.mobile-ui .steering-control { min-height: 0; border-color: #2b3b50; background: #172238; }
+.mobile-ui .fine-control { padding-block: 0; border-color: transparent; background: transparent; font-size: 10px; }
+.mobile-ui .fine-control input { height: 30px; }
+.mobile-ui .fine-control::after { bottom: 8px; height: 12px; opacity: .55; }
+.mobile-ui .modal-root { padding: calc(env(safe-area-inset-top) + 16px) calc(env(safe-area-inset-right) + 16px) calc(env(safe-area-inset-bottom) + 16px) calc(env(safe-area-inset-left) + 16px); }
+.reduce-motion .mechanism-demo *, .reduce-motion .mechanism-demo { animation: none !important; }
+.reduce-motion .demo-shot { opacity: 0; }
+@media (prefers-reduced-motion: reduce) { .mechanism-demo * { animation: none !important; } .demo-shot { opacity: 0; } }
+@media (max-height: 700px) { .mobile-ui .home-screen { gap: 10px; padding-top: calc(env(safe-area-inset-top) + 12px); } .mobile-ui .hero-copy h1 { font-size: 32px; } .mechanism-demo svg { height: 94px; } .mode-main { min-height: 78px; padding-block: 10px; } .mobile-ui .home-card { gap: 10px; } }
+@media (orientation: landscape) and (max-height: 600px) {
+  .mobile-ui .home-content { flex-direction: row; gap: 24px; }
+  .mobile-ui .hero-copy { width: 40%; align-self: center; }
+  .mobile-ui .home-card { flex: 1; }
+  .mechanism-demo { display: none; }
+  .mobile-ui .game-screen, .mobile-ui .game-screen.timed-mode { min-height: 320px; grid-template-columns: minmax(0, 1fr) minmax(220px, .7fr); grid-template-rows: 44px 64px minmax(120px, 1fr); column-gap: 20px; }
+  .mobile-ui .mobile-topbar { grid-column: 2; grid-row: 1; }
+  .mobile-ui .game-header { grid-column: 2; grid-row: 2; }
+  .mobile-ui .board-wrap { grid-column: 1; grid-row: 1 / 4; justify-content: center; }
+  .mobile-ui .game-container { width: min(100%, calc((100dvh - 52px - env(safe-area-inset-top) - env(safe-area-inset-bottom) - var(--control-offset, 0px)) * 640 / 760)); }
+  .mobile-ui .mobile-controls { grid-column: 2; grid-row: 3; align-self: center; }
+}
+
+/* Keep the weak new-game action inside its mode card on short phones. */
+.mobile-ui .home-screen::before, .mobile-ui .home-screen::after { display: none; }
+.mode-card .mode-new { position: absolute; right: 0; bottom: 0; }
+.mode-card:has(.mode-new:not([hidden])) .mode-main { min-height: 106px; }
+.mode-card:has(.mode-new:not([hidden])) .mode-action { align-self: flex-start; margin-top: 8px; }
+.mobile-ui .home-screen { overflow-y: auto; overscroll-behavior: contain; }
+@media (max-height: 700px) { .mode-card:has(.mode-new:not([hidden])) .mode-main { min-height: 96px; } .mechanism-demo { min-height: 90px; } .mechanism-demo svg { height: 78px; } }
+
+/* Match the native inset backdrop in both gesture and three-button modes. */
+.mobile-ui body { background: #111a2d; }
