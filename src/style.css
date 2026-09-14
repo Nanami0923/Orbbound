@@ -745,7 +745,7 @@ button:focus-visible { outline: 2px solid var(--mint); outline-offset: 3px; }
 .mobile-ui #round-clock { font-size: 20px; font-variant-numeric: tabular-nums; }
 .mobile-ui .board-wrap { justify-content: flex-end; align-items: center; }
 .mobile-ui .board-heading { width: 100%; color: #a0aec3; }
-.mobile-ui .game-container { width: min(100%, calc((100dvh - 294px - env(safe-area-inset-top) - env(safe-area-inset-bottom) - var(--control-offset, 0px)) * 640 / 760)); height: auto; max-height: calc(100% - 22px); aspect-ratio: 640 / 760; }
+.mobile-ui .game-container { width: min(100%, calc((100dvh - 294px - env(safe-area-inset-top) - env(safe-area-inset-bottom) - var(--control-offset, 0px)) * 640 / 760)) !important; height: auto !important; max-height: none; aspect-ratio: 640 / 760; }
 .mobile-ui .mobile-controls { grid-template-rows: 120px; transform: none; align-items: stretch; gap: 10px; }
 .mobile-ui #mobile-fire { align-self: center; height: 72px; border-radius: 14px; gap: 2px; }
 .mobile-ui #mobile-fire span { font-size: 26px; }
@@ -769,7 +769,7 @@ button:focus-visible { outline: 2px solid var(--mint); outline-offset: 3px; }
   .mobile-ui .mobile-topbar { grid-column: 2; grid-row: 1; }
   .mobile-ui .game-header { grid-column: 2; grid-row: 2; }
   .mobile-ui .board-wrap { grid-column: 1; grid-row: 1 / 4; justify-content: center; }
-  .mobile-ui .game-container { width: min(100%, calc((100dvh - 52px - env(safe-area-inset-top) - env(safe-area-inset-bottom) - var(--control-offset, 0px)) * 640 / 760)); }
+  .mobile-ui .game-container { width: min(100%, calc((100dvh - 52px - env(safe-area-inset-top) - env(safe-area-inset-bottom) - var(--control-offset, 0px)) * 640 / 760)) !important; }
   .mobile-ui .mobile-controls { grid-column: 2; grid-row: 3; align-self: center; }
 }
 
@@ -906,3 +906,36 @@ button:focus-visible { outline: 2px solid var(--mint); outline-offset: 3px; }
   .desktop-ui .game-screen .game-header { gap: 4px; }
 }
 .desktop-ui .version-pill { display: inline-block; }
+
+/* 3.2: preview and all desktop actions share the right column. */
+.desktop-ui .game-screen .next-card { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px; }
+.desktop-ui .game-screen .next-card .next-preview { margin: 0; width: 48px; height: 48px; flex: 0 0 48px; }
+.desktop-ui .game-screen .next-card .card-kicker { white-space: nowrap; margin: 0; }
+.desktop-ui .game-screen .next-card .dom-orb { width: 36px; height: 36px; }
+.desktop-ui .game-screen .next-card p { display: none; }
+.desktop-ui .side-button kbd { font: inherit; font-size: 11px; color: #8ddbc9; min-width: 22px; text-align: right; }
+.shortcut-category { width: 100%; margin-top: 8px; text-align: left; }
+.shortcut-settings .setting-row { padding-block: 8px; }
+.shortcut-settings button { min-width: 86px; }
+.shortcut-settings .listening { border-color: var(--mint); color: var(--mint); }
+@media (max-height: 450px) {
+  .desktop-ui .game-screen .game-sidebar { gap: 5px; }
+  .desktop-ui .game-screen .next-card { padding: 6px 10px; }
+  .desktop-ui .game-screen .next-card .dom-orb { width: 26px; height: 26px; }
+  .desktop-ui .game-screen .next-card .next-preview { width: 28px; height: 28px; flex-basis: 28px; }
+  .desktop-ui .game-screen .sidebar-actions { gap: 4px; }
+  .desktop-ui .game-screen .side-button { min-height: 28px; padding: 5px 8px; font-size: 11px; }
+}
+
+/* Keep the normal board size, with a small downward shift and no lower controls. */
+.mobile-ui.immersive-mode .mobile-controls { display: none; }
+.mobile-ui.immersive-mode .game-screen,
+.mobile-ui.immersive-mode .game-screen.timed-mode { grid-template-rows: 44px 64px auto minmax(0, 1fr); padding-bottom: calc(env(safe-area-inset-bottom) + 16px); }
+.mobile-ui.immersive-mode .board-wrap { margin-top: clamp(12px, 3dvh, 28px); }
+.mobile-ui.immersive-mode .game-container { pointer-events: auto; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.mobile-ui.immersive-mode .game-container canvas { touch-action: none; }
+@media (orientation: landscape) and (max-height: 600px) {
+  .mobile-ui.immersive-mode .game-screen, .mobile-ui.immersive-mode .game-screen.timed-mode { grid-template-rows: 44px 64px minmax(0, 1fr); }
+  .mobile-ui.immersive-mode .board-wrap { margin-top: 10px; }
+  .mobile-ui.immersive-mode .game-container { width: min(100%, calc((100dvh - 62px - env(safe-area-inset-top) - env(safe-area-inset-bottom)) * 640 / 760)) !important; }
+}

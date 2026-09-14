@@ -16,6 +16,9 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(GameFeedbackPlugin.class);
         super.onCreate(savedInstanceState);
+        // Long presses belong to aiming, not WebView image/context actions.
+        getBridge().getWebView().setOnLongClickListener(view -> true);
+        getBridge().getWebView().setLongClickable(false);
         // The hardware volume keys should adjust the game's media audio.
         setVolumeControlStream(AudioManager.STREAM_MUSIC);
         // Fit the entire WebView once, including dialogs. Consume the insets so

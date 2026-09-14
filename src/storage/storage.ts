@@ -1,4 +1,5 @@
 import { readStorage, writeStorage } from './safe-storage';
+import { DEFAULT_SHORTCUTS, loadShortcuts, type Shortcuts } from '../game/shortcuts';
 import type { GameState } from '../core/types';
 import { freezeTimed } from '../core/modes';
 
@@ -11,6 +12,8 @@ export interface Settings {
   volume: number;
   musicVolume: number;
   adaptiveMusic: boolean;
+  immersiveMode: boolean;
+  shortcuts: Shortcuts;
   sensitivity: number;
   hapticShoot: boolean;
   hapticMatch: boolean;
@@ -25,6 +28,8 @@ export const DEFAULT_SETTINGS: Settings = {
   volume: 50,
   musicVolume: 50,
   adaptiveMusic: true,
+  immersiveMode: false,
+  shortcuts: DEFAULT_SHORTCUTS,
   sensitivity: 100,
   hapticShoot: false,
   hapticMatch: false,
@@ -50,6 +55,8 @@ export function loadSettings(): Settings {
     return {
       musicVolume: number(record.musicVolume, oldVolume, 0, 100),
       adaptiveMusic: record.adaptiveMusic !== false,
+      immersiveMode: record.immersiveMode === true,
+      shortcuts: loadShortcuts(record.shortcuts),
       sensitivity: number(record.sensitivity, 100, 50, 150),
       hapticShoot: record.hapticShoot === true,
       hapticMatch: record.hapticMatch === true,

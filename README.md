@@ -1,17 +1,17 @@
 # Orbbound
 
-本地目录已按源码、文档、平台交付整理。Android 与 Windows 当前统一为 **3.1.0**。
+本地目录已按源码、文档、平台交付整理。Android 与 Windows 当前统一为 **3.2.0**。
 
 ## 交付位置
 
 | 平台 | 最新版本 | 交付目录 | 主要文件 |
 | --- | --- | --- | --- |
-| Android | 3.1.0 | [Android 交付目录](最终交付/Android/Orbbound-3.1.0/) | APK、SHA-256、更新说明 |
-| Windows | 3.1.0 | [Windows 交付目录](最终交付/Windows/Orbbound-Windows-3.1.0/) | 轻量 ZIP、SHA-256、完整 Orbbound 运行目录 |
+| Android | 3.2.0 | [Android 交付目录](最终交付/Android/Orbbound-3.2.0/) | APK、SHA-256、更新说明 |
+| Windows | 3.2.0 | [Windows 交付目录](最终交付/Windows/Orbbound-Windows-3.2.0/) | 轻量 ZIP、SHA-256、完整 Orbbound 运行目录 |
 
 所有旧版本保留在对应平台目录内。Windows 1.0.0 的两个不同本地构建按原来源分别保存，不将其视作同一文件。
 
-下载：[Windows 3.1.0 ZIP](https://github.com/Nanami0923/Orbbound/releases/download/v3.1.0/Orbbound-Windows-3.1.0-x64.zip) · [Android 3.1.0 APK](https://github.com/Nanami0923/Orbbound/releases/download/v3.1.0/Orbbound-3.1.0-Android.apk) · [发布页](https://github.com/Nanami0923/Orbbound/releases/tag/v3.1.0)
+下载：[Windows 3.2.0 ZIP](https://github.com/Nanami0923/Orbbound/releases/download/v3.2.0/Orbbound-Windows-3.2.0-x64.zip) · [Android 3.2.0 APK](https://github.com/Nanami0923/Orbbound/releases/download/v3.2.0/Orbbound-3.2.0-Android.apk) · [发布页](https://github.com/Nanami0923/Orbbound/releases/tag/v3.2.0)
 
 Windows 请完整解压 ZIP 后运行 `Orbbound/Orbbound.exe`。轻量包约 0.62 MB，不包含运行环境，使用本机 .NET Framework 4.8 和共享 WebView2 Evergreen Runtime；具备环境后可离线游玩。缺少 WebView2 时程序提供[微软官方补装入口](https://developer.microsoft.com/en-us/microsoft-edge/webview2#download-section)，本次发布不上传环境安装包。
 
@@ -59,4 +59,4 @@ Android 打包需配置 JDK 21 与 Android SDK；签名仍在仓库外的 `%LOCA
 - [本地交付文件索引与校验值](最终交付/版本索引.md)
 - [最初设计方案](docs/design/Snood现代化重构方案.md)
 
-3.1.0：两端增加「局内音乐加速」开关；Windows 修复旧界面闪现、优化首次设置/记录加载并改用轻量外壳；Android 压缩排行榜布局并启用正式包裁剪。[Windows 说明](docs/releases/Windows/windows-3.1.0-notes.md) · [Android 说明](docs/releases/Android/android-3.1.0-notes.md) · [验证记录](docs/releases/3.1.0-validation.md)。
+3.2.0：Windows 调整局内布局、增加可配置快捷键并修复进场音频延迟；Android 增加棋盘按住瞄准、松手发射的沉浸模式。[Windows 说明](docs/releases/Windows/windows-3.2.0-notes.md) · [Android 说明](docs/releases/Android/android-3.2.0-notes.md) · [验证记录](docs/releases/3.2.0-validation.md)。

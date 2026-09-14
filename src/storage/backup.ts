@@ -1,4 +1,5 @@
 import { isGameState } from './storage';
+import { validShortcuts } from '../game/shortcuts';
 import { readStorage, storageError, writeStorage } from './safe-storage';
 
 export const BACKUP_KEYS = ['orbbound-save-v1', 'orbbound-timed-active-v2', 'orbbound-settings-v1', 'orbbound-high-score-v1', 'orbbound-history-v1'] as const;
@@ -20,9 +21,10 @@ export function validateBackup(text: string): Values {
       if (!isGameState(value) || (key === BACKUP_KEYS[1]) !== (value.mode === 'timed')) throw Error('对局存档已损坏或版本过旧');
     } else if (key === BACKUP_KEYS[2]) {
       const ranges: Record<string, [number,number]> = { volume:[0,100],musicVolume:[0,100],sensitivity:[50,150],controlOffset:[0,48],fireSize:[76,120] };
-      const booleans = ['adaptiveMusic','sound','hapticShoot','hapticMatch','aimAssist','controlsSwapped','independentLaunch','reducedMotion'];
+      const booleans = ['adaptiveMusic','immersiveMode','sound','hapticShoot','hapticMatch','aimAssist','controlsSwapped','independentLaunch','reducedMotion'];
       if (!value || typeof value !== 'object' || Array.isArray(value)) throw Error('设置无效');
       for (const [name,v] of Object.entries(value)) {
+        if (name === 'shortcuts') { if (!validShortcuts(v)) throw Error('快捷键设置无效或重复'); continue; }
         if (ranges[name] ? typeof v !== 'number' || !Number.isFinite(v) || v < ranges[name][0] || v > ranges[name][1] : !booleans.includes(name) || typeof v !== 'boolean') throw Error('设置字段或数值无效');
       }
     } else if (key === BACKUP_KEYS[3]) {

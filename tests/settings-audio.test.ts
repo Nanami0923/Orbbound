@@ -112,3 +112,12 @@ it('persists the acceleration toggle and keeps the melody at original speed when
  expect(accelerated.at(-1)-accelerated.at(-2)).toBeCloseTo(.375/2.2);
  audio.setForeground(false);
 });
+
+it('schedules immediately when asynchronous resume completes without waiting for the interval', async () => {
+ const {audio,ctx,oscillators}=audioFixture(); audio.setForeground(false);
+ ctx.state='suspended';ctx.currentTime=4;
+ let finish!:()=>void;ctx.resume.mockImplementation(()=>new Promise<void>(resolve=>{finish=()=>{ctx.state='running';resolve();};}));
+ const before=oscillators.length;audio.setForeground(true);expect(oscillators.length).toBe(before);
+ finish();await Promise.resolve();expect(oscillators.length).toBe(before+1);
+ expect(oscillators.at(-1).start).toHaveBeenCalledWith(4.04);audio.setForeground(false);
+});

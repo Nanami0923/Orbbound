@@ -101,12 +101,17 @@ export class GameAudio {
         this.music.gain.value = this.musicVolume / 100 * 1.6;
         this.effects.connect(compressor); this.music.connect(compressor);
       }
-      if (this.context.state === 'suspended') void this.context.resume().catch(() => {});
+      if (this.context.state === 'suspended') void this.context.resume().then(() => {
+        if (!this.foreground) return;
+        this.scheduleMusic();
+      }).catch(() => {});
       if (!this.timer) {
         this.nextNote = this.context.currentTime + 0.04;
         this.scheduleMusic();
         this.timer = setInterval(() => this.scheduleMusic(), 100);
       }
+      // A game entry or resumed context should not wait for the next timer tick.
+      this.scheduleMusic();
     } catch { /* Unavailable audio never interrupts a game. */ }
   }
   public setForeground(active: boolean): void {

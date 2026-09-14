@@ -11,6 +11,7 @@ import { fineRotationSpeed } from './rotation';
 import { haptic } from './feedback';
 import { recordRound } from '../storage/history';
 import { usesButtonControls } from './input-mode';
+import { shortcutAction, shortcutLabel } from './shortcuts';
 import { heldRotationDegrees } from './rotation';
 import { advanceTimed, createRound, descentInterval, freezeTimed, resumeTimed, resetDescent } from '../core/modes';
 
@@ -62,6 +63,11 @@ export class PlayScene extends Phaser.Scene {
   private statusText!: Phaser.GameObjects.Text;
   public ready = false;
   public get isPaused(): boolean { return this.phase === 'PAUSED'; }
+  public get isReady(): boolean { return this.phase === 'READY'; }
+  private controlHint(): string {
+    if (usesButtonControls()) return this.settings.immersiveMode ? '按住棋盘瞄准 · 松手发射' : '上条定位 · 下条微调 · 侧边发射';
+    return `鼠标左 / 右键或${shortcutLabel(this.settings.shortcuts.fire)}发射`;
+  }
   public get isTimed(): boolean { return this.gameState.mode === 'timed'; }
   public get activeState(): GameState { return this.gameState; }
   public settleGame(): void {
@@ -160,6 +166,7 @@ export class PlayScene extends Phaser.Scene {
     this.statusText.setPosition(GAME_WIDTH / 2, 28);
 
     this.input.on('pointerdown', this.handlePointerDown, this);
+    this.input.mouse?.disableContextMenu();
     this.input.on('pointermove', this.handlePointerMove, this);
     this.input.on('pointerup', this.handlePointerUp, this);
     this.input.on('pointerout', () => { this.pointerActive = false; });
@@ -192,7 +199,7 @@ export class PlayScene extends Phaser.Scene {
     if (state.status === 'READY') this.phase = 'READY';
     this.angle = 0;
     this.recoil = 0;
-    this.statusText.setText(usesButtonControls() ? '上条定位 · 下条微调 · 侧边发射' : '移动瞄准 · 点击发射');
+    this.statusText.setText(this.controlHint());
     this.renderBoard();
     this.renderLauncher();
     this.drawAim();
@@ -211,6 +218,9 @@ export class PlayScene extends Phaser.Scene {
   public setSettings(settings: Settings): void {
     const visualChanged = this.settings.aimAssist !== settings.aimAssist;
     this.settings = { ...settings };
+    this.pointerActive = false;
+    this.stopRotation();
+    if (this.phase === 'READY') this.statusText?.setText(this.controlHint());
     this.audio.setMix(settings.volume, settings.musicVolume);
     if (visualChanged) { this.renderLauncher(); this.drawAim(); }
     sendWindowEvent('snood-settings-applied', this.settings);
@@ -236,7 +246,7 @@ export class PlayScene extends Phaser.Scene {
     if (this.phase !== 'PAUSED') return;
     this.gameState = resumeTimed(this.gameState);
     this.phase = this.pausedFrom;
-    this.statusText.setText(this.phase === 'READY' ? (usesButtonControls() ? '上条定位 · 下条微调 · 侧边发射' : '选择角度 · 点击发射') : '等待本次发射结算');
+    this.statusText.setText(this.phase === 'READY' ? this.controlHint() : '等待本次发射结算');
     this.tweens.resumeAll();
     this.time.paused = false;
     this.drawAim();
@@ -486,6 +496,7 @@ export class PlayScene extends Phaser.Scene {
 
   private handlePointerDown(pointer: Phaser.Input.Pointer): void {
     if (usesButtonControls()) return;
+    if (pointer.button !== 0 && pointer.button !== 2) return;
     if (!this.canSteer) return;
     this.pointerActive = this.phase === 'READY';
     this.updateAim(pointer);
@@ -516,32 +527,31 @@ export class PlayScene extends Phaser.Scene {
 
   private handleKeyDown(event: KeyboardEvent): void {
     if (document.querySelector<HTMLElement>('#game-screen')?.hidden || !document.querySelector<HTMLElement>('#modal-root')?.hidden) return;
-    if (event.code === 'Space') { event.preventDefault(); if (event.repeat) return; }
-    if (event.code === 'Escape') {
-      event.preventDefault();
-      sendWindowEvent('snood-save-home', undefined);
-      return;
-    }
-    if (this.phase === 'PAUSED' && event.code === 'Space') {
+    if (usesButtonControls()) return;
+    const action = shortcutAction(event, this.settings.shortcuts);
+    if (!action || !['fire','left','right','quickLeft','quickRight'].includes(action)) return;
+    event.preventDefault();
+    if (event.repeat) return;
+    if (this.phase === 'PAUSED' && action === 'fire') {
       event.preventDefault();
       this.resumeGame();
       return;
     }
     if (!this.canSteer) return;
-    if (event.code === 'ArrowLeft' || event.code === 'ArrowRight') {
+    if (action === 'left' || action === 'right') {
       event.preventDefault();
-      if (!event.repeat) this.startRotation(event.code === 'ArrowLeft' ? -1 : 1);
-    } else if (event.code === 'KeyQ' || event.code === 'KeyE') {
+      this.startRotation(action === 'left' ? -1 : 1);
+    } else if (action === 'quickLeft' || action === 'quickRight') {
       event.preventDefault();
-      if (!event.repeat) this.quickRotate(event.code === 'KeyQ' ? -1 : 1);
-    } else if (event.code === 'Space') {
+      this.quickRotate(action === 'quickLeft' ? -1 : 1);
+    } else if (action === 'fire') {
       event.preventDefault();
       this.launchFromButton();
     }
   }
 
   private handleKeyUp(event: KeyboardEvent): void {
-    const direction = event.code === 'ArrowLeft' ? -1 : event.code === 'ArrowRight' ? 1 : 0;
+    const direction = event.code === this.settings.shortcuts.left ? -1 : event.code === this.settings.shortcuts.right ? 1 : 0;
     if (direction && direction === this.rotationDirection) this.stopRotation();
   }
 
@@ -663,7 +673,7 @@ export class PlayScene extends Phaser.Scene {
         this.statusText.setText('触底 · 再试一次');
       } else {
         this.phase = 'READY';
-        this.statusText.setText(usesButtonControls() ? '上条定位 · 下条微调 · 侧边发射' : '移动瞄准 · 点击发射');
+        this.statusText.setText(this.controlHint());
       }
       this.drawAim();
       this.emitState();
@@ -720,7 +730,7 @@ export class PlayScene extends Phaser.Scene {
     this.time.delayedCall(1000, () => {
       if (this.phase === 'READY') {
         this.statusText.setColor('#98a1b8');
-        this.statusText.setText((usesButtonControls() ? '上条定位 · 下条微调 · 侧边发射' : '选择角度 · 点击发射'));
+        this.statusText.setText(this.controlHint());
       }
     });
   }
@@ -747,6 +757,7 @@ export class PlayScene extends Phaser.Scene {
 }
 
 export const PHASER_CONFIG: Phaser.Types.Core.GameConfig = {
+  audio: { noAudio: true },
   type: Phaser.AUTO,
   fps: { target: 60, limit: 60 },
   width: GAME_WIDTH * 2,

@@ -1,4 +1,6 @@
 import { bindDesktopBridge } from './ui/desktop-bridge';
+import { shortcutAction, shortcutLabel, type ShortcutAction } from './game/shortcuts';
+import { bindImmersiveControl } from './game/immersive-control';
 import { historyMarkup } from './ui/history-panel';
 import type Phaser from 'phaser';
 import { Capacitor } from '@capacitor/core';
@@ -40,6 +42,19 @@ interface SceneStateDetail {
 }
 
 buildHome(usesButtonControls());
+if (!usesButtonControls()) {
+  document.querySelector('.mobile-launch-row')?.remove();
+  document.querySelector('.current-card')?.remove();
+  document.querySelector('#pause-button')?.remove();
+  document.querySelector('.legend-card')?.remove();
+  const buttons: Record<string, [ShortcutAction, string]> = {
+    'settle-button': ['settle', '结算本局'], 'restart-button': ['restart', '重新开始'],
+    'game-settings-button': ['settings', '游戏设置'], 'back-home-button': ['save', '存档并返回'],
+  };
+  for (const [id, [action, label]] of Object.entries(buttons)) document.querySelector(`#${id}`)!.innerHTML = `${label}<kbd data-shortcut="${action}"></kbd>`;
+  document.querySelector('.sidebar-actions [data-history]')!.innerHTML = '历史与排行<kbd data-shortcut="history"></kbd>';
+  document.querySelector('.sidebar-actions')!.insertAdjacentHTML('beforeend', '<button id="game-help-button" class="side-button" type="button">玩法提示<kbd data-shortcut="help"></kbd></button>');
+}
 const homeScreen = document.querySelector<HTMLElement>('#home-screen');
 const gameScreen = document.querySelector<HTMLElement>('#game-screen');
 const modalRoot = document.querySelector<HTMLElement>('#modal-root');
@@ -85,6 +100,8 @@ let disposeModal: (() => void) | null = null;
 let roundRequest = 0;
 
 function syncMobileLayout(): void {
+  document.documentElement.classList.toggle('immersive-mode', usesButtonControls() && settings.immersiveMode);
+  document.querySelectorAll<HTMLElement>('[data-shortcut]').forEach(label => { label.textContent = shortcutLabel(settings.shortcuts[label.dataset.shortcut as ShortcutAction]); });
   document.documentElement.classList.toggle("desktop-ui", !usesButtonControls());
   document.documentElement.classList.toggle('mobile-ui', usesButtonControls());
   document.documentElement.classList.toggle('controls-swapped', settings.controlsSwapped);
@@ -131,6 +148,7 @@ function showGame(): void {
 }
 
 async function startRound(state: Parameters<PlayScene['begin']>[0] | null, difficulty = selectedDifficulty): Promise<void> {
+  gameAudio.setForeground(true); gameAudio.unlock();
   const request = ++roundRequest, mode = selectedMode, duration = selectedDuration;
   document.documentElement.classList.add('game-loading');
   await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
@@ -147,6 +165,7 @@ async function startRound(state: Parameters<PlayScene['begin']>[0] | null, diffi
     }
     scene.setSettings(settings);
     scene.begin(state ?? createRound(difficulty, mode, duration));
+    gameAudio.setScene('play'); gameAudio.unlock();
     document.documentElement.classList.remove('game-loading');
     game?.loop.wake();
   };
@@ -319,7 +338,7 @@ function showTutorial(): void {
     <h2>三步读懂棋盘</h2>
     <p>无尽与限时模式各有独立存档。存档可以续玩，结算后成绩才会入榜。</p><p>限时模式提供 5 / 10 分钟挑战。菜单、存档与后台均暂停计时。次数或下落时间归零时，棋盘下降，两项计数同时重置。限时清盘后继续补充新棋盘。</p>
     <div class="tutorial-steps">
-      <div class="tutorial-step"><b>01</b><div><strong>调整炮口方向</strong><span>${usesButtonControls() ? '上滑条选择方向，下滑条左右微调。靠近中间更慢，靠近两侧更快；松手立即停止。另一只手可同时按下发射。设置中可调整灵敏度与按键位置。' : '使用鼠标瞄准、点击发射；方向键长按加速，Q / E 平滑快转 30°，空格或发射按钮发射。'}下落期间仍可转向。</span></div></div>
+      <div class="tutorial-step"><b>01</b><div><strong>调整炮口方向</strong><span>${usesButtonControls() ? (settings.immersiveMode ? '沉浸模式：在整个棋盘区域按住拖动瞄准，发射区域也可操作；松手发射。移出棋盘松手或被系统中断会取消发射。设置中可关闭沉浸模式，恢复双滑条。' : '上滑条选择方向，下滑条左右微调。松手停止，另一只手可同时发射。设置 → 操作与反馈可开启沉浸模式，改为棋盘按住瞄准、松手发射。') : `使用鼠标瞄准，鼠标左键、右键或${shortcutLabel(settings.shortcuts.fire)}键发射；${shortcutLabel(settings.shortcuts.left)} / ${shortcutLabel(settings.shortcuts.right)} 长按转向，${shortcutLabel(settings.shortcuts.quickLeft)} / ${shortcutLabel(settings.shortcuts.quickRight)} 快转 30°。设置中可自定义快捷键。`}下落期间仍可转向。</span></div></div>
       <div class="tutorial-step"><b>02</b><div><strong>三个同类连在一起</strong><span>同色相连达到 3 球即可消除。一次消除 3、4、5、6 球，分别得 30、50、80、120 分。</span></div></div>
       <div class="tutorial-step"><b>03</b><div><strong>让悬空小球掉落</strong><span>切断顶部支撑，悬空球就会掉落。掉落 1、2、3 球，额外加 30、70、120 分；掉落越多，加分越高。</span></div></div>
     </div>
@@ -331,6 +350,7 @@ function showSettings(): void {
   openModal(settingsMarkup(settings, usesButtonControls()), 'settings-card');
   if (!modalRoot) return;
   disposeModal = bindSettingsPanel(modalRoot, settings, commit => {
+    immersiveControl?.reset();
     if (commit) saveSettings(settings);
     gameAudio.setMix(settings.volume, settings.musicVolume);
     gameAudio.setAdaptiveMusic(settings.adaptiveMusic);
@@ -422,6 +442,7 @@ document.querySelectorAll<HTMLButtonElement>('[data-difficulty]').forEach((butto
 document.querySelector<HTMLButtonElement>('#tutorial-button')?.addEventListener('click', showTutorial);
 document.querySelector<HTMLButtonElement>('#settings-button')?.addEventListener('click', showSettings);
 document.querySelector<HTMLButtonElement>('#game-settings-button')?.addEventListener('click', showSettings);
+document.querySelector('#game-help-button')?.addEventListener('click', showTutorial);
 function saveAndHome(): void {
   getScene()?.pauseGame();
   showHome();
@@ -450,11 +471,17 @@ document.querySelector('#mobile-menu-button')?.addEventListener('click', () => {
 const aimSlider = document.querySelector<HTMLInputElement>('#aim-slider')!;
 const fineSlider = document.querySelector<HTMLInputElement>('#fine-slider')!;
 function stopRotation(): void {
+  immersiveControl?.reset();
   aimControl?.reset(); fineControl?.reset(); getScene()?.stopRotation();
 }
 let aimControl: ReturnType<typeof bindSteeringControl> | undefined;
 let fineControl: ReturnType<typeof bindSteeringControl> | undefined;
+let immersiveControl: ReturnType<typeof bindImmersiveControl> | undefined;
 const controlActive = () => !gameScreen?.hidden && !!modalRoot?.hidden;
+immersiveControl = bindImmersiveControl(document.querySelector<HTMLElement>('#game-container')!, {
+  active: () => usesButtonControls() && settings.immersiveMode && controlActive(), canFire: () => getScene()?.isReady === true,
+  aim: degrees => getScene()?.setAimDegrees(degrees), fire: () => getScene()?.launchFromButton(), unlock: () => gameAudio.unlock(),
+});
 aimControl = bindSteeringControl(aimSlider, { fine: false, hitArea: aimSlider.closest<HTMLElement>('.steering-control')!, active: controlActive, onStart: stopRotation,
   onValue: value => getScene()?.setAimDegrees(directAimDegrees(value)) });
 fineControl = bindSteeringControl(fineSlider, { fine: true, hitArea: fineSlider.closest<HTMLElement>('.steering-control')!, active: controlActive, onStart: stopRotation,
@@ -480,8 +507,7 @@ document.querySelector<HTMLButtonElement>('#restart-button')?.addEventListener('
   showToast('新回合已开始');
 });
 document.querySelector<HTMLButtonElement>('#back-home-button')?.addEventListener('click', () => {
-  getScene()?.pauseGame();
-  showHome();
+  saveAndHome();
 });
 
 window.addEventListener('snood-state', (event) => {
@@ -523,10 +549,12 @@ if (Capacitor.isNativePlatform()) {
 }
 
 window.addEventListener('keydown', (event) => {
-  if (event.key.toLowerCase() === 'r' && !gameScreen?.hidden && modalRoot?.hidden) {
-    getScene()?.restartGame();
-    showToast('新回合已开始');
-  }
+  if (usesButtonControls() || event.repeat || event.defaultPrevented || gameScreen?.hidden || !modalRoot?.hidden) return;
+  const action = shortcutAction(event, settings.shortcuts);
+  const actions: Partial<Record<ShortcutAction, string>> = { save: '#back-home-button', settle: '#settle-button', restart: '#restart-button', settings: '#game-settings-button', history: '.sidebar-actions [data-history]', help: '#game-help-button' };
+  const selector = action && actions[action];
+  if (!selector) return;
+  event.preventDefault(); document.querySelector<HTMLButtonElement>(selector)?.click();
 });
 
 formatHeadings(document);

@@ -62,7 +62,7 @@ internal sealed class GameWindow : Form {
             if(args.Contains("--test-missing-runtime")) throw new WebView2RuntimeNotFoundException();
             CoreWebView2Environment.GetAvailableBrowserVersionString();
             string debug=args.FirstOrDefault(a=>a.StartsWith("--remote-debugging-port="));
-            var options=new CoreWebView2EnvironmentOptions(debug);
+            var options=new CoreWebView2EnvironmentOptions("--autoplay-policy=no-user-gesture-required"+(debug==null?"":" "+debug));
             var env=await CoreWebView2Environment.CreateAsync(null,Path.Combine(Program.DataRoot,"WebView2"),options);
             await web.EnsureCoreWebView2Async(env);
             var core=web.CoreWebView2;
