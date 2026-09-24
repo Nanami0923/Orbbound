@@ -309,8 +309,8 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
 .game-screen.independent-launch .mobile-launch-row { display: flex; }
 /* Keep the mobile HUD compact so desktop controls cannot squeeze the board. */
 @media (max-width: 899px) {
-  .home-screen { padding-top: max(20px, env(safe-area-inset-top)); padding-bottom: max(20px, env(safe-area-inset-bottom)); }
-  .game-screen { padding: max(10px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left)); }
+  .home-screen { padding-top: max(20px, var(--safe-area-top, env(safe-area-inset-top))); padding-bottom: max(20px, var(--safe-area-bottom, env(safe-area-inset-bottom))); }
+  .game-screen { padding: max(10px, var(--safe-area-top, env(safe-area-inset-top))) max(10px, var(--safe-area-right, env(safe-area-inset-right))) max(12px, var(--safe-area-bottom, env(safe-area-inset-bottom))) max(10px, var(--safe-area-left, env(safe-area-inset-left))); }
   .game-header { display: grid; grid-template-columns: 1fr 1.5fr auto; gap: 8px; }
   .game-header .header-brand, .game-header .current-card { display: none; }
   .game-header .header-stat { min-width: 0; padding: 0; border: 0; }
@@ -370,7 +370,7 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
 .mobile-topbar, .mobile-controls { display: none; }
 html.mobile-ui, .mobile-ui body, .mobile-ui #app { width: 100%; height: 100%; min-height: 0; overflow: hidden; overscroll-behavior: none; }
 .mobile-ui body { position: fixed; inset: 0; min-width: 0; touch-action: none; }
-.mobile-ui .screen { height: 100dvh; min-height: 0; overflow: hidden; padding: max(12px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left)); }
+.mobile-ui .screen { height: 100dvh; min-height: 0; overflow: hidden; padding: max(12px, var(--safe-area-top, env(safe-area-inset-top))) max(14px, var(--safe-area-right, env(safe-area-inset-right))) max(12px, var(--safe-area-bottom, env(safe-area-inset-bottom))) max(14px, var(--safe-area-left, env(safe-area-inset-left))); }
 .mobile-ui button { touch-action: none; -webkit-user-select: none; user-select: none; }
 .mobile-ui .home-screen { display: grid; grid-template-rows: 32px minmax(0, 1fr) auto; gap: 12px; }
 .mobile-ui .home-topline { margin: 0; padding: 0; gap: 10px; }
@@ -420,8 +420,8 @@ html.mobile-ui, .mobile-ui body, .mobile-ui #app { width: 100%; height: 100%; mi
 .mobile-ui .game-layout { display: contents; }
 .mobile-ui .board-wrap { min-height: 0; width: 100%; display: flex; flex-direction: column; justify-content: center; }
 .mobile-ui .board-heading { flex: 0 0 22px; margin: 0; padding: 0 2px 4px; font-size: 9px; }
-.mobile-ui .game-container { width: min(100%, calc((100dvh - 230px - env(safe-area-inset-top) - env(safe-area-inset-bottom)) * 640 / 760)); max-width: 640px; height: auto; aspect-ratio: 640 / 760; margin: 0 auto; border-radius: 16px; flex: 0 0 auto; pointer-events: none; }
-.mobile-ui .game-sidebar { position: absolute; top: max(12px, env(safe-area-inset-top)); right: calc(max(14px, env(safe-area-inset-right)) + 86px); width: auto; display: block; padding: 0; }
+.mobile-ui .game-container { width: min(100%, calc((100dvh - 230px - var(--safe-area-top, env(safe-area-inset-top)) - var(--safe-area-bottom, env(safe-area-inset-bottom))) * 640 / 760)); max-width: 640px; height: auto; aspect-ratio: 640 / 760; margin: 0 auto; border-radius: 16px; flex: 0 0 auto; pointer-events: none; }
+.mobile-ui .game-sidebar { position: absolute; top: max(12px, var(--safe-area-top, env(safe-area-inset-top))); right: calc(max(14px, var(--safe-area-right, env(safe-area-inset-right))) + 86px); width: auto; display: block; padding: 0; }
 .mobile-ui .game-sidebar .legend-card, .mobile-ui .game-sidebar .sidebar-actions { display: none; }
 .mobile-ui .game-sidebar .next-card { display: flex; align-items: center; gap: 6px; padding: 0; border: 0; background: none; border-radius: 0; }
 .mobile-ui .next-card .card-kicker { font-size: 0; }
@@ -433,7 +433,7 @@ html.mobile-ui, .mobile-ui body, .mobile-ui #app { width: 100%; height: 100%; mi
 .mobile-ui .mobile-controls { display: grid; grid-template-columns: 1fr 1.4fr 1fr; gap: 12px; align-self: stretch; }
 .mobile-ui .mobile-controls .primary-button { min-height: 0; justify-content: center; font-size: 20px; }
 .mobile-menu-actions { display: grid; gap: 10px; margin-top: 24px; }
-.mobile-ui .modal-root { padding: max(16px, env(safe-area-inset-top)) 14px max(16px, env(safe-area-inset-bottom)); }
+.mobile-ui .modal-root { padding: max(16px, var(--safe-area-top, env(safe-area-inset-top))) 14px max(16px, var(--safe-area-bottom, env(safe-area-inset-bottom))); }
 .mobile-ui .modal-card { max-height: 100%; touch-action: pan-y; overscroll-behavior: contain; }
 .mobile-ui .history-scroll { touch-action: pan-x pan-y; }
 @media (max-height: 700px) {
@@ -448,12 +448,12 @@ html.mobile-ui, .mobile-ui body, .mobile-ui #app { width: 100%; height: 100%; mi
 }
 
 /* Place the play controls in the lower-middle grip zone, leaving resting space below. */
-.mobile-ui .game-screen { --grip-board-height: min(calc((100vw - 28px) * 760 / 640), max(150px, calc(72dvh - 152px - env(safe-area-inset-top)))); grid-template-rows: 44px 42px auto 136px minmax(0, 1fr); }
+.mobile-ui .game-screen { --grip-board-height: min(calc((100vw - 28px) * 760 / 640), max(150px, calc(72dvh - 152px - var(--safe-area-top, env(safe-area-inset-top))))); grid-template-rows: 44px 42px auto 136px minmax(0, 1fr); }
 .mobile-ui .board-wrap { justify-content: start; }
 .mobile-ui .game-container { width: calc(var(--grip-board-height) * 640 / 760); height: var(--grip-board-height); max-width: 100%; }
 .mobile-ui .mobile-controls { margin-top: 0; }
 .mobile-ui .home-screen { display: block; padding: 0 24px; }
-.mobile-ui .home-topline { position: absolute; top: max(7dvh, calc(env(safe-area-inset-top) + 16px)); left: 24px; right: 24px; height: 32px; }
+.mobile-ui .home-topline { position: absolute; top: max(7dvh, calc(var(--safe-area-top, env(safe-area-inset-top)) + 16px)); left: 24px; right: 24px; height: 32px; }
 .mobile-ui .home-content { display: contents; }
 .mobile-ui .hero-copy { position: absolute; top: 17dvh; left: 24px; right: 24px; }
 .mobile-ui .hero-copy h1 { font-size: clamp(28px, 7.8vw, 40px); }
@@ -487,7 +487,7 @@ html.mobile-ui, .mobile-ui body, .mobile-ui #app { width: 100%; height: 100%; mi
 }
 .mobile-ui .home-footer > div { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
 @media (orientation: landscape) and (max-height: 550px) {
-  .mobile-ui .game-screen { --grip-board-height: max(80px, calc(100dvh - 296px - env(safe-area-inset-top) - env(safe-area-inset-bottom))); }
+  .mobile-ui .game-screen { --grip-board-height: max(80px, calc(100dvh - 296px - var(--safe-area-top, env(safe-area-inset-top)) - var(--safe-area-bottom, env(safe-area-inset-bottom)))); }
 }
 
 /* 2.0: two distinct entry points, with setup kept in a compact dialog. */
@@ -521,12 +521,12 @@ html.mobile-ui, .mobile-ui body, .mobile-ui #app { width: 100%; height: 100%; mi
 #descent-time-row.urgent strong { color: var(--coral); }
 #descent-time-row.urgent #descent-time-fill { background: var(--coral); }
 .timed-mode .danger-stat .countdown-label strong { font-size: 13px; margin: 0; }
-.mobile-ui .game-screen.timed-mode { --grip-board-height: min(calc((100vw - 28px) * 760 / 640), max(128px, calc(72dvh - 174px - env(safe-area-inset-top)))); grid-template-rows: 44px 64px auto 136px minmax(0, 1fr); }
+.mobile-ui .game-screen.timed-mode { --grip-board-height: min(calc((100vw - 28px) * 760 / 640), max(128px, calc(72dvh - 174px - var(--safe-area-top, env(safe-area-inset-top))))); grid-template-rows: 44px 64px auto 136px minmax(0, 1fr); }
 .mobile-ui .timed-mode .game-header { grid-template-columns: minmax(50px, .8fr) minmax(100px, 1.7fr) minmax(54px, .8fr); }
 .mobile-ui .timed-mode .danger-stat .countdown-label strong { font-size: 11px; }
 .mobile-ui .timed-mode .danger-stat { gap: 3px; }
 @media (orientation: landscape) and (max-height: 550px) {
-  .mobile-ui .game-screen.timed-mode { --grip-board-height: max(80px, calc(100dvh - 318px - env(safe-area-inset-top) - env(safe-area-inset-bottom))); }
+  .mobile-ui .game-screen.timed-mode { --grip-board-height: max(80px, calc(100dvh - 318px - var(--safe-area-top, env(safe-area-inset-top)) - var(--safe-area-bottom, env(safe-area-inset-bottom)))); }
 }
 .mobile-ui #mobile-pause-button { font-size: 12px; }
 .mobile-ui .game-sidebar { display: none; }
@@ -546,7 +546,7 @@ html.mobile-ui, .mobile-ui body, .mobile-ui #app { width: 100%; height: 100%; mi
 .mobile-ui .history-scroll td:nth-child(4) { grid-area: result; }
 .mobile-ui .history-scroll td:nth-child(5) { grid-area: duration; color: var(--muted); }
 .mobile-ui .history-scroll td[colspan] { grid-area: auto; grid-column: 1 / -1; color: var(--muted); }
-.mobile-ui .home-screen { display: flex; flex-direction: column; padding: max(24px, env(safe-area-inset-top)) 24px max(16px, env(safe-area-inset-bottom)); gap: 18px; }
+.mobile-ui .home-screen { display: flex; flex-direction: column; padding: max(24px, var(--safe-area-top, env(safe-area-inset-top))) 24px max(16px, var(--safe-area-bottom, env(safe-area-inset-bottom))); gap: 18px; }
 .mobile-ui .home-topline, .mobile-ui .hero-copy, .mobile-ui .home-card, .mobile-ui .home-footer { position: relative; inset: auto; width: 100%; }
 .mobile-ui .home-topline { flex: 0 0 32px; }
 .mobile-ui .home-content { display: flex; flex: 1; min-height: 0; gap: 8px; }
@@ -562,7 +562,7 @@ html.mobile-ui, .mobile-ui body, .mobile-ui #app { width: 100%; height: 100%; mi
 .mobile-ui .card-caption strong { font-size: 22px; }
 .mobile-ui .home-footer { flex: 0 0 auto; margin-bottom: clamp(0px, 7dvh, 70px); }
 @media (max-height: 700px) {
-  .mobile-ui .home-screen { gap: 10px; padding-top: max(14px, env(safe-area-inset-top)); }
+  .mobile-ui .home-screen { gap: 10px; padding-top: max(14px, var(--safe-area-top, env(safe-area-inset-top))); }
   .mobile-ui .hero-copy { margin-top: 0; }
   .mobile-ui .home-card .hero-orb, .mobile-ui .card-caption { display: none; }
   .mobile-ui .home-footer { margin-bottom: 0; }
@@ -687,7 +687,7 @@ button:focus-visible { outline: 2px solid var(--mint); outline-offset: 3px; }
 .mobile-ui .steering-control { padding: 4px 10px; font-size: 11px; }
 .mobile-ui .fine-control { font-size: clamp(9px, 2.7vw, 11px); }
 @media (max-height: 740px) {
-  .mobile-ui .home-screen { gap: 10px; padding-top: max(14px, env(safe-area-inset-top)); }
+  .mobile-ui .home-screen { gap: 10px; padding-top: max(14px, var(--safe-area-top, env(safe-area-inset-top))); }
   .mobile-ui .home-card .hero-orb, .mobile-ui .card-caption { display: none; }
   .mobile-ui .hero-copy h1 { font-size: 30px; }
   .mobile-ui .home-footer { margin-bottom: 0; }
@@ -697,7 +697,7 @@ button:focus-visible { outline: 2px solid var(--mint); outline-offset: 3px; }
 .mobile-ui .steering-control input { height: 38px; }
 
 /* Android 3.0: native WindowInsets fit the viewport; CSS adds design spacing. */
-.mobile-ui .home-screen { min-height: 0; height: 100dvh; padding: calc(env(safe-area-inset-top) + 20px) calc(env(safe-area-inset-right) + 22px) calc(env(safe-area-inset-bottom) + 16px) calc(env(safe-area-inset-left) + 22px); gap: 18px; overflow: hidden; }
+.mobile-ui .home-screen { min-height: 0; height: 100dvh; padding: calc(var(--safe-area-top, env(safe-area-inset-top)) + 20px) calc(var(--safe-area-right, env(safe-area-inset-right)) + 22px) calc(var(--safe-area-bottom, env(safe-area-inset-bottom)) + 16px) calc(var(--safe-area-left, env(safe-area-inset-left)) + 22px); gap: 18px; overflow: hidden; }
 .mobile-ui .home-topline { flex-basis: 32px; }
 .mobile-ui .version-pill { margin-left: auto; padding: 0; border: 0; font-size: 9px; }
 .mobile-ui .home-content { width: 100%; flex: 1; margin: 0; gap: 0; align-items: stretch; }
@@ -738,14 +738,14 @@ button:focus-visible { outline: 2px solid var(--mint); outline-offset: 3px; }
 .mode-action { font-size: 12px; color: var(--mode-accent); white-space: nowrap; }
 .mode-card .mode-new { min-height: 44px; display: block; margin-left: auto; padding: 6px 16px; font-size: 12px; color: #a7b4c9; }
 .mobile-ui #save-note { display: block; }
-.mobile-ui .game-screen, .mobile-ui .game-screen.timed-mode { height: 100dvh; min-height: 0; padding: calc(env(safe-area-inset-top) + 6px) calc(env(safe-area-inset-right) + 16px) calc(env(safe-area-inset-bottom) + 16px + var(--control-offset, 0px)) calc(env(safe-area-inset-left) + 16px); grid-template-rows: 44px 64px auto 120px minmax(0, 1fr); gap: 6px; }
+.mobile-ui .game-screen, .mobile-ui .game-screen.timed-mode { height: 100dvh; min-height: 0; padding: calc(var(--safe-area-top, env(safe-area-inset-top)) + 6px) calc(var(--safe-area-right, env(safe-area-inset-right)) + 16px) calc(var(--safe-area-bottom, env(safe-area-inset-bottom)) + 16px + var(--control-offset, 0px)) calc(var(--safe-area-left, env(safe-area-inset-left)) + 16px); grid-template-rows: 44px 64px auto 120px minmax(0, 1fr); gap: 6px; }
 .mobile-ui .mobile-topbar button { background: transparent; border-color: transparent; box-shadow: none; color: #b4c0d3; }
 .mobile-ui .game-header { align-items: center; }
 .mobile-ui .score-stat strong { font-size: 26px; font-variant-numeric: tabular-nums; }
 .mobile-ui #round-clock { font-size: 20px; font-variant-numeric: tabular-nums; }
 .mobile-ui .board-wrap { justify-content: flex-end; align-items: center; }
 .mobile-ui .board-heading { width: 100%; color: #a0aec3; }
-.mobile-ui .game-container { width: min(100%, calc((100dvh - 294px - env(safe-area-inset-top) - env(safe-area-inset-bottom) - var(--control-offset, 0px)) * 640 / 760)) !important; height: auto !important; max-height: none; aspect-ratio: 640 / 760; }
+.mobile-ui .game-container { width: min(100%, calc((100dvh - 294px - var(--safe-area-top, env(safe-area-inset-top)) - var(--safe-area-bottom, env(safe-area-inset-bottom)) - var(--control-offset, 0px)) * 640 / 760)) !important; height: auto !important; max-height: none; aspect-ratio: 640 / 760; }
 .mobile-ui .mobile-controls { grid-template-rows: 120px; transform: none; align-items: stretch; gap: 10px; }
 .mobile-ui #mobile-fire { align-self: center; height: 72px; border-radius: 14px; gap: 2px; }
 .mobile-ui #mobile-fire span { font-size: 26px; }
@@ -755,11 +755,11 @@ button:focus-visible { outline: 2px solid var(--mint); outline-offset: 3px; }
 .mobile-ui .fine-control { padding-block: 0; border-color: transparent; background: transparent; font-size: 10px; }
 .mobile-ui .fine-control input { height: 30px; }
 .mobile-ui .fine-control::after { bottom: 8px; height: 12px; opacity: .55; }
-.mobile-ui .modal-root { padding: calc(env(safe-area-inset-top) + 16px) calc(env(safe-area-inset-right) + 16px) calc(env(safe-area-inset-bottom) + 16px) calc(env(safe-area-inset-left) + 16px); }
+.mobile-ui .modal-root { padding: calc(var(--safe-area-top, env(safe-area-inset-top)) + 16px) calc(var(--safe-area-right, env(safe-area-inset-right)) + 16px) calc(var(--safe-area-bottom, env(safe-area-inset-bottom)) + 16px) calc(var(--safe-area-left, env(safe-area-inset-left)) + 16px); }
 .reduce-motion .mechanism-demo *, .reduce-motion .mechanism-demo { animation: none !important; }
 .reduce-motion .demo-shot { opacity: 0; }
 @media (prefers-reduced-motion: reduce) { .mechanism-demo * { animation: none !important; } .demo-shot { opacity: 0; } }
-@media (max-height: 700px) { .mobile-ui .home-screen { gap: 10px; padding-top: calc(env(safe-area-inset-top) + 12px); } .mobile-ui .hero-copy h1 { font-size: 32px; } .mechanism-demo svg { height: 94px; } .mode-main { min-height: 78px; padding-block: 10px; } .mobile-ui .home-card { gap: 10px; } }
+@media (max-height: 700px) { .mobile-ui .home-screen { gap: 10px; padding-top: calc(var(--safe-area-top, env(safe-area-inset-top)) + 12px); } .mobile-ui .hero-copy h1 { font-size: 32px; } .mechanism-demo svg { height: 94px; } .mode-main { min-height: 78px; padding-block: 10px; } .mobile-ui .home-card { gap: 10px; } }
 @media (orientation: landscape) and (max-height: 600px) {
   .mobile-ui .home-content { flex-direction: row; gap: 24px; }
   .mobile-ui .hero-copy { width: 40%; align-self: center; }
@@ -769,7 +769,7 @@ button:focus-visible { outline: 2px solid var(--mint); outline-offset: 3px; }
   .mobile-ui .mobile-topbar { grid-column: 2; grid-row: 1; }
   .mobile-ui .game-header { grid-column: 2; grid-row: 2; }
   .mobile-ui .board-wrap { grid-column: 1; grid-row: 1 / 4; justify-content: center; }
-  .mobile-ui .game-container { width: min(100%, calc((100dvh - 52px - env(safe-area-inset-top) - env(safe-area-inset-bottom) - var(--control-offset, 0px)) * 640 / 760)) !important; }
+  .mobile-ui .game-container { width: min(100%, calc((100dvh - 52px - var(--safe-area-top, env(safe-area-inset-top)) - var(--safe-area-bottom, env(safe-area-inset-bottom)) - var(--control-offset, 0px)) * 640 / 760)) !important; }
   .mobile-ui .mobile-controls { grid-column: 2; grid-row: 3; align-self: center; }
 }
 
@@ -930,12 +930,34 @@ button:focus-visible { outline: 2px solid var(--mint); outline-offset: 3px; }
 /* Keep the normal board size, with a small downward shift and no lower controls. */
 .mobile-ui.immersive-mode .mobile-controls { display: none; }
 .mobile-ui.immersive-mode .game-screen,
-.mobile-ui.immersive-mode .game-screen.timed-mode { grid-template-rows: 44px 64px auto minmax(0, 1fr); padding-bottom: calc(env(safe-area-inset-bottom) + 16px); }
+.mobile-ui.immersive-mode .game-screen.timed-mode { grid-template-rows: 44px 64px auto minmax(0, 1fr); padding-bottom: calc(var(--safe-area-bottom, env(safe-area-inset-bottom)) + 16px); }
 .mobile-ui.immersive-mode .board-wrap { margin-top: clamp(12px, 3dvh, 28px); }
 .mobile-ui.immersive-mode .game-container { pointer-events: auto; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 .mobile-ui.immersive-mode .game-container canvas { touch-action: none; }
 @media (orientation: landscape) and (max-height: 600px) {
   .mobile-ui.immersive-mode .game-screen, .mobile-ui.immersive-mode .game-screen.timed-mode { grid-template-rows: 44px 64px minmax(0, 1fr); }
   .mobile-ui.immersive-mode .board-wrap { margin-top: 10px; }
-  .mobile-ui.immersive-mode .game-container { width: min(100%, calc((100dvh - 62px - env(safe-area-inset-top) - env(safe-area-inset-bottom)) * 640 / 760)) !important; }
+  .mobile-ui.immersive-mode .game-container { width: min(100%, calc((100dvh - 62px - var(--safe-area-top, env(safe-area-inset-top)) - var(--safe-area-bottom, env(safe-area-inset-bottom))) * 640 / 760)) !important; }
+}
+
+/* 3.3 mobile preview travels with the firing hand, or anchors the board header. */
+.mobile-ui .mobile-fire-group { grid-column: 1; grid-row: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; min-width: 0; }
+.controls-swapped.mobile-ui .mobile-fire-group { grid-column: 2; }
+.mobile-ui .mobile-fire-group #mobile-fire { width: 100%; height: 64px; min-height: 64px; }
+.mobile-ui .next-card { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 0; margin: 0; border: 0; background: transparent; box-shadow: none; }
+.mobile-ui .next-card .card-kicker { font-size: 10px; margin: 0; white-space: nowrap; }
+.mobile-ui .next-card .card-kicker::after { content: none; }
+.mobile-ui .next-card .next-preview { width: 44px; height: 44px; margin: 0; flex: 0 0 44px; background: transparent; }
+.mobile-ui .next-card .dom-orb { width: 40px; height: 40px; font-size: 20px; }
+.mobile-ui .next-card p { display: none; }
+.mobile-ui .mobile-fire-group .next-card { gap: 2px; }
+.mobile-ui .mobile-fire-group .card-kicker { font-size: 9px; letter-spacing: 0; }
+.mobile-ui.immersive-mode .board-heading { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto auto; gap: 4px 8px; flex: 0 0 52px; padding-bottom: 8px; }
+.mobile-ui.immersive-mode #difficulty-label { grid-column: 1; grid-row: 1; align-self: end; }
+.mobile-ui.immersive-mode #game-status-label { grid-column: 1; grid-row: 2; align-self: start; color: var(--mint); }
+.mobile-ui.immersive-mode .board-heading .next-card { grid-column: 2; grid-row: 1 / 3; }
+.mobile-ui.immersive-mode .board-wrap { margin-top: clamp(32px, 8dvh, 80px); }
+@media (orientation: landscape) and (max-height: 600px) {
+  .mobile-ui.immersive-mode .board-wrap { margin-top: 0; }
+  .mobile-ui.immersive-mode .game-container { width: min(100%, calc((100dvh - 84px - var(--safe-area-top, env(safe-area-inset-top)) - var(--safe-area-bottom, env(safe-area-inset-bottom))) * 640 / 760)) !important; }
 }

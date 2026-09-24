@@ -28,10 +28,24 @@ it('ignores a second finger and cancels a release outside the board', () => {
   expect(board.captured).toBe(1); expect(aim).toHaveBeenCalledOnce(); expect(fire).not.toHaveBeenCalled();
   send('pointerup', 700, 700); expect(fire).not.toHaveBeenCalled();
 });
-it('does not queue a shot started during flight or after a lifecycle reset', () => {
-  const { send, state, fire, binding } = setup(); state.ready = false; send('pointerdown'); state.ready = true; send('pointerup'); expect(fire).not.toHaveBeenCalled();
+it('accepts a gesture begun during flight when ready at release, but cancels on reset', () => {
+  const { send, state, fire, binding } = setup(); state.ready = false; send('pointerdown'); state.ready = true; send('pointerup'); expect(fire).toHaveBeenCalledOnce(); fire.mockClear();
   send('pointerdown'); binding.reset(); send('pointerup'); expect(fire).not.toHaveBeenCalled();
   send('pointerdown'); state.active = false; send('pointerup'); expect(fire).not.toHaveBeenCalled();
+});
+it('buffers one early release and clears it on lifecycle reset or expiry', () => {
+  vi.useFakeTimers();
+  try {
+    const { send, state, fire, binding } = setup();
+    state.ready = false; send('pointerdown'); send('pointerup');
+    vi.advanceTimersByTime(200); expect(fire).not.toHaveBeenCalled();
+    state.ready = true; vi.advanceTimersByTime(16); expect(fire).toHaveBeenCalledOnce();
+    state.ready = false; send('pointerdown'); send('pointerup'); binding.reset();
+    state.ready = true; vi.advanceTimersByTime(100); expect(fire).toHaveBeenCalledOnce();
+    state.ready = false; send('pointerdown'); send('pointerup'); vi.advanceTimersByTime(1700);
+    state.ready = true; vi.advanceTimersByTime(100); expect(fire).toHaveBeenCalledOnce();
+    binding.dispose();
+  } finally { vi.useRealTimers(); }
 });
 it('claims Android touch defaults only while immersion is active', () => {
   const { board, state } = setup();

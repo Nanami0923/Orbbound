@@ -106,11 +106,12 @@ export class PlayScene extends Phaser.Scene {
     }
   }
   public persistGame(): void {
-    if (!this.ready) return;
+    if (!this.ready || this.abandoned) return;
     if (this.gameState.status === 'READY') sendWindowEvent('snood-save-request', this.gameState);
     else { recordRound(this.gameState); sendWindowEvent('snood-clear-save', this.gameState.mode ?? 'endless'); }
   }
   private clockTick = 0;
+  private abandoned = false;
   private transient = new Set<Phaser.GameObjects.GameObject>();
 
   public override update(_time: number, delta: number): void {
@@ -178,6 +179,7 @@ export class PlayScene extends Phaser.Scene {
   }
 
   public begin(state: GameState): void {
+    this.abandoned = false;
     this.roundEpoch++;
     state = resumeTimed(state);
     this.stopRotation();
@@ -213,6 +215,13 @@ export class PlayScene extends Phaser.Scene {
     const difficulty = this.gameState.difficultyId;
     sendWindowEvent('snood-clear-save', this.gameState.mode ?? 'endless');
     this.begin(createRound(difficulty, this.gameState.mode ?? 'endless', this.gameState.durationMs));
+  }
+
+  public abandonGame(): void {
+    this.pauseGame();
+    if (this.gameState.status === 'READY') recordRound(this.gameState, true);
+    this.abandoned = true;
+    sendWindowEvent('snood-clear-save', this.gameState.mode ?? 'endless');
   }
 
   public setSettings(settings: Settings): void {
@@ -340,7 +349,7 @@ export class PlayScene extends Phaser.Scene {
     }).setOrigin(0.5);
     floorLabel.setAlpha(0.85);
     this.dangerLine = this.add.graphics();
-    this.add.text(import.meta.env.MODE === 'windows' ? 478 : 405, 661, import.meta.env.MODE === 'windows' ? '当前球' : '下一球', {
+    if (!usesButtonControls()) this.add.text(import.meta.env.MODE === 'windows' ? 478 : 405, 661, import.meta.env.MODE === 'windows' ? '当前球' : '下一球', {
       resolution: 2, color: '#98a1b8', fontFamily: 'Segoe UI, Microsoft YaHei, sans-serif', fontSize: '14px',
     }).setOrigin(0.5);
 
@@ -382,8 +391,10 @@ export class PlayScene extends Phaser.Scene {
     this.nextOrb?.destroy();
 
     this.launcherBase.clear();
-    this.nextOrb = this.createOrb(import.meta.env.MODE === 'windows' ? this.gameState.currentColor : this.gameState.nextColor, { x: import.meta.env.MODE === 'windows' ? 478 : 405, y: 698 });
-    this.nextOrb.setScale(import.meta.env.MODE === 'windows' ? 1.35 : .72);
+    if (!usesButtonControls()) {
+      this.nextOrb = this.createOrb(import.meta.env.MODE === 'windows' ? this.gameState.currentColor : this.gameState.nextColor, { x: import.meta.env.MODE === 'windows' ? 478 : 405, y: 698 });
+      this.nextOrb.setScale(import.meta.env.MODE === 'windows' ? 1.35 : .72);
+    }
     const theme = getOrbTheme(this.gameState.currentColor);
     if (this.barrel) {
       this.barrel.clear();

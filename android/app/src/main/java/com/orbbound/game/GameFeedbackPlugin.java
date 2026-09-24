@@ -4,6 +4,8 @@ import android.content.Context;
 import android.os.Build;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
+import androidx.core.graphics.Insets;
+import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
@@ -11,6 +13,27 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 
 @CapacitorPlugin(name = "GameFeedback")
 public class GameFeedbackPlugin extends Plugin {
+    private Insets safeInsets = Insets.NONE;
+
+    private JSObject insetData() {
+        JSObject data = new JSObject();
+        data.put("top", safeInsets.top);
+        data.put("right", safeInsets.right);
+        data.put("bottom", safeInsets.bottom);
+        data.put("left", safeInsets.left);
+        return data;
+    }
+
+    public void updateInsets(Insets insets) {
+        safeInsets = insets;
+        notifyListeners("safeAreaChanged", insetData(), true);
+    }
+
+    @PluginMethod
+    public void getSafeArea(PluginCall call) {
+        call.resolve(insetData());
+    }
+
     @PluginMethod
     @SuppressWarnings("deprecation")
     public void pulse(PluginCall call) {

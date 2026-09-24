@@ -21,8 +21,7 @@ public class MainActivity extends BridgeActivity {
         getBridge().getWebView().setLongClickable(false);
         // The hardware volume keys should adjust the game's media audio.
         setVolumeControlStream(AudioManager.STREAM_MUSIC);
-        // Fit the entire WebView once, including dialogs. Consume the insets so
-        // WebView safe-area CSS cannot apply the same system bars a second time.
+        // Draw the WebView behind both bars; CSS protects controls using these insets.
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
         View content = findViewById(android.R.id.content);
         // Paint the same navy behind system bars and the WebView. Insets protect
@@ -39,7 +38,9 @@ public class MainActivity extends BridgeActivity {
         ViewCompat.setOnApplyWindowInsetsListener(content, (view, windowInsets) -> {
             Insets safe = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars()
                 | WindowInsetsCompat.Type.displayCutout() | WindowInsetsCompat.Type.systemGestures());
-            view.setPadding(safe.left, safe.top, safe.right, safe.bottom);
+            view.setPadding(0, 0, 0, 0);
+            com.getcapacitor.PluginHandle handle = getBridge().getPlugin("GameFeedback");
+            if (handle != null) ((GameFeedbackPlugin) handle.getInstance()).updateInsets(safe);
             return WindowInsetsCompat.CONSUMED;
         });
         ViewCompat.requestApplyInsets(content);

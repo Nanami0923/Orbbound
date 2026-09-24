@@ -1,4 +1,5 @@
 import { bindDesktopBridge } from './ui/desktop-bridge';
+import './ui/android-insets';
 import { shortcutAction, shortcutLabel, type ShortcutAction } from './game/shortcuts';
 import { bindImmersiveControl } from './game/immersive-control';
 import { historyMarkup } from './ui/history-panel';
@@ -100,6 +101,11 @@ let disposeModal: (() => void) | null = null;
 let roundRequest = 0;
 
 function syncMobileLayout(): void {
+  if (usesButtonControls()) {
+    const preview = document.querySelector('.next-card');
+    const target = document.querySelector(settings.immersiveMode ? '.board-heading' : '.mobile-fire-group');
+    if (preview && target && preview.parentElement !== target) target.append(preview);
+  }
   document.documentElement.classList.toggle('immersive-mode', usesButtonControls() && settings.immersiveMode);
   document.querySelectorAll<HTMLElement>('[data-shortcut]').forEach(label => { label.textContent = shortcutLabel(settings.shortcuts[label.dataset.shortcut as ShortcutAction]); });
   document.documentElement.classList.toggle("desktop-ui", !usesButtonControls());
@@ -457,16 +463,22 @@ document.querySelector('#settle-button')?.addEventListener('click', () => {
   openModal(`<button class="modal-close" data-close-modal>继续游戏</button><h2>结算本局</h2><p>结算后按难度系数计入对应排行榜，本局存档将结束。</p><div class="modal-footer"><button id="desktop-confirm-settle" class="primary-button">结算并计入排行榜</button></div>`);
   document.querySelector('#desktop-confirm-settle')?.addEventListener('click', () => { closeModal(); getScene()?.settleGame(); });
 });
-document.querySelector('#mobile-menu-button')?.addEventListener('click', () => {
+function showGameMenu(): void {
   openModal(`<button class="modal-close" data-close-modal type="button">继续游戏</button><h2>游戏菜单</h2>
     <p>本局已暂停并存档。</p><p>继续游玩，或结算成绩后入榜。</p>
-    <div class="mobile-menu-actions"><button id="menu-settings" class="quiet-button">设置</button><button id="menu-history" class="quiet-button">历史与排行</button><button id="menu-settle" class="quiet-button">结算并入榜</button><button id="menu-restart" class="quiet-button">放弃本局，重新开始</button><button id="menu-home" class="quiet-button">存档并返回首页</button></div>`);
+    <div class="mobile-menu-actions"><button id="menu-settings" class="quiet-button">设置</button><button id="menu-history" class="quiet-button">历史与排行</button><button id="menu-settle" class="quiet-button">结算并入榜</button><button id="menu-restart" class="quiet-button">放弃本局…</button><button id="menu-home" class="quiet-button">存档并返回首页</button></div>`);
   document.querySelector('#menu-settle')?.addEventListener('click', () => { closeModal(); getScene()?.settleGame(); });
   document.querySelector('#menu-settings')?.addEventListener('click', showSettings);
   document.querySelector('#menu-history')?.addEventListener('click', () => showHistory());
-  document.querySelector('#menu-restart')?.addEventListener('click', () => { closeModal(); getScene()?.restartGame(); });
+  document.querySelector('#menu-restart')?.addEventListener('click', () => {
+    openModal(`<button class="modal-close" id="abandon-cancel">返回菜单</button><h2>放弃本局？</h2><p>本局存档将删除，成绩不计入排行榜。请选择重新开始，或退出到首页。</p><div class="mobile-menu-actions"><button id="abandon-restart" class="primary-button">放弃并重开</button><button id="abandon-exit" class="quiet-button">放弃并退出</button></div>`);
+    document.querySelector('#abandon-cancel')?.addEventListener('click', showGameMenu);
+    document.querySelector('#abandon-restart')?.addEventListener('click', () => { closeModal(); getScene()?.restartGame(); });
+    document.querySelector('#abandon-exit')?.addEventListener('click', () => { getScene()?.abandonGame(); resumeAfterModal = false; showHome(); showToast('已放弃本局'); });
+  });
   document.querySelector('#menu-home')?.addEventListener('click', () => { resumeAfterModal = false; closeModal(); showHome(); });
-});
+}
+document.querySelector('#mobile-menu-button')?.addEventListener('click', showGameMenu);
 
 const aimSlider = document.querySelector<HTMLInputElement>('#aim-slider')!;
 const fineSlider = document.querySelector<HTMLInputElement>('#fine-slider')!;

@@ -5,6 +5,18 @@ import { createGameState } from '../src/core/engine';
 import { cellKey } from '../src/core/grid';
 import { createRound } from '../src/core/modes';
 
+it('never recreates an abandoned save on home, background or unload persistence', () => {
+  const events: string[] = [];
+  vi.stubGlobal('window', { dispatchEvent: (event: Event) => { events.push(event.type); return true; } });
+  try {
+    const scene = new PlayScene();
+    Object.assign(scene, { ready: true, gameState: createRound('normal', 'endless'), pauseGame: vi.fn() });
+    scene.abandonGame();
+    scene.persistGame(); scene.persistGame();
+    expect(events).toEqual(['snood-clear-save']);
+  } finally { vi.unstubAllGlobals(); }
+});
+
 it('reuses unchanged board balls and only creates or destroys changed cells', () => {
   const scene = new PlayScene();
   const createOrb = vi.fn(() => {

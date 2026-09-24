@@ -5,7 +5,8 @@ export function immersiveAngle(x: number, y: number): number {
   return Math.max(-78, Math.min(78, Math.atan2(x - BOARD_GEOMETRY.launcherX, Math.max(BOARD_GEOMETRY.radius * 2, BOARD_GEOMETRY.launcherY - y)) * 180 / Math.PI));
 }
 export function bindImmersiveControl(area: HTMLElement, options: { active(): boolean; canFire(): boolean; aim(degrees: number): void; fire(): void; unlock(): void }) {
-  let owner: number | null = null, armed = false;
+  let owner: number | null = null;
+  let pending: ReturnType<typeof setTimeout> | undefined;
   const abort = new AbortController();
   area.addEventListener('contextmenu', event => { if (options.active()) event.preventDefault(); }, { signal: abort.signal });
   // Android can cancel the pointer stream for a long-press action unless the
@@ -14,7 +15,8 @@ export function bindImmersiveControl(area: HTMLElement, options: { active(): boo
     if (options.active() && event.cancelable) event.preventDefault();
   }, { passive: false, signal: abort.signal });
   const reset = () => {
-    const previous = owner; owner = null; armed = false;
+    clearTimeout(pending); pending = undefined;
+    const previous = owner; owner = null;
     if (previous !== null && area.hasPointerCapture(previous)) area.releasePointerCapture(previous);
   };
   const aim = (event: PointerEvent) => {
@@ -23,7 +25,7 @@ export function bindImmersiveControl(area: HTMLElement, options: { active(): boo
   };
   area.addEventListener('pointerdown', event => {
     if (!options.active() || owner !== null || event.button !== 0) return;
-    event.preventDefault(); owner = event.pointerId; armed = options.canFire();
+    reset(); event.preventDefault(); owner = event.pointerId;
     area.setPointerCapture(owner); options.unlock(); aim(event);
   }, { signal: abort.signal });
   area.addEventListener('pointermove', event => {
@@ -36,9 +38,20 @@ export function bindImmersiveControl(area: HTMLElement, options: { active(): boo
     event.preventDefault();
     const rect = area.getBoundingClientRect();
     const inside = event.clientX >= rect.left && event.clientX <= rect.right && event.clientY >= rect.top && event.clientY <= rect.bottom;
-    const fire = armed && inside && options.active() && options.canFire();
+    const fire = inside && options.active();
     if (fire) aim(event);
-    reset(); if (fire) options.fire();
+    reset();
+    if (fire) {
+      // Retain at most one release while the preceding shot finishes animating.
+      const deadline = Date.now() + 1600;
+      const flush = () => {
+        pending = undefined;
+        if (!options.active() || Date.now() > deadline) return;
+        if (options.canFire()) options.fire();
+        else pending = setTimeout(flush, 16);
+      };
+      flush();
+    }
   }, { signal: abort.signal });
   for (const type of ['pointercancel', 'lostpointercapture']) area.addEventListener(type, event => { if ((event as PointerEvent).pointerId === owner) reset(); }, { signal: abort.signal });
   return { reset, dispose: () => { reset(); abort.abort(); } };
