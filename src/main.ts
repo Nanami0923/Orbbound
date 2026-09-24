@@ -103,7 +103,7 @@ let roundRequest = 0;
 function syncMobileLayout(): void {
   if (usesButtonControls()) {
     const preview = document.querySelector('.next-card');
-    const target = document.querySelector(settings.immersiveMode ? '.board-heading' : '.mobile-fire-group');
+    const target = document.querySelector('.board-heading');
     if (preview && target && preview.parentElement !== target) target.append(preview);
   }
   document.documentElement.classList.toggle('immersive-mode', usesButtonControls() && settings.immersiveMode);

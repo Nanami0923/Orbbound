@@ -12,7 +12,7 @@ export function buildHome(touch: boolean): void {
         <path class="demo-route-left" d="M160 165L108 68"/><path class="demo-route-right" d="M160 165L212 40"/>
         <g class="demo-match-left" fill="#63d7bd"><circle cx="80" cy="40" r="14"/><circle cx="108" cy="40" r="14"/><g fill="#182239" font-size="13" text-anchor="middle"><text x="80" y="45">◆</text><text x="108" y="45">◆</text></g></g>
         <g class="demo-match-right" fill="#f6c85f"><circle cx="240" cy="40" r="14"/><circle cx="268" cy="40" r="14"/><g fill="#182239" font-size="13" text-anchor="middle"><text x="240" y="45">✦</text><text x="268" y="45">✦</text></g></g>
-        <g class="demo-falling"><circle cx="268" cy="68" r="14" fill="#ff777b"/><text x="268" y="73" fill="#182239" font-size="13" text-anchor="middle">●</text></g>
+        <g class="demo-falling"><circle cx="254" cy="64.249" r="14" fill="#ff777b"/><text x="254" y="69.249" fill="#182239" font-size="13" text-anchor="middle">●</text></g>
         <circle cx="160" cy="165" r="20" fill="#172238" stroke="#64718d" stroke-opacity=".6"/>
         <g class="demo-shot demo-shot-left"><circle cx="160" cy="165" r="14" fill="#63d7bd"/><text x="160" y="170" fill="#182239" font-size="13" text-anchor="middle">◆</text></g>
         <g class="demo-shot demo-shot-right"><circle cx="160" cy="165" r="14" fill="#f6c85f"/><text x="160" y="170" fill="#182239" font-size="13" text-anchor="middle">✦</text></g>
