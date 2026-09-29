@@ -1,21 +1,21 @@
 # Orbbound
 
-本地目录已按源码、文档、平台交付整理。Android 与 Windows 当前均为 **4.0.0**。新增 12 关闯关模式：固定布局、逐关解锁、36 星挑战，包含限发清空、目标球、空间下压和限时关。
+本地目录已按源码、文档、平台交付整理。Android 与 Windows 当前均为 **4.1.0**。闯关重做为 30 个高难度关卡、90 星挑战；修复结算关闭跳转、手机首页动画缩小和选关滚动。
 
 ## 交付位置
 
 | 平台 | 最新版本 | 交付目录 | 主要文件 |
 | --- | --- | --- | --- |
-| Android | 4.0.0 | [Android 交付目录](最终交付/Android/Orbbound-4.0.0/) | APK、SHA-256、更新说明 |
-| Windows | 4.0.0 | [Windows 交付目录](最终交付/Windows/Orbbound-Windows-4.0.0/) | 轻量 ZIP、SHA-256、完整 Orbbound 运行目录 |
+| Android | 4.1.0 | [Android 交付目录](最终交付/Android/Orbbound-4.1.0/) | APK、SHA-256、更新说明 |
+| Windows | 4.1.0 | [Windows 交付目录](最终交付/Windows/Orbbound-Windows-4.1.0/) | 轻量 ZIP、SHA-256、完整 Orbbound 运行目录 |
 
 所有旧版本保留在对应平台目录内。Windows 1.0.0 的两个不同本地构建按原来源分别保存，不将其视作同一文件。
 
-下载：[Windows 4.0.0 ZIP](https://github.com/Nanami0923/Orbbound/releases/download/v4.0.0/Orbbound-Windows-4.0.0-x64.zip) · [Android 4.0.0 APK](https://github.com/Nanami0923/Orbbound/releases/download/v4.0.0/Orbbound-4.0.0-Android.apk) · [4.0.0 发布页](https://github.com/Nanami0923/Orbbound/releases/tag/v4.0.0)
+下载：[Windows 4.1.0 ZIP](https://github.com/Nanami0923/Orbbound/releases/download/v4.1.0/Orbbound-Windows-4.1.0-x64.zip) · [Android 4.1.0 APK](https://github.com/Nanami0923/Orbbound/releases/download/v4.1.0/Orbbound-4.1.0-Android.apk) · [4.1.0 发布页](https://github.com/Nanami0923/Orbbound/releases/tag/v4.1.0)
 
-[4.0.0 更新说明](docs/releases/4.0.0-notes.md) · [验证记录](docs/releases/4.0.0-validation.md)
+[4.1.0 更新说明](docs/releases/4.1.0-notes.md) · [验证记录](docs/releases/4.1.0-validation.md)
 
-Windows 请完整解压 ZIP 后运行 `Orbbound/Orbbound.exe`。轻量包约 0.62 MB，不包含运行环境，使用本机 .NET Framework 4.8 和共享 WebView2 Evergreen Runtime；具备环境后可离线游玩。缺少 WebView2 时程序提供[微软官方补装入口](https://developer.microsoft.com/en-us/microsoft-edge/webview2#download-section)，本次发布不上传环境安装包。
+Windows 请完整解压 ZIP 后运行 `Orbbound/Orbbound.exe`。轻量包约 0.64 MB，不包含运行环境，使用本机 .NET Framework 4.8 和共享 WebView2 Evergreen Runtime；具备环境后可离线游玩。缺少 WebView2 时程序提供[微软官方补装入口](https://developer.microsoft.com/en-us/microsoft-edge/webview2#download-section)，本次发布不上传环境安装包。
 
 Windows 从 3.0.0 升级后，在「设置 → 存档备份与迁移 → 导入旧版存档」读取旧数据。旧目录 `%APPDATA%/orbbound` 保留，新版数据位于 `%LOCALAPPDATA%/Orbbound`。迁移前关闭旧版，导入前会保留恢复备份；也可导出 JSON 备份用于换机。Android 沿用原签名，可直接覆盖安装保留数据。
 

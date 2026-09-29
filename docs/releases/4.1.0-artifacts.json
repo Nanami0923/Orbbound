@@ -1,0 +1,15 @@
+{
+  "version": "4.1.0",
+  "artifacts": [
+    {
+      "file": "Orbbound-4.1.0-Android.apk",
+      "bytes": 1291039,
+      "sha256": "7d7e920465e49337a10d1133afdeca21d0c6f37d7a2cec702ea26fd17c5b2e9a"
+    },
+    {
+      "file": "Orbbound-Windows-4.1.0-x64.zip",
+      "bytes": 633446,
+      "sha256": "ed70db0f820a430587238f1898ee26d79b3f1b1ee78372a472815e3f64ad9a51"
+    }
+  ]
+}

@@ -45,7 +45,9 @@ async function main() {
   fs.mkdirSync(output, { recursive: true });
   if (path.dirname(path.resolve(game)) !== path.resolve(output)) throw new Error('Invalid output directory');
   if (fs.existsSync(game)) fs.rmSync(game, { recursive: true });
-  fs.renameSync(staging, game);
+  // Antivirus scanners can temporarily lock the compiled staging directory on Windows.
+  // Copying also supports delivery directories on a different volume.
+  fs.cpSync(staging, game, { recursive: true });
   const archive = path.join(output, `Orbbound-Windows-${version}-x64.zip`);
   if (fs.existsSync(archive)) fs.unlinkSync(archive);
   run(path7za, ['a', '-tzip', '-mx=9', archive, 'Orbbound'], output);

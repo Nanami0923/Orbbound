@@ -1,5 +1,5 @@
 import { CAMPAIGN_LEVELS, type CampaignLevel } from '../content/campaign';
-import { isUnlocked, type CampaignProgress } from '../storage/campaign';
+import { isUnlocked, loadLegacyProgress, type CampaignProgress } from '../storage/campaign';
 import { formatDuration } from '../storage/history';
 import type { GameState } from '../core/types';
 import { getOrbTheme } from '../content/theme';
@@ -12,7 +12,9 @@ export function starRules(level: CampaignLevel): string {
     : `一星：通关 · 二星：${level.silver} 发内 · 三星：${level.gold} 发内`;
 }
 export function campaignMarkup(progress: CampaignProgress, saved: GameState | null): string {
-  return `<button class="modal-close" data-close-modal type="button">关闭</button><p class="eyebrow">CAMPAIGN / 01—12</p><h2>循着回响，逐关向前</h2><p>通关即可解锁下一关。重试不消耗体力；同一关保留相同的布局和供球规则。</p>
+  const legacy = loadLegacyProgress();
+  return `<button class="modal-close" data-close-modal type="button">关闭</button><p class="eyebrow">CAMPAIGN / 01—${CAMPAIGN_LEVELS.length}</p><h2>三十道关，步步为营</h2><p>通关即可解锁下一关。重试不消耗体力；同一关保留相同的布局和供球规则。</p>
+    ${Object.keys(legacy).length ? `<p class="campaign-star-rules">旧版记录：${Object.keys(legacy).length} / 12 关，${Object.values(legacy).reduce((sum, record) => sum + record.stars, 0)} / 36 星。已解锁关卡继承；30 关已重做，新版重新评星。</p>` : ''}
     ${saved ? `<button id="campaign-resume" class="primary-button">继续第 ${saved.levelId} 关 · 已用 ${saved.step} 发</button>` : ''}
     ${[...new Set(CAMPAIGN_LEVELS.map(level => level.chapter))].map((chapter, index) => `<section class="campaign-chapter"><h3>0${index + 1} / ${chapter}</h3><div class="campaign-grid">${CAMPAIGN_LEVELS.filter(level => level.chapter === chapter).map(level => {
       const unlocked = isUnlocked(level.id, progress), record = progress[String(level.id)];

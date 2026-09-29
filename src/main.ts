@@ -105,6 +105,7 @@ let toastTimer: number | undefined;
 let resumeAfterModal = false;
 let disposeModal: (() => void) | null = null;
 let roundRequest = 0;
+let onModalDismiss: (() => void) | undefined;
 
 function syncMobileLayout(): void {
   if (usesButtonControls()) {
@@ -306,7 +307,7 @@ function showToast(message: string): void {
   toastTimer = window.setTimeout(() => toast.classList.remove('show'), 2200);
 }
 
-function openModal(content: string, className = ''): void {
+function openModal(content: string, className = '', onDismiss?: () => void): void {
   if (!modalRoot) return;
   disposeModal?.(); disposeModal = null;
   stopRotation(); gameAudio.setScene('menu');
@@ -314,20 +315,28 @@ function openModal(content: string, className = ''): void {
     resumeAfterModal = !gameScreen?.hidden && !!getScene() && !getScene()!.isPaused;
     getScene()?.pauseGame();
   }
+  onModalDismiss = onDismiss;
   modalRoot.innerHTML = `<div class="modal-card ${className}" role="dialog" aria-modal="true">${content}</div>`;
   modalRoot.hidden = false;
   document.documentElement.classList.add('modal-open');
   formatHeadings(modalRoot);
   game?.loop.sleep();
-  modalRoot.querySelectorAll<HTMLElement>('[data-close-modal]').forEach(button => button.addEventListener('click', closeModal));
+  modalRoot.querySelectorAll<HTMLElement>('[data-close-modal]').forEach(button => button.addEventListener('click', dismissModal));
   modalRoot.onclick = handleModalBackdrop;
 }
 
 function handleModalBackdrop(event: MouseEvent): void {
-  if (modalRoot && event.target === modalRoot && !settingsBack(modalRoot)) closeModal();
+  if (modalRoot && event.target === modalRoot && !settingsBack(modalRoot)) dismissModal();
+}
+
+function dismissModal(): void {
+  const action = onModalDismiss;
+  if (action) { onModalDismiss = undefined; action(); }
+  else closeModal();
 }
 
 function closeModal(): void {
+  onModalDismiss = undefined;
   if (!modalRoot) return;
   disposeModal?.(); disposeModal = null;
   modalRoot.hidden = true;
@@ -352,7 +361,7 @@ function showTutorial(): void {
     <button class="modal-close" data-close-modal type="button">关闭</button>
     <p class="eyebrow">FIELD GUIDE / 01</p>
     <h2>三步读懂棋盘</h2>
-    <p>闯关模式：12 个固定关卡，通关解锁下一关；限发、目标球与限时挑战拥有独立存档和星级。白圈标记目标球，消除或掉落均可；限时关只有可以操作时才计时。</p><p>无尽与限时模式各有独立存档。存档可以续玩，结算后成绩才会入榜。</p><p>限时模式提供 5 / 10 分钟挑战。菜单、存档与后台均暂停计时。次数或下落时间归零时，棋盘下降，两项计数同时重置。限时清盘后继续补充新棋盘。</p>
+    <p>闯关模式：30 个高难度固定关卡，通关解锁下一关；限发、目标球与限时挑战拥有独立存档和星级。白圈标记目标球，消除或掉落均可；限时关只有可以操作时才计时。</p><p>无尽与限时模式各有独立存档。存档可以续玩，结算后成绩才会入榜。</p><p>限时模式提供 5 / 10 分钟挑战。菜单、存档与后台均暂停计时。次数或下落时间归零时，棋盘下降，两项计数同时重置。限时清盘后继续补充新棋盘。</p>
     <div class="tutorial-steps">
       <div class="tutorial-step"><b>01</b><div><strong>调整炮口方向</strong><span>${usesButtonControls() ? (settings.immersiveMode ? '沉浸模式：在整个棋盘区域按住拖动瞄准，发射区域也可操作；松手发射。移出棋盘松手或被系统中断会取消发射。设置中可关闭沉浸模式，恢复双滑条。' : '上滑条选择方向，下滑条左右微调。松手停止，另一只手可同时发射。设置 → 操作与反馈可开启沉浸模式，改为棋盘按住瞄准、松手发射。') : `使用鼠标瞄准，鼠标左键、右键或${shortcutLabel(settings.shortcuts.fire)}键发射；${shortcutLabel(settings.shortcuts.left)} / ${shortcutLabel(settings.shortcuts.right)} 长按转向，${shortcutLabel(settings.shortcuts.quickLeft)} / ${shortcutLabel(settings.shortcuts.quickRight)} 快转 30°。设置中可自定义快捷键。`}下落期间仍可转向。</span></div></div>
       <div class="tutorial-step"><b>02</b><div><strong>三个同类连在一起</strong><span>同色相连达到 3 球即可消除。一次消除 3、4、5、6 球，分别得 30、50、80、120 分。</span></div></div>
@@ -398,7 +407,7 @@ function showCampaignResult(state: GameState): void {
   recordCampaign(state); clearGame('campaign');
   const level = getLevel(state.levelId!), won = state.status === 'WON', stars = campaignStars(state);
   const next = CAMPAIGN_LEVELS.find(candidate => candidate.id === level.id + 1);
-  openModal(`<button class="modal-close" data-close-modal>关闭</button><p class="eyebrow">第 ${level.id} 关 / ${level.name}</p><h2>${won ? next ? '目标完成，继续向前' : '十二关，全部走过' : state.endReason === 'shots' ? '发数用尽，再想一步' : state.endReason === 'timeout' ? '时间到了，再试一次' : '棋盘触底，再试一次'}</h2><div class="campaign-result-stars" aria-label="${stars} 星">${'★'.repeat(stars)}${'☆'.repeat(3 - stars)}</div><p>${state.step} 次发射 · 操作用时 ${formatDuration(state.elapsedMs ?? 0)}</p><p>${won ? starRules(level) : level.hint}</p>${won && !next ? '<p>你已完成本篇章。可以返回选关，挑战全部 36 星。</p>' : ''}<div class="modal-footer">${won && next ? '<button id="campaign-next" class="primary-button">下一关 →</button>' : ''}<button id="campaign-retry" class="${won && next ? 'quiet-button' : 'primary-button'}">重试本关</button><button id="campaign-select" class="quiet-button">返回选关</button><button id="campaign-home" class="quiet-button">首页</button></div>`, 'result-card');
+  openModal(`<button class="modal-close" data-close-modal>关闭</button><p class="eyebrow">第 ${level.id} 关 / ${level.name}</p><h2>${won ? next ? '目标完成，继续向前' : '三十关，全部走过' : state.endReason === 'shots' ? '发数用尽，再想一步' : state.endReason === 'timeout' ? '时间到了，再试一次' : '棋盘触底，再试一次'}</h2><div class="campaign-result-stars" aria-label="${stars} 星">${'★'.repeat(stars)}${'☆'.repeat(3 - stars)}</div><p>${state.step} 次发射 · 操作用时 ${formatDuration(state.elapsedMs ?? 0)}</p><p>${won ? starRules(level) : level.hint}</p>${won && !next ? `<p>你已完成本篇章。可以返回选关，挑战全部 ${CAMPAIGN_LEVELS.length * 3} 星。</p>` : ''}<div class="modal-footer">${won && next ? '<button id="campaign-next" class="primary-button">下一关 →</button>' : ''}<button id="campaign-retry" class="${won && next ? 'quiet-button' : 'primary-button'}">重试本关</button><button id="campaign-select" class="quiet-button">返回选关</button><button id="campaign-home" class="quiet-button">首页</button></div>`, 'result-card', () => { showHome(); showCampaign(); });
   modalRoot?.querySelector('#campaign-next')?.addEventListener('click', () => beginCampaign(next!.id));
   modalRoot?.querySelector('#campaign-retry')?.addEventListener('click', () => beginCampaign(level.id));
   modalRoot?.querySelector('#campaign-select')?.addEventListener('click', () => { showHome(); showCampaign(); });
@@ -594,7 +603,7 @@ if (Capacitor.isNativePlatform()) {
   });
   void App.addListener('backButton', () => {
     if (modalRoot && !modalRoot.hidden) {
-      if (!settingsBack(modalRoot)) closeModal();
+      if (!settingsBack(modalRoot)) dismissModal();
     } else if (gameScreen && !gameScreen.hidden) {
       getScene()?.pauseGame();
       showHome();
@@ -605,6 +614,11 @@ if (Capacitor.isNativePlatform()) {
 }
 
 window.addEventListener('keydown', (event) => {
+  if (event.code === 'Escape' && !event.repeat && modalRoot && !modalRoot.hidden) {
+    event.preventDefault();
+    if (!settingsBack(modalRoot)) dismissModal();
+    return;
+  }
   if (usesButtonControls() || event.repeat || event.defaultPrevented || gameScreen?.hidden || !modalRoot?.hidden) return;
   const action = shortcutAction(event, settings.shortcuts);
   const actions: Partial<Record<ShortcutAction, string>> = { save: '#back-home-button', settle: '#settle-button', restart: '#restart-button', settings: '#game-settings-button', history: '.sidebar-actions [data-history]', help: '#game-help-button' };

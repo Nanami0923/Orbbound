@@ -365,6 +365,7 @@ export class PlayScene extends Phaser.Scene {
   private renderBoard(offsetY = 0): void {
     const pressure = boardMusicPressure(this.gameState.board);
     this.dangerLine?.clear().lineStyle(2, UI_COLORS.danger, .18 + pressure * .65).lineBetween(48, 608, 592, 608);
+    if (this.gameState.ceilingRow) this.dangerLine?.lineStyle(2, UI_COLORS.accent, .6).lineBetween(48, this.geometry.top, 592, this.geometry.top);
     this.boardGroup.setY(offsetY);
     const retained = new Set<string>();
 

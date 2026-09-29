@@ -1,10 +1,11 @@
 import { readStorage, writeStorage } from './safe-storage';
 import { DEFAULT_SHORTCUTS, loadShortcuts, type Shortcuts } from '../game/shortcuts';
 import type { GameState } from '../core/types';
-import { CAMPAIGN_LEVELS } from '../content/campaign';
+import { CAMPAIGN_LEVELS, CAMPAIGN_REVISION } from '../content/campaign';
+import { LEGACY_CAMPAIGN_LEVELS } from '../content/campaign-legacy';
 import { freezeTimed } from '../core/modes';
 
-const CAMPAIGN_KEY = 'orbbound-campaign-active-v1';
+const CAMPAIGN_KEY = 'orbbound-campaign-active-v2';
 const saveKey = (mode?: string) => mode === 'campaign' ? CAMPAIGN_KEY : mode === 'timed' ? TIMED_KEY : SAVE_KEY;
 const SAVE_KEY = 'orbbound-save-v1';
 const TIMED_KEY = 'orbbound-timed-active-v2';
@@ -90,7 +91,7 @@ export function loadGame(mode: 'endless' | 'timed' | 'campaign' = 'endless'): Ga
   if (!storageAvailable()) return null;
   try {
     const value: unknown = JSON.parse(readStorage(saveKey(mode)) ?? 'null');
-    if (!isGameState(value) || (value.mode ?? 'endless') !== mode) return null;
+    if (!isGameState(value) || (value.mode ?? 'endless') !== mode || (mode === 'campaign' && value.campaignRevision !== CAMPAIGN_REVISION)) return null;
     // Upgrade the last 2.0 checkpoint without consuming time while the app was closed.
     if (value.mode === 'timed' && value.timedSavedAt === undefined) {
       return freezeTimed(value, value.deadlineAt! - value.durationMs! + (value.elapsedMs ?? 0));
@@ -126,7 +127,9 @@ export function isGameState(value: unknown): value is GameState {
   const candidate = value as Partial<GameState>;
   if (candidate.mode !== undefined && !['endless', 'timed', 'campaign'].includes(candidate.mode)) return false;
   if (candidate.mode === 'campaign') {
-    const level = CAMPAIGN_LEVELS.find(level => level.id === candidate.levelId);
+    if (candidate.campaignRevision !== undefined && candidate.campaignRevision !== CAMPAIGN_REVISION) return false;
+    const levels = candidate.campaignRevision === CAMPAIGN_REVISION ? CAMPAIGN_LEVELS : LEGACY_CAMPAIGN_LEVELS;
+    const level = levels.find(level => level.id === candidate.levelId);
     if (!level || !Number.isSafeInteger(candidate.step) || candidate.step! >= level.maxShots) return false;
     const ceiling = level.descentEvery ? Math.floor(candidate.step! / level.descentEvery) : 0;
     if ((candidate.ceilingRow ?? 0) !== ceiling || ceiling >= 17) return false;
@@ -139,7 +142,7 @@ export function isGameState(value: unknown): value is GameState {
         const key = `${cell.row}:${cell.col}`; if (keys.has(key)) return false; keys.add(key);
       }
     } else if (candidate.targets !== undefined) return false;
-  } else if (candidate.ceilingRow !== undefined || candidate.levelId !== undefined || candidate.targets !== undefined) return false;
+  } else if (candidate.campaignRevision !== undefined || candidate.ceilingRow !== undefined || candidate.levelId !== undefined || candidate.targets !== undefined) return false;
   if (candidate.mode === 'timed' && (![300000,600000].includes(candidate.durationMs!)
     || !Number.isFinite(candidate.deadlineAt) || !Number.isFinite(candidate.nextDescentAt))) return false;
   if (candidate.timedSavedAt !== undefined && !Number.isFinite(candidate.timedSavedAt)) return false;

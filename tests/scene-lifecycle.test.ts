@@ -8,7 +8,7 @@ import { createCampaign } from '../src/core/campaign';
 
 it('campaign clock only counts READY decision time and cannot be settled for an unlock', () => {
   const scene = new PlayScene();
-  Object.assign(scene, { gameState: createCampaign(12), phase: 'PAUSED', stopRotation:vi.fn(), emitState:vi.fn() });
+  Object.assign(scene, { gameState: createCampaign(18), phase: 'PAUSED', stopRotation:vi.fn(), emitState:vi.fn() });
   const runtime = scene as unknown as { phase: string };
   scene.settleGame();
   expect(scene.activeState.status).toBe('READY');

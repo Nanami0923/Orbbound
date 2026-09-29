@@ -1,4 +1,4 @@
-import { getLevel } from '../content/campaign';
+import { CAMPAIGN_REVISION, getLevel } from '../content/campaign';
 import { createGameState } from './engine';
 import { activeColors, createEmptyBoard } from './grid';
 import { SeededRandom } from './rng';
@@ -9,6 +9,7 @@ export function createCampaign(id: number): GameState {
   const state = createGameState('normal', level.seed);
   state.mode = 'campaign';
   state.levelId = id;
+  state.campaignRevision = CAMPAIGN_REVISION;
   state.elapsedMs = 0;
   state.board = createEmptyBoard(14, 19);
   level.layout.forEach((row, r) => [...row].forEach((color, c) => {
@@ -24,7 +25,7 @@ export function createCampaign(id: number): GameState {
 }
 
 export function campaignStars(state: GameState): number {
-  if (state.mode !== 'campaign' || state.status !== 'WON' || state.endReason) return 0;
+  if (state.mode !== 'campaign' || state.campaignRevision !== CAMPAIGN_REVISION || state.status !== 'WON' || state.endReason) return 0;
   const level = getLevel(state.levelId!);
   const value = level.timeLimitMs ? state.elapsedMs ?? 0 : state.step;
   return value <= level.gold ? 3 : value <= level.silver ? 2 : 1;

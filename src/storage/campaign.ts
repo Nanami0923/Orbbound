@@ -3,7 +3,8 @@ import { campaignStars } from '../core/campaign';
 import type { GameState } from '../core/types';
 import { readStorage, writeStorage } from './safe-storage';
 
-export const CAMPAIGN_PROGRESS_KEY = 'orbbound-campaign-progress-v1';
+export const LEGACY_PROGRESS_KEY = 'orbbound-campaign-progress-v1';
+export const CAMPAIGN_PROGRESS_KEY = 'orbbound-campaign-progress-v2';
 export interface LevelRecord { stars: number; shots: number; elapsedMs: number }
 export type CampaignProgress = Record<string, LevelRecord>;
 export function validProgress(value: unknown): value is CampaignProgress {
@@ -17,8 +18,12 @@ export function loadProgress(): CampaignProgress {
   try { const value = JSON.parse(readStorage(CAMPAIGN_PROGRESS_KEY) ?? '{}'); return validProgress(value) ? value : {}; }
   catch { return {}; }
 }
+export function loadLegacyProgress(): CampaignProgress {
+  try { const value = JSON.parse(readStorage(LEGACY_PROGRESS_KEY) ?? '{}'); return validProgress(value) && Object.keys(value).every(id => Number(id) <= 12) ? value : {}; }
+  catch { return {}; }
+}
 export function isUnlocked(id: number, progress = loadProgress()): boolean {
-  return CAMPAIGN_LEVELS.some(level => level.id === id) && (id === 1 || !!progress[String(id - 1)]);
+  return CAMPAIGN_LEVELS.some(level => level.id === id) && (id === 1 || !!progress[String(id - 1)] || (id <= 13 && Object.keys(loadLegacyProgress()).some(key => Number(key) >= id - 1)));
 }
 export function recordCampaign(state: GameState): void {
   const stars = campaignStars(state);

@@ -17,6 +17,7 @@ export type GameStatus = 'READY' | 'WON' | 'LOST';
 export interface GameState {
   mode?: 'endless' | 'timed' | 'campaign';
   levelId?: number;
+  campaignRevision?: number;
   targets?: Cell[];
   ceilingRow?: number;
   durationMs?: number;
