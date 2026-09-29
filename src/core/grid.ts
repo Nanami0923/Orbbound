@@ -78,11 +78,11 @@ export function findGroup(board: Board, start: Cell, rowOffset = 0): Cell[] {
   return connectedCells(board, start, (cell) => board[cell.row][cell.col] === color, rowOffset);
 }
 
-export function findTopConnected(board: Board, rowOffset = 0): Set<string> {
+export function findTopConnected(board: Board, rowOffset = 0, ceilingRow = 0): Set<string> {
   const connected = new Set<string>();
   const queue: Cell[] = [];
   for (let col = 0; col < board[0].length; col += 1) {
-    if (board[0][col] !== null) queue.push({ row: 0, col });
+    if (board[ceilingRow]?.[col] != null) queue.push({ row: ceilingRow, col });
   }
 
   while (queue.length > 0) {

@@ -1,3 +1,7 @@
+import { CAMPAIGN_LEVELS, getLevel } from './content/campaign';
+import { campaignStars, createCampaign } from './core/campaign';
+import { isUnlocked, loadProgress, recordCampaign } from './storage/campaign';
+import { campaignMarkup, levelMarkup, starRules } from './ui/campaign-panel';
 import { bindDesktopBridge } from './ui/desktop-bridge';
 import './ui/android-insets';
 import { shortcutAction, shortcutLabel, type ShortcutAction } from './game/shortcuts';
@@ -25,6 +29,8 @@ import { formatHeadings } from './ui/typography';
 import { loadHistory, recordRound, formatDuration, rankingKey } from './storage/history';
 
 interface SceneStateDetail {
+  levelId?: number;
+  targetsRemaining?: number;
   musicPressure: number;
   endReason?: GameState['endReason'];
   mode: GameMode;
@@ -208,7 +214,9 @@ function updateGameState(detail: SceneStateDetail): void {
   gameAudio.setPressure(detail.musicPressure);
   gameAudio.setScene(!gameScreen?.hidden && modalRoot?.hidden && ['READY', 'FLYING', 'RESOLVING'].includes(detail.phase) ? 'play' : 'menu');
   if (scoreValue && scoreValue.textContent !== formatScore(detail.score)) scoreValue.textContent = formatScore(detail.score);
+  const level = detail.mode === 'campaign' ? getLevel(detail.levelId!) : null;
   const timed = detail.mode === 'timed';
+  gameScreen?.classList.toggle('campaign-mode', !!level);
   gameScreen?.classList.toggle('timed-mode', timed);
   if (descentTimeRow) descentTimeRow.hidden = !timed;
   if (descentCaption) descentCaption.hidden = timed;
@@ -216,13 +224,14 @@ function updateGameState(detail: SceneStateDetail): void {
   const bars = countdownProgress(detail.difficultyId, detail.danger, detail.descentRemainingMs, detail.descentIntervalMs);
   const remaining = shotsUntilDescent(detail.difficultyId, detail.danger);
   if (dangerValue) {
-    const label = detail.status !== 'READY' ? '本局结束' : timed ? `${remaining} 次` : remaining === 1 ? '下一发后下降' : `再发射 ${remaining} 次`;
+    const label = detail.status !== 'READY' ? '本局结束' : level ? (level.timeLimitMs ? '限时清空' : `剩余 ${Math.max(0, level.maxShots - detail.step)} 发`) : timed ? `${remaining} 次` : remaining === 1 ? '下一发后下降' : `再发射 ${remaining} 次`;
     if (dangerValue.textContent !== label) dangerValue.textContent = label;
-    dangerValue.style.color = remaining <= 2 ? 'var(--coral)' : 'var(--cream)';
+    dangerValue.style.color = (level ? !level.timeLimitMs && level.maxShots - detail.step <= 2 : remaining <= 2) ? 'var(--coral)' : 'var(--cream)';
   }
   if (dangerFill) {
-    const progress = timed ? (detail.status === 'READY' ? bars.shotPercent : 0) : Math.max(0, Math.min(100, detail.danger / DANGER_MAX * 100));
+    const progress = level ? (level.timeLimitMs ? Math.max(0, 100 * (1 - detail.elapsedMs / level.timeLimitMs)) : Math.max(0, 100 * (1 - detail.step / level.maxShots))) : timed ? (detail.status === 'READY' ? bars.shotPercent : 0) : Math.max(0, Math.min(100, detail.danger / DANGER_MAX * 100));
     dangerFill.style.width = `${progress}%`;
+    dangerFill.parentElement?.setAttribute('aria-label', level ? '闯关剩余资源' : '下落次数倒计时');
     dangerFill.parentElement?.setAttribute('aria-valuenow', String(progress));
     dangerFill.parentElement?.setAttribute('aria-valuetext', dangerValue?.textContent ?? '');
   }
@@ -235,9 +244,10 @@ function updateGameState(detail: SceneStateDetail): void {
     descentTimeFill.parentElement?.setAttribute('aria-valuetext', label);
     descentTimeRow?.classList.toggle('urgent', detail.status === 'READY' && detail.descentRemainingMs <= 5000);
   }
-  const difficultyText = `${detail.mode === 'timed' ? '限时' : '无尽'} · ${getDifficulty(detail.difficultyId).label} ×${scoreMultiplier(detail.difficultyId)}`;
+  if (descentCaption) descentCaption.textContent = level ? `${level.targets ? `目标剩余 ${detail.targetsRemaining ?? 0}` : '清空棋盘'}${level.descentEvery ? ` · ${level.descentEvery - detail.step % level.descentEvery} 发后下移` : ' · 不下压'}` : '距离棋盘下降';
+  const difficultyText = level ? `第 ${level.id} 关 · ${level.name}` : `${detail.mode === 'timed' ? '限时' : '无尽'} · ${getDifficulty(detail.difficultyId).label} ×${scoreMultiplier(detail.difficultyId)}`;
   if (difficultyLabel && difficultyLabel.textContent !== difficultyText) difficultyLabel.textContent = difficultyText;
-  const phaseText = detail.endReason ? (detail.endReason === 'timeout' ? '时间到' : '已结算') : statusLabel(detail.phase, detail.status);
+  const phaseText = detail.mode === 'campaign' && detail.status === 'WON' ? '目标完成' : detail.endReason === 'shots' ? '发数用尽' : detail.endReason ? (detail.endReason === 'timeout' ? '时间到' : '已结算') : statusLabel(detail.phase, detail.status);
   if (gameStatusLabel && gameStatusLabel.textContent !== phaseText) gameStatusLabel.textContent = phaseText;
   for (const button of [pauseButton, document.querySelector<HTMLButtonElement>('#mobile-pause-button')]) {
     if (!button) continue;
@@ -250,9 +260,9 @@ function updateGameState(detail: SceneStateDetail): void {
   if (current) updateOrbPreview(current, import.meta.env.MODE === 'windows' ? detail.nextColor : detail.currentColor);
   const clock = document.querySelector<HTMLElement>('#round-clock');
   if (clock) {
-    const clockText = formatDuration(detail.mode === 'timed' ? Math.max(0, detail.durationMs! - detail.elapsedMs + 999) : detail.elapsedMs);
+    const clockText = formatDuration(level?.timeLimitMs ? Math.max(0, level.timeLimitMs - detail.elapsedMs + 999) : detail.mode === 'timed' ? Math.max(0, detail.durationMs! - detail.elapsedMs + 999) : detail.elapsedMs);
     if (clock.textContent !== clockText) clock.textContent = clockText;
-    const clockLabel = detail.mode === 'timed' ? '整局剩余' : '本局用时';
+    const clockLabel = level?.timeLimitMs ? '剩余时间' : detail.mode === 'timed' ? '整局剩余' : '本局用时';
     if (clock.previousElementSibling!.textContent !== clockLabel) clock.previousElementSibling!.textContent = clockLabel;
     clock.classList.toggle('clock-urgent', detail.mode === 'timed' && detail.durationMs! - detail.elapsedMs <= 30000);
   }
@@ -267,7 +277,7 @@ function updateGameState(detail: SceneStateDetail): void {
   }
   if (['PAUSED', 'WON', 'LOST'].includes(detail.phase)) stopRotation();
   const settleButton = document.querySelector<HTMLButtonElement>('#settle-button');
-  if (settleButton) settleButton.disabled = detail.status !== 'READY';
+  if (settleButton) { settleButton.disabled = detail.status !== 'READY' || !!level; settleButton.hidden = !!level; }
 }
 
 function statusLabel(phase: SceneStateDetail['phase'], status: SceneStateDetail['status']): string {
@@ -342,7 +352,7 @@ function showTutorial(): void {
     <button class="modal-close" data-close-modal type="button">关闭</button>
     <p class="eyebrow">FIELD GUIDE / 01</p>
     <h2>三步读懂棋盘</h2>
-    <p>无尽与限时模式各有独立存档。存档可以续玩，结算后成绩才会入榜。</p><p>限时模式提供 5 / 10 分钟挑战。菜单、存档与后台均暂停计时。次数或下落时间归零时，棋盘下降，两项计数同时重置。限时清盘后继续补充新棋盘。</p>
+    <p>闯关模式：12 个固定关卡，通关解锁下一关；限发、目标球与限时挑战拥有独立存档和星级。白圈标记目标球，消除或掉落均可；限时关只有可以操作时才计时。</p><p>无尽与限时模式各有独立存档。存档可以续玩，结算后成绩才会入榜。</p><p>限时模式提供 5 / 10 分钟挑战。菜单、存档与后台均暂停计时。次数或下落时间归零时，棋盘下降，两项计数同时重置。限时清盘后继续补充新棋盘。</p>
     <div class="tutorial-steps">
       <div class="tutorial-step"><b>01</b><div><strong>调整炮口方向</strong><span>${usesButtonControls() ? (settings.immersiveMode ? '沉浸模式：在整个棋盘区域按住拖动瞄准，发射区域也可操作；松手发射。移出棋盘松手或被系统中断会取消发射。设置中可关闭沉浸模式，恢复双滑条。' : '上滑条选择方向，下滑条左右微调。松手停止，另一只手可同时发射。设置 → 操作与反馈可开启沉浸模式，改为棋盘按住瞄准、松手发射。') : `使用鼠标瞄准，鼠标左键、右键或${shortcutLabel(settings.shortcuts.fire)}键发射；${shortcutLabel(settings.shortcuts.left)} / ${shortcutLabel(settings.shortcuts.right)} 长按转向，${shortcutLabel(settings.shortcuts.quickLeft)} / ${shortcutLabel(settings.shortcuts.quickRight)} 快转 30°。设置中可自定义快捷键。`}下落期间仍可转向。</span></div></div>
       <div class="tutorial-step"><b>02</b><div><strong>三个同类连在一起</strong><span>同色相连达到 3 球即可消除。一次消除 3、4、5、6 球，分别得 30、50、80、120 分。</span></div></div>
@@ -365,7 +375,38 @@ function showSettings(): void {
   });
 }
 
+function showCampaign(): void {
+  openModal(campaignMarkup(loadProgress(), loadGame('campaign')), 'campaign-panel');
+  modalRoot?.querySelector('#campaign-resume')?.addEventListener('click', () => { resumeAfterModal = false; closeModal(); continueSaved('campaign'); });
+  modalRoot?.querySelectorAll<HTMLButtonElement>('[data-level]').forEach(button => button.addEventListener('click', () => {
+    const id = Number(button.dataset.level);
+    if (!isUnlocked(id)) return;
+    openModal(levelMarkup(getLevel(id), loadProgress(), loadGame('campaign')), 'campaign-panel');
+    modalRoot?.querySelector('#campaign-back')?.addEventListener('click', showCampaign);
+    modalRoot?.querySelector('#campaign-begin')?.addEventListener('click', () => beginCampaign(id));
+  }));
+}
+
+function beginCampaign(id: number): void {
+  if (!isUnlocked(id)) return;
+  selectedMode = 'campaign';
+  resumeAfterModal = false; closeModal();
+  void startRound(createCampaign(id));
+}
+
+function showCampaignResult(state: GameState): void {
+  recordCampaign(state); clearGame('campaign');
+  const level = getLevel(state.levelId!), won = state.status === 'WON', stars = campaignStars(state);
+  const next = CAMPAIGN_LEVELS.find(candidate => candidate.id === level.id + 1);
+  openModal(`<button class="modal-close" data-close-modal>关闭</button><p class="eyebrow">第 ${level.id} 关 / ${level.name}</p><h2>${won ? next ? '目标完成，继续向前' : '十二关，全部走过' : state.endReason === 'shots' ? '发数用尽，再想一步' : state.endReason === 'timeout' ? '时间到了，再试一次' : '棋盘触底，再试一次'}</h2><div class="campaign-result-stars" aria-label="${stars} 星">${'★'.repeat(stars)}${'☆'.repeat(3 - stars)}</div><p>${state.step} 次发射 · 操作用时 ${formatDuration(state.elapsedMs ?? 0)}</p><p>${won ? starRules(level) : level.hint}</p>${won && !next ? '<p>你已完成本篇章。可以返回选关，挑战全部 36 星。</p>' : ''}<div class="modal-footer">${won && next ? '<button id="campaign-next" class="primary-button">下一关 →</button>' : ''}<button id="campaign-retry" class="${won && next ? 'quiet-button' : 'primary-button'}">重试本关</button><button id="campaign-select" class="quiet-button">返回选关</button><button id="campaign-home" class="quiet-button">首页</button></div>`, 'result-card');
+  modalRoot?.querySelector('#campaign-next')?.addEventListener('click', () => beginCampaign(next!.id));
+  modalRoot?.querySelector('#campaign-retry')?.addEventListener('click', () => beginCampaign(level.id));
+  modalRoot?.querySelector('#campaign-select')?.addEventListener('click', () => { showHome(); showCampaign(); });
+  modalRoot?.querySelector('#campaign-home')?.addEventListener('click', showHome);
+}
+
 function showResult(state: GameState): void {
+  if (state.mode === 'campaign') { showCampaignResult(state); return; }
   const won = state.status === 'WON';
   if (state.mode !== 'timed') setHighScore(weightedScore(state));
   clearGame(state.mode);
@@ -395,6 +436,7 @@ function showResult(state: GameState): void {
 }
 
 function showModeSetup(mode: GameMode): void {
+  if (mode === 'campaign') { showCampaign(); return; }
   selectedMode = mode;
   openModal(`<button class="modal-close" data-close-modal>关闭</button><p class="eyebrow">${mode === 'timed' ? 'RACE THE CLOCK' : 'FIND YOUR RHYTHM'}</p>
     <h2>${mode === 'timed' ? '限时模式' : '无尽模式'}</h2>
@@ -419,6 +461,7 @@ function showModeSetup(mode: GameMode): void {
   // Warm the engine after the setup panel paints, when play intent is explicit.
   requestAnimationFrame(() => requestAnimationFrame(() => { void loadRuntime().catch(() => {}); }));
 }
+document.querySelector('#campaign-button')?.addEventListener('click', showCampaign);
 document.querySelector('#start-button')?.addEventListener('click', () => loadGame('endless') ? continueSaved('endless') : showModeSetup('endless'));
 document.querySelector('#timed-button')?.addEventListener('click', () => loadGame('timed') ? continueSaved('timed') : showModeSetup('timed'));
 document.querySelectorAll<HTMLElement>('[data-new-mode]').forEach(button => button.addEventListener('click', () => showModeSetup(button.dataset.newMode as GameMode)));
@@ -464,9 +507,10 @@ document.querySelector('#settle-button')?.addEventListener('click', () => {
   document.querySelector('#desktop-confirm-settle')?.addEventListener('click', () => { closeModal(); getScene()?.settleGame(); });
 });
 function showGameMenu(): void {
+  const campaign = getScene()?.activeState.mode === 'campaign';
   openModal(`<button class="modal-close" data-close-modal type="button">继续游戏</button><h2>游戏菜单</h2>
-    <p>本局已暂停并存档。</p><p>继续游玩，或结算成绩后入榜。</p>
-    <div class="mobile-menu-actions"><button id="menu-settings" class="quiet-button">设置</button><button id="menu-history" class="quiet-button">历史与排行</button><button id="menu-settle" class="quiet-button">结算并入榜</button><button id="menu-restart" class="quiet-button">放弃本局…</button><button id="menu-home" class="quiet-button">存档并返回首页</button></div>`);
+    <p>本局已暂停并存档。</p><p>${campaign ? '完成目标获得星级，可随时重试本关。' : '继续游玩，或结算成绩后入榜。'}</p>
+    <div class="mobile-menu-actions"><button id="menu-settings" class="quiet-button">设置</button><button id="menu-history" class="quiet-button">历史与排行</button>${campaign ? '' : '<button id="menu-settle" class="quiet-button">结算并入榜</button>'}<button id="menu-restart" class="quiet-button">放弃本局…</button><button id="menu-home" class="quiet-button">存档并返回首页</button></div>`);
   document.querySelector('#menu-settle')?.addEventListener('click', () => { closeModal(); getScene()?.settleGame(); });
   document.querySelector('#menu-settings')?.addEventListener('click', showSettings);
   document.querySelector('#menu-history')?.addEventListener('click', () => showHistory());

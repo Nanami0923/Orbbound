@@ -1,7 +1,7 @@
 import { createGameState, forceDescent } from './engine';
 import type { GameState } from './types';
 
-export type GameMode = 'endless' | 'timed';
+export type GameMode = 'endless' | 'timed' | 'campaign';
 export const scoreMultiplier = (id: string): number => id === 'hard' ? 2 : id === 'normal' ? 1.5 : 1;
 export const weightedScore = (state: GameState): number => Math.round(state.score * scoreMultiplier(state.difficultyId));
 export function descentInterval(id: string, elapsed: number, duration: number): number {
@@ -9,6 +9,7 @@ export function descentInterval(id: string, elapsed: number, duration: number): 
   return Math.round(start + (end - start) * Math.max(0, Math.min(1, elapsed / duration)));
 }
 export function createRound(id: string, mode: GameMode, durationMs = 300000, now = Date.now()): GameState {
+  if (mode === 'campaign') throw new Error('请从关卡列表开始闯关');
   const state = createGameState(id, now);
   state.mode = mode;
   state.startedAt = now;

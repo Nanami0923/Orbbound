@@ -1,8 +1,9 @@
+import { CAMPAIGN_PROGRESS_KEY, validProgress } from './campaign';
 import { isGameState } from './storage';
 import { validShortcuts } from '../game/shortcuts';
 import { readStorage, storageError, writeStorage } from './safe-storage';
 
-export const BACKUP_KEYS = ['orbbound-save-v1', 'orbbound-timed-active-v2', 'orbbound-settings-v1', 'orbbound-high-score-v1', 'orbbound-history-v1'] as const;
+export const BACKUP_KEYS = ['orbbound-save-v1', 'orbbound-timed-active-v2', 'orbbound-settings-v1', 'orbbound-high-score-v1', 'orbbound-history-v1', 'orbbound-campaign-active-v1', CAMPAIGN_PROGRESS_KEY] as const;
 type Values = Record<string, string>;
 export function exportBackup(): string {
   const values: Values = {};
@@ -17,8 +18,8 @@ export function validateBackup(text: string): Values {
   for (const [key, source] of Object.entries(data.values)) {
     if (!BACKUP_KEYS.includes(key as typeof BACKUP_KEYS[number]) || typeof source !== 'string') throw Error('备份含有未知字段');
     const value = JSON.parse(source);
-    if (key === BACKUP_KEYS[0] || key === BACKUP_KEYS[1]) {
-      if (!isGameState(value) || (key === BACKUP_KEYS[1]) !== (value.mode === 'timed')) throw Error('对局存档已损坏或版本过旧');
+    if (key === BACKUP_KEYS[0] || key === BACKUP_KEYS[1] || key === BACKUP_KEYS[5]) {
+      if (!isGameState(value) || (key === BACKUP_KEYS[1]) !== (value.mode === 'timed') || (key === BACKUP_KEYS[5]) !== (value.mode === 'campaign')) throw Error('对局存档已损坏或版本过旧');
     } else if (key === BACKUP_KEYS[2]) {
       const ranges: Record<string, [number,number]> = { volume:[0,100],musicVolume:[0,100],sensitivity:[50,150],controlOffset:[0,48],fireSize:[76,120] };
       const booleans = ['adaptiveMusic','immersiveMode','sound','hapticShoot','hapticMatch','aimAssist','controlsSwapped','independentLaunch','reducedMotion'];
@@ -29,6 +30,8 @@ export function validateBackup(text: string): Values {
       }
     } else if (key === BACKUP_KEYS[3]) {
       if (!Number.isSafeInteger(value) || value < 0) throw Error('最高分无效');
+    } else if (key === CAMPAIGN_PROGRESS_KEY) {
+      if (!validProgress(value)) throw Error('闯关进度无效');
     } else {
       if (!value || !Array.isArray(value.recent) || !Array.isArray(value.top) || value.recent.length > 500 || value.top.length > 30) throw Error('历史记录无效');
       for (const r of [...value.recent,...value.top]) {

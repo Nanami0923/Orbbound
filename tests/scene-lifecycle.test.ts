@@ -4,6 +4,32 @@ import { PlayScene } from '../src/game/PlayScene';
 import { createGameState } from '../src/core/engine';
 import { cellKey } from '../src/core/grid';
 import { createRound } from '../src/core/modes';
+import { createCampaign } from '../src/core/campaign';
+
+it('campaign clock only counts READY decision time and cannot be settled for an unlock', () => {
+  const scene = new PlayScene();
+  Object.assign(scene, { gameState: createCampaign(12), phase: 'PAUSED', stopRotation:vi.fn(), emitState:vi.fn() });
+  const runtime = scene as unknown as { phase: string };
+  scene.settleGame();
+  expect(scene.activeState.status).toBe('READY');
+  for (const phase of ['PAUSED','FLYING','RESOLVING']) {
+    runtime.phase = phase;
+    scene.update(0, 1000);
+    expect(scene.activeState.elapsedMs).toBe(0);
+  }
+  runtime.phase = 'READY'; scene.update(0, 1000);
+  expect(scene.activeState.elapsedMs).toBe(1000);
+});
+
+it('restarting a campaign repeats the level rather than creating an endless board', () => {
+  vi.stubGlobal('window', {dispatchEvent:vi.fn()});
+  try {
+    const scene = new PlayScene(), begin = vi.fn();
+    Object.assign(scene, {gameState:{...createCampaign(6),step:5},begin});
+    scene.restartGame();
+    expect(begin).toHaveBeenCalledWith(createCampaign(6));
+  } finally { vi.unstubAllGlobals(); }
+});
 
 it('never recreates an abandoned save on home, background or unload persistence', () => {
   const events: string[] = [];

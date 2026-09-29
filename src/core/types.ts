@@ -15,13 +15,16 @@ export type Board = Array<Array<ColorId | null>>;
 export type GameStatus = 'READY' | 'WON' | 'LOST';
 
 export interface GameState {
-  mode?: 'endless' | 'timed';
+  mode?: 'endless' | 'timed' | 'campaign';
+  levelId?: number;
+  targets?: Cell[];
+  ceilingRow?: number;
   durationMs?: number;
   deadlineAt?: number;
   nextDescentAt?: number;
   descentIntervalMs?: number;
   timedSavedAt?: number;
-  endReason?: 'timeout' | 'settled';
+  endReason?: 'timeout' | 'settled' | 'shots';
   rowOffset?: number;
   sessionId?: string;
   startedAt?: number;
@@ -41,6 +44,7 @@ export interface GameState {
 }
 
 export interface BoardGeometry {
+  ceilingRow?: number;
   rowOffset?: number;
   columns: number;
   maxRows: number;

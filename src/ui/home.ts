@@ -1,3 +1,5 @@
+import { loadProgress } from '../storage/campaign';
+import { CAMPAIGN_LEVELS } from '../content/campaign';
 import { loadGame } from '../storage/storage';
 import { loadHistory, rankingKey, formatDuration } from '../storage/history';
 
@@ -20,6 +22,7 @@ export function buildHome(touch: boolean): void {
       </svg><span>从中心出发，${touch ? '轻触' : '点击'}重播</span>
     </button>
     <div class="home-actions mobile-mode-cards">
+      <div class="mode-card campaign"><button id="campaign-button" class="mode-main" type="button"><b class="mode-symbol">◇</b><span><strong>闯关模式</strong><small>固定棋盘 · 逐关解锁 · 星级挑战</small><small id="campaign-progress" class="mode-best"></small></span><b class="mode-action">选关 →</b></button></div>
       ${(['endless', 'timed'] as const).map(mode => `<div class="mode-card ${mode}">
         <button id="${mode === 'endless' ? 'start' : 'timed'}-button" class="mode-main" type="button">
           <b class="mode-symbol">${mode === 'endless' ? '∞' : '◷'}</b><span><strong>${mode === 'endless' ? '无尽模式' : '限时模式'}</strong><small data-mode-description="${mode}"></small><small class="mode-best" data-mode-best="${mode}"></small></span><b class="mode-action" data-mode-action="${mode}">开始 →</b>
@@ -34,6 +37,9 @@ export function buildHome(touch: boolean): void {
 }
 
 export function updateHome(): void {
+  const progress = loadProgress();
+  const campaign = document.querySelector('#campaign-progress');
+  if (campaign) campaign.textContent = `${Object.keys(progress).length} / ${CAMPAIGN_LEVELS.length} 关 · ${Object.values(progress).reduce((sum, record) => sum + record.stars, 0)} / ${CAMPAIGN_LEVELS.length * 3} 星${loadGame('campaign') ? ' · 有存档' : ''}`;
   const history = loadHistory();
   for (const mode of ['endless', 'timed'] as const) {
     const saved = loadGame(mode);

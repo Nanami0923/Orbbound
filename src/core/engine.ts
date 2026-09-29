@@ -1,6 +1,7 @@
 import { activeColors, boardIsEmpty, cellKey, cloneBoard, createEmptyBoard, findGroup, findTopConnected, hasOccupiedAtOrBelow, neighbors, occupiedCells } from './grid';
 import { normalizeSeed, SeededRandom } from './rng';
 import type { Board, Cell, ColorId, GameEvent, GameState, ResolveResult } from './types';
+import { getLevel } from '../content/campaign';
 
 export const RULES_VERSION = 'classic-v2';
 export const SCHEMA_VERSION = 1;
@@ -106,10 +107,11 @@ export function createGameState(difficultyId = 'normal', seed = Date.now()): Gam
   };
 }
 
-function isValidLanding(board: Board, landing: Cell, rowOffset = 0): boolean {
+function isValidLanding(board: Board, landing: Cell, rowOffset = 0, ceilingRow = 0): boolean {
   if (landing.row < 0 || landing.row >= board.length || landing.col < 0 || landing.col >= board[0].length) return false;
   if (board[landing.row][landing.col] !== null) return false;
-  if (landing.row === 0) return true;
+  if (landing.row < ceilingRow) return false;
+  if (landing.row === ceilingRow) return true;
   return neighbors(landing, board[0].length, board.length, rowOffset).some((cell) => board[cell.row][cell.col] !== null);
 }
 
@@ -146,7 +148,7 @@ export function resolveShot(input: GameState, landing: Cell): ResolveResult {
   const random = new SeededRandom(state.rngState);
   const events: GameEvent[] = [{ type: 'shot-landed', landing }];
 
-  if (!isValidLanding(state.board, landing, state.rowOffset)) {
+  if (!isValidLanding(state.board, landing, state.rowOffset, state.ceilingRow)) {
     state.status = 'LOST';
     events.push({ type: 'lost' });
     return { state, events };
@@ -161,7 +163,7 @@ export function resolveShot(input: GameState, landing: Cell): ResolveResult {
     events.push({ type: 'match', cells: matched, points: matchPoints(matched.length) });
   }
 
-  const connected = findTopConnected(state.board, state.rowOffset);
+  const connected = findTopConnected(state.board, state.rowOffset, state.ceilingRow);
   const floating = occupiedCells(state.board).filter((cell) => !connected.has(cellKey(cell)));
   if (floating.length > 0) {
     removeCells(state.board, floating);
@@ -170,6 +172,33 @@ export function resolveShot(input: GameState, landing: Cell): ResolveResult {
 
   state.score += matchPoints(matched.length) + dropPoints(floating.length);
   state.step += 1;
+
+  if (state.mode === 'campaign') {
+    const level = getLevel(state.levelId!);
+    state.targets = state.targets?.filter(cell => state.board[cell.row][cell.col] !== null);
+    // A successful final shot wins before checking the resource limit or descent.
+    if (boardIsEmpty(state.board) || (level.targets && state.targets?.length === 0)) {
+      state.status = 'WON';
+      events.push({type: 'win'});
+    } else if (state.step >= level.maxShots) {
+      state.status = 'LOST'; state.endReason = 'shots';
+    } else if (level.descentEvery && state.step % level.descentEvery === 0) {
+      state.board = [Array(BOARD_COLUMNS).fill(null), ...state.board.slice(0, -1)];
+      state.ceilingRow = (state.ceilingRow ?? 0) + 1;
+      state.rowOffset = 1 - (state.rowOffset ?? 0);
+      state.targets = state.targets?.map(cell => ({...cell, row: cell.row + 1}));
+      events.push({type: 'board-drop'});
+    }
+    if (state.status === 'READY' && hasOccupiedAtOrBelow(state.board, LOSE_ROW)) state.status = 'LOST';
+    if (state.status === 'LOST') events.push({type: 'lost'});
+    if (state.status === 'READY') {
+      const colors = activeColors(state.board);
+      state.currentColor = colors.includes(state.nextColor) ? state.nextColor : chooseNextColor(state.board, random, config);
+      state.nextColor = chooseNextColor(state.board, random, config);
+    }
+    state.rngState = random.getState();
+    return {state, events};
+  }
 
   if (boardIsEmpty(state.board)) {
     if (state.mode === 'timed') {
@@ -208,4 +237,3 @@ export function resolveShot(input: GameState, landing: Cell): ResolveResult {
 
   return { state, events };
 }
-

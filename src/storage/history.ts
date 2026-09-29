@@ -42,6 +42,7 @@ export function loadHistory(): HistoryData {
   } catch { return { recent: [], top: [] }; }
 }
 export function recordRound(state: GameState, abandoned = false): void {
+  if (state.mode === 'campaign') return;
   if (!abandoned && state.status === 'READY') return;
   if (!state.sessionId || (abandoned && state.step === 0)) return;
   const multiplier = scoreMultiplier(state.difficultyId);

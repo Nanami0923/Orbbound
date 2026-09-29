@@ -14,9 +14,10 @@ function isEmpty(board: Board, cell: Cell): boolean {
   return board[cell.row]?.[cell.col] === null;
 }
 
-function isLegalAttachment(board: Board, cell: Cell, rowOffset = 0): boolean {
+function isLegalAttachment(board: Board, cell: Cell, rowOffset = 0, ceilingRow = 0): boolean {
   if (!isEmpty(board, cell)) return false;
-  if (cell.row === 0) return true;
+  if (cell.row < ceilingRow) return false;
+  if (cell.row === ceilingRow) return true;
   return neighbors(cell, board[0].length, board.length, rowOffset)
     .some((neighbor) => board[neighbor.row][neighbor.col] !== null);
 }
@@ -33,8 +34,8 @@ function chooseLanding(board: Board, contact: Point, geometry: BoardGeometry, oc
   for (let row = 0; row < geometry.maxRows; row += 1) {
     for (let col = 0; col < geometry.columns; col += 1) {
       const cell = { row, col };
-      if (topOnly && row !== 0) continue;
-      if (!isLegalAttachment(board, cell, geometry.rowOffset) || !doesNotOverlap(occupiedPoints, cell, geometry)) continue;
+      if (topOnly && row !== (geometry.ceilingRow ?? 0)) continue;
+      if (!isLegalAttachment(board, cell, geometry.rowOffset, geometry.ceilingRow) || !doesNotOverlap(occupiedPoints, cell, geometry)) continue;
       const point = cellToPoint(cell, geometry);
       const distance = distanceSquared(point, contact);
       if (distance < bestDistance) { bestDistance = distance; best = cell; }

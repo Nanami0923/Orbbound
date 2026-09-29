@@ -1,8 +1,11 @@
 import { readStorage, writeStorage } from './safe-storage';
 import { DEFAULT_SHORTCUTS, loadShortcuts, type Shortcuts } from '../game/shortcuts';
 import type { GameState } from '../core/types';
+import { CAMPAIGN_LEVELS } from '../content/campaign';
 import { freezeTimed } from '../core/modes';
 
+const CAMPAIGN_KEY = 'orbbound-campaign-active-v1';
+const saveKey = (mode?: string) => mode === 'campaign' ? CAMPAIGN_KEY : mode === 'timed' ? TIMED_KEY : SAVE_KEY;
 const SAVE_KEY = 'orbbound-save-v1';
 const TIMED_KEY = 'orbbound-timed-active-v2';
 const SETTINGS_KEY = 'orbbound-settings-v1';
@@ -79,15 +82,15 @@ export function saveSettings(settings: Settings): void {
 
 export function saveGame(state: GameState): void {
   if (!storageAvailable() || state.status !== 'READY') return;
-  try { writeStorage(state.mode === 'timed' ? TIMED_KEY : SAVE_KEY, JSON.stringify(freezeTimed(state))); }
+  try { writeStorage(saveKey(state.mode), JSON.stringify(freezeTimed(state))); }
   catch { window.dispatchEvent(new CustomEvent('snood-storage-error')); }
 }
 
-export function loadGame(mode: 'endless' | 'timed' = 'endless'): GameState | null {
+export function loadGame(mode: 'endless' | 'timed' | 'campaign' = 'endless'): GameState | null {
   if (!storageAvailable()) return null;
   try {
-    const value: unknown = JSON.parse(readStorage(mode === 'timed' ? TIMED_KEY : SAVE_KEY) ?? 'null');
-    if (!isGameState(value)) return null;
+    const value: unknown = JSON.parse(readStorage(saveKey(mode)) ?? 'null');
+    if (!isGameState(value) || (value.mode ?? 'endless') !== mode) return null;
     // Upgrade the last 2.0 checkpoint without consuming time while the app was closed.
     if (value.mode === 'timed' && value.timedSavedAt === undefined) {
       return freezeTimed(value, value.deadlineAt! - value.durationMs! + (value.elapsedMs ?? 0));
@@ -103,8 +106,8 @@ export function hasLegacySave(): boolean {
   catch { return false; }
 }
 
-export function clearGame(mode: 'endless' | 'timed' = 'endless'): void {
-  if (storageAvailable()) writeStorage(mode === 'timed' ? TIMED_KEY : SAVE_KEY, null);
+export function clearGame(mode: 'endless' | 'timed' | 'campaign' = 'endless'): void {
+  if (storageAvailable()) writeStorage(saveKey(mode), null);
 }
 
 export function getHighScore(): number {
@@ -121,7 +124,22 @@ export function setHighScore(score: number): void {
 export function isGameState(value: unknown): value is GameState {
   if (!value || typeof value !== 'object') return false;
   const candidate = value as Partial<GameState>;
-  if (candidate.mode !== undefined && !['endless', 'timed'].includes(candidate.mode)) return false;
+  if (candidate.mode !== undefined && !['endless', 'timed', 'campaign'].includes(candidate.mode)) return false;
+  if (candidate.mode === 'campaign') {
+    const level = CAMPAIGN_LEVELS.find(level => level.id === candidate.levelId);
+    if (!level || !Number.isSafeInteger(candidate.step) || candidate.step! >= level.maxShots) return false;
+    const ceiling = level.descentEvery ? Math.floor(candidate.step! / level.descentEvery) : 0;
+    if ((candidate.ceilingRow ?? 0) !== ceiling || ceiling >= 17) return false;
+    if (level.timeLimitMs && (candidate.elapsedMs ?? 0) >= level.timeLimitMs) return false;
+    if (level.targets) {
+      if (!Array.isArray(candidate.targets) || !candidate.targets.length || candidate.targets.length > level.targets.length) return false;
+      const keys = new Set<string>();
+      for (const cell of candidate.targets) {
+        if (!cell || !level.targets.some(original => original.row + ceiling === cell.row && original.col === cell.col) || candidate.board?.[cell.row]?.[cell.col] == null) return false;
+        const key = `${cell.row}:${cell.col}`; if (keys.has(key)) return false; keys.add(key);
+      }
+    } else if (candidate.targets !== undefined) return false;
+  } else if (candidate.ceilingRow !== undefined || candidate.levelId !== undefined || candidate.targets !== undefined) return false;
   if (candidate.mode === 'timed' && (![300000,600000].includes(candidate.durationMs!)
     || !Number.isFinite(candidate.deadlineAt) || !Number.isFinite(candidate.nextDescentAt))) return false;
   if (candidate.timedSavedAt !== undefined && !Number.isFinite(candidate.timedSavedAt)) return false;
