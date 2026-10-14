@@ -4,6 +4,7 @@ import type { GameState } from '../core/types';
 import { CAMPAIGN_LEVELS, CAMPAIGN_REVISION } from '../content/campaign';
 import { LEGACY_CAMPAIGN_LEVELS } from '../content/campaign-legacy';
 import { freezeTimed } from '../core/modes';
+import { validFrameRate, validRenderQuality, type FrameRateSetting, type RenderQualitySetting } from '../game/frame-rate';
 
 const CAMPAIGN_KEY = 'orbbound-campaign-active-v2';
 const saveKey = (mode?: string) => mode === 'campaign' ? CAMPAIGN_KEY : mode === 'timed' ? TIMED_KEY : SAVE_KEY;
@@ -26,6 +27,10 @@ export interface Settings {
   aimAssist: boolean;
   controlsSwapped: boolean;
   independentLaunch: boolean;
+  frameRate: FrameRateSetting;
+  quality: RenderQualitySetting;
+  reducedMotion: boolean;
+  showPerformance: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -42,6 +47,10 @@ export const DEFAULT_SETTINGS: Settings = {
   aimAssist: true,
   controlsSwapped: false,
   independentLaunch: false,
+  frameRate: 'auto',
+  quality: 'auto',
+  reducedMotion: false,
+  showPerformance: false,
 };
 
 function storageAvailable(): boolean {
@@ -70,6 +79,10 @@ export function loadSettings(): Settings {
       aimAssist: record.aimAssist !== false,
       controlsSwapped: record.controlsSwapped === true,
       independentLaunch: false,
+      frameRate: validFrameRate(record.frameRate) ? record.frameRate : 'auto',
+      quality: validRenderQuality(record.quality) ? record.quality : 'auto',
+      reducedMotion: record.reducedMotion === true,
+      showPerformance: record.showPerformance === true,
     };
   } catch {
     return { ...DEFAULT_SETTINGS };
@@ -147,7 +160,7 @@ export function isGameState(value: unknown): value is GameState {
     || !Number.isFinite(candidate.deadlineAt) || !Number.isFinite(candidate.nextDescentAt))) return false;
   if (candidate.timedSavedAt !== undefined && !Number.isFinite(candidate.timedSavedAt)) return false;
   if (candidate.descentIntervalMs !== undefined && (!Number.isFinite(candidate.descentIntervalMs) || candidate.descentIntervalMs <= 0)) return false;
-  if (candidate.schemaVersion !== 1 || candidate.rulesVersion !== 'classic-v2') return false;
+  if (candidate.schemaVersion !== 1 || !['classic-v2', 'classic-v3'].includes(candidate.rulesVersion as string)) return false;
   if (candidate.rowOffset !== 0 && candidate.rowOffset !== 1) return false;
   if (!Array.isArray(candidate.board) || candidate.board.length !== 19) return false;
   if (!candidate.board.every((row) => Array.isArray(row) && row.length === 14 && row.every((cell) => cell === null || (Number.isInteger(cell) && cell >= 0 && cell <= 5)))) return false;

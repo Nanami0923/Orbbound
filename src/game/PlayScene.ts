@@ -15,6 +15,7 @@ import { recordRound } from '../storage/history';
 import { usesButtonControls } from './input-mode';
 import { shortcutAction, shortcutLabel } from './shortcuts';
 import { heldRotationDegrees } from './rotation';
+import { rebaseTweenClock } from './tween-clock';
 import { advanceTimed, createRound, descentInterval, freezeTimed, resumeTimed, resetDescent } from '../core/modes';
 
 type ScenePhase = 'READY' | 'FLYING' | 'RESOLVING' | 'PAUSED' | 'WON' | 'LOST';
@@ -51,6 +52,7 @@ export class PlayScene extends Phaser.Scene {
   private pointerActive = false;
   private rotationDirection: -1 | 0 | 1 = 0;
   private rotationHeldSeconds = 0;
+  private heldDirections = new Set<-1 | 1>();
   private fineSpeed = 0;
   private quickTurn: { from: number; to: number; elapsed: number } | null = null;
   private get canSteer(): boolean { return ['READY', 'FLYING', 'RESOLVING'].includes(this.phase); }
@@ -66,6 +68,12 @@ export class PlayScene extends Phaser.Scene {
   public ready = false;
   public get isPaused(): boolean { return this.phase === 'PAUSED'; }
   public get isReady(): boolean { return this.phase === 'READY'; }
+  public get performanceIdle(): boolean {
+    return this.phase === 'READY' && !this.aimDirty && !this.recoil && !this.rotationDirection && !this.fineSpeed && !this.quickTurn && !this.transient.size;
+  }
+  private get reducedMotion(): boolean {
+    return this.settings.reducedMotion || (typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches);
+  }
   private controlHint(): string {
     if (usesButtonControls()) return this.settings.immersiveMode ? '按住棋盘瞄准 · 松手发射' : '上条定位 · 下条微调 · 侧边发射';
     return `鼠标左 / 右键或${shortcutLabel(this.settings.shortcuts.fire)}发射`;
@@ -114,29 +122,30 @@ export class PlayScene extends Phaser.Scene {
     else { recordCampaign(this.gameState); recordRound(this.gameState); sendWindowEvent('snood-clear-save', this.gameState.mode ?? 'endless'); }
   }
   private clockTick = 0;
+  private decisionClockAt: number | null = null;
   private abandoned = false;
   private transient = new Set<Phaser.GameObjects.GameObject>();
 
   public override update(_time: number, delta: number): void {
+    delta = Number.isFinite(delta) ? Math.max(0, delta) : 0;
+    const steeringDelta = Math.min(250, delta);
     if (this.recoil > 0) {
       this.recoil = Math.max(0, this.recoil - delta / 140);
       this.positionBarrel();
     }
     if (this.isTimed) this.syncTimedClock();
-    if (this.gameState.mode === 'campaign' && this.phase === 'READY') {
-      this.gameState = advanceCampaign(this.gameState, delta);
-      if (this.gameState.status !== 'READY') this.finishImmediately();
-    }
-    if (this.canSteer && this.fineSpeed) this.rotateLauncher(this.fineSpeed < 0 ? -1 : 1, Math.abs(this.fineSpeed) * Math.min(100, Math.max(0, delta)) / 1000);
+    if (this.gameState.mode === 'campaign' && this.phase === 'READY') this.syncCampaignClock(delta);
+    else this.decisionClockAt = null;
+    if (this.canSteer && this.fineSpeed) this.rotateLauncher(this.fineSpeed < 0 ? -1 : 1, Math.abs(this.fineSpeed) * Math.min(100, steeringDelta) / 1000);
     if (this.canSteer && this.rotationDirection !== 0) {
       const before = this.rotationHeldSeconds;
-      this.rotationHeldSeconds += Math.max(0, delta) / 1000;
+      this.rotationHeldSeconds += steeringDelta / 1000;
       const degrees = heldRotationDegrees(this.rotationHeldSeconds) - heldRotationDegrees(before);
       this.rotateLauncher(this.rotationDirection, degrees);
     } else if (!this.canSteer) this.stopRotation();
     if (this.canSteer && this.quickTurn) {
       const turn = this.quickTurn;
-      turn.elapsed += Math.max(0, delta);
+      turn.elapsed += steeringDelta;
       const t = Math.min(1, turn.elapsed / 260);
       this.angle = turn.from + (turn.to - turn.from) * t * t * (3 - 2 * t);
       if (t === 1) this.quickTurn = null;
@@ -154,9 +163,19 @@ export class PlayScene extends Phaser.Scene {
     super({ key: 'PlayScene' });
   }
 
+  private syncCampaignClock(fallbackDelta = 0): void {
+    if (this.gameState.mode !== 'campaign' || this.phase !== 'READY' || this.gameState.status !== 'READY') return;
+    const now = Date.now();
+    const elapsed = this.decisionClockAt === null ? fallbackDelta : Math.max(0, now - this.decisionClockAt);
+    this.decisionClockAt = now;
+    this.gameState = advanceCampaign(this.gameState, elapsed);
+    if (this.gameState.status !== 'READY') this.finishImmediately();
+  }
+
   public create(): void {
-    // Render at twice the pixel density while retaining the original game coordinates.
-    this.cameras.main.setZoom(2).centerOn(GAME_WIDTH / 2, GAME_HEIGHT / 2);
+    // Runtime quality changes backing pixels, never the logical board coordinates.
+    const quality = (this.game as unknown as { orbboundQuality?: number }).orbboundQuality ?? 2;
+    this.cameras.main.setZoom(quality).centerOn(GAME_WIDTH / 2, GAME_HEIGHT / 2);
     this.cameras.main.setBackgroundColor(UI_COLORS.panel);
     this.createArena();
     this.boardGroup = this.add.container(0, 0);
@@ -186,11 +205,13 @@ export class PlayScene extends Phaser.Scene {
   }
 
   public begin(state: GameState): void {
+    sendWindowEvent('snood-round-start', undefined);
     this.abandoned = false;
     this.roundEpoch++;
     state = resumeTimed(state);
     this.stopRotation();
     this.tweens.killAll();
+    rebaseTweenClock(this.tweens);
     this.tweens.resumeAll();
     this.time.removeAllEvents();
     this.time.clearPendingEvents();
@@ -206,6 +227,7 @@ export class PlayScene extends Phaser.Scene {
     this.gameState = state;
     this.phase = state.status;
     if (state.status === 'READY') this.phase = 'READY';
+    this.decisionClockAt = state.mode === 'campaign' && this.phase === 'READY' ? Date.now() : null;
     this.angle = 0;
     this.recoil = 0;
     this.statusText.setText(this.controlHint());
@@ -240,15 +262,19 @@ export class PlayScene extends Phaser.Scene {
     this.audio.setMix(settings.volume, settings.musicVolume);
     if (visualChanged) { this.renderLauncher(); this.drawAim(); }
     sendWindowEvent('snood-settings-applied', this.settings);
+    sendWindowEvent('snood-performance-settings', this.settings);
   }
 
   public pauseGame(): void {
     this.stopRotation();
     this.syncTimedClock();
+    this.syncCampaignClock();
     if (this.phase === 'PAUSED' || this.phase === 'WON' || this.phase === 'LOST') return;
     this.gameState = freezeTimed(this.gameState);
     this.pausedFrom = this.phase;
     this.phase = 'PAUSED';
+    this.decisionClockAt = null;
+    sendWindowEvent('snood-performance-reset', undefined);
     this.tweens.pauseAll();
     this.time.paused = true;
     this.pointerActive = false;
@@ -262,11 +288,15 @@ export class PlayScene extends Phaser.Scene {
     if (this.phase !== 'PAUSED') return;
     this.gameState = resumeTimed(this.gameState);
     this.phase = this.pausedFrom;
+    this.decisionClockAt = this.gameState.mode === 'campaign' && this.phase === 'READY' ? Date.now() : null;
+    sendWindowEvent('snood-performance-reset', undefined);
     this.statusText.setText(this.phase === 'READY' ? this.controlHint() : '等待本次发射结算');
+    rebaseTweenClock(this.tweens);
     this.tweens.resumeAll();
     this.time.paused = false;
     this.drawAim();
     this.emitState();
+    sendWindowEvent('snood-performance-active', undefined);
   }
 
   public togglePause(): void {
@@ -284,7 +314,7 @@ export class PlayScene extends Phaser.Scene {
     if (!this.canSteer || !Number.isFinite(degrees)) return;
     this.stopRotation();
     const angle = Math.max(-78, Math.min(78, degrees)) * Math.PI / 180;
-    if (this.angle !== angle) { this.angle = angle; this.aimDirty = true; }
+    if (this.angle !== angle) { this.angle = angle; this.aimDirty = true; sendWindowEvent('snood-performance-active', undefined); }
   }
   public setFineRotation(value: number): void {
     this.stopRotation();
@@ -296,6 +326,7 @@ export class PlayScene extends Phaser.Scene {
     this.rotationDirection = direction;
     this.rotationHeldSeconds = 0;
     this.rotateLauncher(direction);
+    sendWindowEvent('snood-performance-active', undefined);
   }
 
   public stopRotation(): void {
@@ -303,6 +334,7 @@ export class PlayScene extends Phaser.Scene {
     this.fineSpeed = 0;
     this.rotationDirection = 0;
     this.rotationHeldSeconds = 0;
+    this.heldDirections.clear();
   }
 
   public rotateLauncher(direction: -1 | 1, degrees = 1): void {
@@ -562,7 +594,11 @@ export class PlayScene extends Phaser.Scene {
     if (!this.canSteer) return;
     if (action === 'left' || action === 'right') {
       event.preventDefault();
-      this.startRotation(action === 'left' ? -1 : 1);
+      const direction = action === 'left' ? -1 : 1;
+      this.heldDirections.delete(direction); this.heldDirections.add(direction);
+      this.quickTurn = null; this.fineSpeed = 0; this.rotationDirection = direction; this.rotationHeldSeconds = 0;
+      this.rotateLauncher(direction);
+      sendWindowEvent('snood-performance-active', undefined);
     } else if (action === 'quickLeft' || action === 'quickRight') {
       event.preventDefault();
       this.quickRotate(action === 'quickLeft' ? -1 : 1);
@@ -574,11 +610,16 @@ export class PlayScene extends Phaser.Scene {
 
   private handleKeyUp(event: KeyboardEvent): void {
     const direction = event.code === this.settings.shortcuts.left ? -1 : event.code === this.settings.shortcuts.right ? 1 : 0;
-    if (direction && direction === this.rotationDirection) this.stopRotation();
+    if (!direction) return;
+    this.heldDirections.delete(direction);
+    if (direction !== this.rotationDirection) return;
+    this.rotationDirection = [...this.heldDirections].at(-1) ?? 0;
+    this.rotationHeldSeconds = 0;
   }
 
   private launch(): void {
     this.syncTimedClock();
+    this.syncCampaignClock();
     if (this.phase !== 'READY') return;
     const epoch = this.roundEpoch;
     const trace = this.getShotTrace();
@@ -588,16 +629,19 @@ export class PlayScene extends Phaser.Scene {
     }
 
     this.phase = 'FLYING';
+    this.decisionClockAt = null;
+    sendWindowEvent('snood-performance-active', undefined);
     this.drawAim();
     this.pointerActive = false;
     this.audio.blip('shoot');
     haptic('shoot', this.settings);
-    this.recoil = 1; this.positionBarrel();
+    this.recoil = this.reducedMotion ? 0 : 1; this.positionBarrel();
     sendWindowEvent('snood-fired', undefined);
     this.statusText.setText(trace.bounced ? '反弹中 · 等待落点' : '飞行中 · 等待落点');
     this.emitState();
 
     const projectile = this.createOrb(this.gameState.currentColor, trace.points[0]);
+    if (this.reducedMotion) projectile.setVisible(false);
     this.transient.add(projectile);
     projectile.setScale(0.93);
     const driver: ProgressDriver = { progress: 0 };
@@ -647,7 +691,8 @@ export class PlayScene extends Phaser.Scene {
       if (!orb) continue;
       const falling = dropped.includes(cell);
       const delay = falling ? 90 + Math.min(index, 6) * removeDelay : 0;
-      if (falling) {
+      if (this.reducedMotion) orb.setAlpha(0);
+      if (falling && !this.reducedMotion) {
         this.tweens.add({ targets: orb, y: orb.y + 150, angle: 18,
           duration: removeDuration, delay, ease: 'Quad.In' });
       }
@@ -656,6 +701,7 @@ export class PlayScene extends Phaser.Scene {
       animationGroups.set(delay, group);
     }
     for (const [delay, targets] of animationGroups) {
+      if (this.reducedMotion) continue;
       this.tweens.add({
         targets,
         scale: delay > 0 ? .85 : 0.05,
@@ -695,6 +741,7 @@ export class PlayScene extends Phaser.Scene {
         this.statusText.setText(this.gameState.endReason === 'shots' ? '发数用尽 · 再试一次' : '触底 · 再试一次');
       } else {
         this.phase = 'READY';
+        this.decisionClockAt = this.gameState.mode === 'campaign' ? Date.now() : null;
         this.statusText.setText(this.controlHint());
       }
       this.drawAim();
@@ -706,12 +753,14 @@ export class PlayScene extends Phaser.Scene {
       }
       };
       if (droppedBoard) {
-        this.tweens.add({ targets: this.boardGroup, y: 0, duration: 360, ease: 'Cubic.Out', onComplete: finish });
+        if (this.reducedMotion) { this.boardGroup.setY(0); this.time.delayedCall(360, finish); }
+        else this.tweens.add({ targets: this.boardGroup, y: 0, duration: 360, ease: 'Cubic.Out', onComplete: finish });
       } else { this.boardGroup.setY(0); finish(); }
     });
   }
 
   private flashLanding(cell: Cell, color: number): void {
+    if (this.reducedMotion) return;
     const point = cellToPoint(cell, this.geometry);
     const flash = this.add.circle(point.x, point.y, BOARD_GEOMETRY.radius + 5, color, 0.22);
     this.transient.add(flash);
@@ -738,7 +787,7 @@ export class PlayScene extends Phaser.Scene {
     this.transient.add(text);
     this.tweens.add({
       targets: text,
-      y: 550,
+      y: this.reducedMotion ? 590 : 550,
       alpha: 0,
       duration: 620,
       ease: 'Cubic.Out',
@@ -783,7 +832,8 @@ export class PlayScene extends Phaser.Scene {
 export const PHASER_CONFIG: Phaser.Types.Core.GameConfig = {
   audio: { noAudio: true },
   type: Phaser.AUTO,
-  fps: { target: 60, limit: 60 },
+  // Application budget preserves the remainder on 144/165/240Hz RAF; Phaser's limiter discards it.
+  fps: { target: 120, limit: 0, smoothStep: false },
   width: GAME_WIDTH * 2,
   height: GAME_HEIGHT * 2,
   parent: 'game-container',

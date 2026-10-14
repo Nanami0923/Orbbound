@@ -8,9 +8,10 @@ import { DEFAULT_SHORTCUTS, SHORTCUT_LABELS, shortcutLabel, validShortcutCode, t
 export function settingsMarkup(settings: Settings, mobile: boolean): string {
   const range = (key: keyof Settings, title: string, min: number, max: number, unit: string, hint: string) => `<label class="setting-row range-setting" for="setting-${key}"><span><strong>${title}</strong><small>${hint}</small></span><output id="value-${key}">${settings[key]}${unit}</output><input id="setting-${key}" data-setting="${key}" data-unit="${unit}" type="range" min="${min}" max="${max}" value="${settings[key]}" aria-label="${title}"></label>`;
   const toggle = (key: keyof Settings, title: string, hint: string) => `<div class="setting-row"><div><strong>${title}</strong><small>${hint}</small></div><label class="switch"><input data-setting="${key}" type="checkbox" aria-label="${title}" ${settings[key] ? 'checked' : ''}><span></span></label></div>`;
+  const select = (key: keyof Settings, title: string, options: [string,string][], hint:string) => `<label class="setting-row" for="setting-${key}"><span><strong>${title}</strong><small>${hint}</small></span><select id="setting-${key}" data-setting="${key}" aria-label="${title}">${options.map(([value,label])=>`<option value="${value}" ${String(settings[key]) === value ? 'selected' : ''}>${label}</option>`).join('')}</select></label>`;
   const shortcuts = `<section data-settings-page="shortcuts" hidden><h3 tabindex="-1">键盘快捷键</h3><p>点击按键后按下新键。支持字母、数字、方向键、空格、Enter 和 Esc；每个动作使用不同按键。F11 固定切换全屏。</p><div class="shortcut-settings">${(Object.keys(SHORTCUT_LABELS) as ShortcutAction[]).map(action => `<div class="setting-row"><strong>${SHORTCUT_LABELS[action]}</strong><button type="button" class="quiet-button" data-shortcut-edit="${action}" aria-label="修改${SHORTCUT_LABELS[action]}快捷键">${shortcutLabel(settings.shortcuts[action])}</button></div>`).join('')}</div><p id="shortcut-status" role="status">鼠标左右键始终可以发射。</p></section>`;
   return `<button class="modal-close" data-close-modal>完成</button><p class="eyebrow">声音与操作</p><h2>调整手感，找到节奏</h2><p>设置自动保存，随时可以再调整。</p>
-    <nav class="settings-categories" data-settings-page="root" aria-label="设置分类"><button class="quiet-button" data-settings-open="sound">声音与音乐 ›</button><button class="quiet-button" data-settings-open="aim">瞄准辅助 ›</button>${mobile ? '<button class="quiet-button" data-settings-open="control">操作与反馈 ›</button><button class="quiet-button" data-settings-open="layout">按键布局 ›</button>' : ''}${!mobile ? '<button class="quiet-button" data-settings-open="backup">存档备份与迁移 ›</button>' : ''}<button class="quiet-button" data-settings-open="reset">恢复默认设置 ›</button></nav>
+    <nav class="settings-categories" data-settings-page="root" aria-label="设置分类"><button class="quiet-button" data-settings-open="sound">声音与音乐 ›</button><button class="quiet-button" data-settings-open="aim">瞄准辅助 ›</button><button class="quiet-button" data-settings-open="display">画面与帧率 ›</button>${mobile ? '<button class="quiet-button" data-settings-open="control">操作与反馈 ›</button><button class="quiet-button" data-settings-open="layout">按键布局 ›</button>' : ''}<button class="quiet-button" data-settings-open="backup">存档备份与迁移 ›</button><button class="quiet-button" data-settings-open="reset">恢复默认设置 ›</button></nav>
     ${!mobile ? '<button class="quiet-button shortcut-category" data-settings-open="shortcuts" data-settings-page="root">键盘快捷键 ›</button>' : ''}
     <button class="quiet-button settings-back" data-settings-back hidden>‹ 返回设置</button>
     <section data-settings-page="sound" hidden><h3 tabindex="-1">声音与音乐</h3>
@@ -18,6 +19,12 @@ export function settingsMarkup(settings: Settings, mobile: boolean): string {
     ${range('musicVolume', '音乐音量', 0, 100, '%', '调整背景音乐音量，0 为静音。')}
     ${toggle('adaptiveMusic', '局内音乐加速', '开启后随棋盘压力加快；关闭后始终使用原速，音高不变。')}
     <div class="sound-preview-actions"><button class="quiet-button" id="preview-menu">试听菜单曲</button><button class="quiet-button" id="preview-play">试听紧张节奏</button><button class="quiet-button" id="preview-sound">试听消除音效</button></div><p id="music-preview-status" class="mode-note" role="status">当前：菜单曲</p>
+    </section><section data-settings-page="display" hidden><h3 tabindex="-1">画面与帧率</h3>
+    ${select('frameRate','帧率上限',[['auto','自动 · 最高 120 FPS'],['30','30 FPS · 省电'],['60','60 FPS'],['90','90 FPS'],['120','120 FPS']],'按屏幕刷新能力和持续负载自动调整。高帧率可能增加耗电。')}
+    ${select('quality','画面清晰度',[['auto','自动'],['1','标准'],['1.5','清晰'],['2','精细']],'清晰度与帧率独立，调整不会改变棋盘规则。')}
+    ${toggle('reducedMotion','减少动态效果','简化闪光与位移；保持相同的计时和发射节奏。')}
+    ${toggle('showPerformance','显示帧率','局内显示实际绘制帧率和当前目标。')}
+    <p class="mode-note" id="settings-performance-status" role="status">自动适应设备，最高 120 FPS。</p>
     </section><section data-settings-page="aim" hidden><h3 tabindex="-1">瞄准辅助</h3>
     ${toggle('aimAssist', '瞄准辅助', '显示反弹路线与空心落点圈。')}
     </section>${mobile ? `<section data-settings-page="control" hidden><h3 tabindex="-1">操作与反馈</h3>
@@ -31,7 +38,7 @@ export function settingsMarkup(settings: Settings, mobile: boolean): string {
       ${range('fireSize', '发射键宽度', 76, 120, 'px', '按手指大小调整。')}
       ${range('controlOffset', '控制区下移', 0, 48, 'px', '小屏会自动限制下移距离。')}
       <div class="grip-preview" aria-label="按键位置预览"><span class="grip-fire">发射</span><span class="grip-sliders">方向 ━━━<br>微调 ━━━</span></div></section>` : ''}
-    ${!mobile ? '<section data-settings-page="backup" hidden><h3 tabindex="-1">存档备份与迁移</h3><p>导出记录、对局和设置，或从旧版 Electron 读取本机存档。原存档不会删除。</p><div class="settings-categories"><button class="quiet-button" data-backup="export">导出备份</button><button class="quiet-button" data-backup="import">导入备份</button><button class="quiet-button" data-backup="legacy">导入旧 Windows 版存档</button></div></section>' : ''}
+    <section data-settings-page="backup" hidden><h3 tabindex="-1">存档备份与迁移</h3><p>导出三种玩法的存档、记录和设置。导入前会预览内容并保留恢复副本。</p><p id="backup-last-export" class="mode-note"></p><div class="settings-categories"><button class="quiet-button" data-backup="export">导出备份</button><button class="quiet-button" data-backup="import">导入备份</button><button class="quiet-button" data-backup="restore">恢复导入前备份</button>${!mobile ? '<button class="quiet-button" data-backup="legacy">导入旧 Windows 版存档</button>' : ''}</div><p id="backup-status" class="mode-note" role="status"></p></section>
     ${!mobile ? shortcuts : ''}
     <section data-settings-page="reset" hidden><h3 tabindex="-1">恢复默认设置</h3><p>恢复音量、操作、快捷键和显示设置。存档、得分和排行榜不会改变。</p><button class="primary-button" id="settings-reset">恢复默认设置</button><p id="settings-reset-status" role="status"></p></section>
     <div class="modal-footer"><button class="primary-button" data-close-modal>完成设置 ✓</button></div>`;
@@ -65,10 +72,10 @@ export function bindSettingsPanel(root: HTMLElement, settings: Settings, onChang
     grip.style.setProperty('--preview-width', `${settings.fireSize * 0.6}px`);
     grip.style.marginTop = `${8 + settings.controlOffset * 0.4}px`;
   };
-  root.querySelectorAll<HTMLInputElement>('[data-setting]').forEach(input => {
+  root.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-setting]').forEach(input => {
     const key = input.dataset.setting as keyof Settings;
     listen(input, 'input', () => {
-      Object.assign(settings, { [key]: input.type === 'checkbox' ? input.checked : Number(input.value) });
+      Object.assign(settings, { [key]: input instanceof HTMLInputElement && input.type === 'checkbox' ? input.checked : input.value === 'auto' ? 'auto' : Number(input.value) });
       const output = root.querySelector(`#value-${key}`);
       if (output) output.textContent = `${input.value}${input.dataset.unit ?? ''}`;
       onChange(false); updateGrip();
@@ -100,7 +107,7 @@ export function bindSettingsPanel(root: HTMLElement, settings: Settings, onChang
       else if (!raf) { lastTime = performance.now(); raf = requestAnimationFrame(tick); } } }) : null;
   listen(root.querySelector('#preview-fire'), 'click', () => {
     gameAudio.blip('shoot'); haptic('shoot', settings);
-    barrel?.animate([{ translate: '0 0' }, { translate: '0 5px' }, { translate: '0 0' }], { duration: 160 });
+    if (!settings.reducedMotion) barrel?.animate([{ translate: '0 0' }, { translate: '0 5px' }, { translate: '0 0' }], { duration: 160 });
   });
   window.addEventListener('blur', () => binding?.reset(), { signal: abort.signal });
   document.addEventListener('visibilitychange', () => { if (document.hidden) binding?.reset(); }, { signal: abort.signal });
@@ -121,9 +128,9 @@ export function bindSettingsPanel(root: HTMLElement, settings: Settings, onChang
     binding?.reset(); gameAudio.stopEffects();
     Object.assign(settings, DEFAULT_SETTINGS); onChange(true);
     settings.shortcuts = { ...DEFAULT_SHORTCUTS }; editing = null; refreshShortcuts();
-    root.querySelectorAll<HTMLInputElement>('[data-setting]').forEach(input => {
+    root.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-setting]').forEach(input => {
       const key = input.dataset.setting as keyof Settings;
-      if (input.type === 'checkbox') input.checked = Boolean(settings[key]);
+      if (input instanceof HTMLInputElement && input.type === 'checkbox') input.checked = Boolean(settings[key]);
       else input.value = String(settings[key]);
       const output = root.querySelector(`#value-${key}`);
       if (output) output.textContent = `${settings[key]}${input.dataset.unit ?? ''}`;

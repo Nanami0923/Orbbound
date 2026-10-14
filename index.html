@@ -49,7 +49,7 @@
         </div>
         <header class="game-header">
           <div class="header-brand"><span class="brand-mark small" aria-hidden="true"><i></i><i></i><i></i></span><span>ORBBOUND</span></div>
-          <div class="header-stat score-stat"><small>得分</small><strong id="score-value">00000</strong></div>
+          <div class="header-stat score-stat"><small>基础分</small><strong id="score-value">00000</strong></div>
           <div class="header-stat danger-stat">
             <small id="descent-caption">距离棋盘下降</small>
             <div class="countdown-label"><small id="shot-countdown-label" hidden>次数</small><strong id="danger-value">再发射 10 次</strong></div>
@@ -68,6 +68,8 @@
         <main class="game-layout">
           <section class="board-wrap">
             <div class="board-heading"><span id="difficulty-label">经典 · 第 1 回合</span><span id="game-status-label">选择角度</span></div>
+            <p id="campaign-budget" class="campaign-budget" hidden></p>
+            <button id="pending-fire" class="pending-fire" type="button" hidden>待发射 · 取消</button>
             <div id="game-container" class="game-container" aria-label="Orbbound 游戏棋盘"></div>
           </section>
 
@@ -102,6 +104,8 @@
       </section>
 
       <div id="modal-root" class="modal-root" hidden></div>
+      <output id="performance-badge" class="performance-badge" aria-label="实际帧率" hidden></output>
+      <div id="loading-panel" class="loading-panel" role="status"><strong>正在准备棋盘…</strong><button id="round-load-cancel" class="quiet-button" type="button">返回首页</button></div>
       <div id="toast" class="toast" role="status" aria-live="polite"></div>
     </div>
     <script type="module" src="/src/main.ts"></script>

@@ -5,7 +5,7 @@ afterEach(()=>{vi.unstubAllGlobals();vi.useRealTimers();});
 it('migrates the old volume to both channels, clamps new controls and preserves mute',()=>{
  let saved={sound:false,reducedMotion:true} as Record<string,unknown>;
  vi.stubGlobal('window',{localStorage:{getItem:()=>JSON.stringify(saved)}});
- expect(loadSettings()).toEqual({...DEFAULT_SETTINGS,volume:0,musicVolume:0});
+ expect(loadSettings()).toEqual({...DEFAULT_SETTINGS,volume:0,musicVolume:0,reducedMotion:true});
  saved={volume:200,controlsSwapped:true};expect(loadSettings().volume).toBe(100);expect(loadSettings().musicVolume).toBe(100);
  saved={volume:20,musicVolume:0,sensitivity:900,fireSize:500,controlOffset:-20};
  expect(loadSettings()).toMatchObject({volume:20,musicVolume:0,sensitivity:150,fireSize:120,controlOffset:0});

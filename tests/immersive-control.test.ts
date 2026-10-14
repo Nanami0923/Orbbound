@@ -1,4 +1,4 @@
-import { expect, it, vi } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
 import { bindImmersiveControl, immersiveAngle } from '../src/game/immersive-control';
 class Board extends EventTarget {
   captured: number | null = null;
@@ -8,11 +8,14 @@ class Board extends EventTarget {
   getBoundingClientRect() { return { left: 0, top: 0, right: 640, bottom: 760, width: 640, height: 760 }; }
 }
 function setup() {
+  const events=new EventTarget();const documentEvents=Object.assign(new EventTarget(),{hidden:false});
+  vi.stubGlobal('window',events);vi.stubGlobal('document',documentEvents);
   const board = new Board(), state = { active: true, ready: true }, aim = vi.fn(), fire = vi.fn();
   const binding = bindImmersiveControl(board as unknown as HTMLElement, { active: () => state.active, canFire: () => state.ready, aim, fire, unlock: vi.fn() });
   const send = (type: string, x = 420, y = 700, id = 1) => { const event = new Event(type, { cancelable: true }); Object.assign(event, { clientX: x, clientY: y, pointerId: id, button: 0 }); board.dispatchEvent(event); };
-  return { board, state, aim, fire, binding, send };
+  return { board, state, aim, fire, binding, send, events, documentEvents };
 }
+afterEach(()=>{vi.useRealTimers();vi.unstubAllGlobals();});
 it('aims continuously through the launch region and fires only on release', () => {
   const { send, aim, fire } = setup();
   send('pointerdown'); expect(aim).toHaveBeenCalledOnce(); expect(fire).not.toHaveBeenCalled();
@@ -33,17 +36,17 @@ it('accepts a gesture begun during flight when ready at release, but cancels on 
   send('pointerdown'); binding.reset(); send('pointerup'); expect(fire).not.toHaveBeenCalled();
   send('pointerdown'); state.active = false; send('pointerup'); expect(fire).not.toHaveBeenCalled();
 });
-it('buffers one early release and clears it on lifecycle reset or expiry', () => {
+it('buffers one early release until a READY event and clears it on lifecycle reset or expiry', async () => {
   vi.useFakeTimers();
   try {
-    const { send, state, fire, binding } = setup();
+    const { send, state, fire, binding,events } = setup();
     state.ready = false; send('pointerdown'); send('pointerup');
     vi.advanceTimersByTime(200); expect(fire).not.toHaveBeenCalled();
-    state.ready = true; vi.advanceTimersByTime(16); expect(fire).toHaveBeenCalledOnce();
+    state.ready = true; events.dispatchEvent(new Event('snood-state'));await Promise.resolve();expect(fire).toHaveBeenCalledOnce();
     state.ready = false; send('pointerdown'); send('pointerup'); binding.reset();
-    state.ready = true; vi.advanceTimersByTime(100); expect(fire).toHaveBeenCalledOnce();
+    state.ready = true; events.dispatchEvent(new Event('snood-state'));await Promise.resolve();expect(fire).toHaveBeenCalledOnce();
     state.ready = false; send('pointerdown'); send('pointerup'); vi.advanceTimersByTime(1700);
-    state.ready = true; vi.advanceTimersByTime(100); expect(fire).toHaveBeenCalledOnce();
+    state.ready = true; events.dispatchEvent(new Event('snood-state'));await Promise.resolve();expect(fire).toHaveBeenCalledOnce();
     binding.dispose();
   } finally { vi.useRealTimers(); }
 });

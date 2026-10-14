@@ -3,7 +3,8 @@ import { normalizeSeed, SeededRandom } from './rng';
 import type { Board, Cell, ColorId, GameEvent, GameState, ResolveResult } from './types';
 import { getLevel } from '../content/campaign';
 
-export const RULES_VERSION = 'classic-v2';
+export const RULES_VERSION = 'classic-v3';
+export const LEGACY_RULES_VERSION = 'classic-v2';
 export const SCHEMA_VERSION = 1;
 export const MATCH_THRESHOLD = 3;
 export const DANGER_MAX = 100;
@@ -230,7 +231,10 @@ export function resolveShot(input: GameState, landing: Cell): ResolveResult {
   if (state.status === 'LOST') events.push({ type: 'lost' });
 
   if (state.status === 'READY') {
-    state.currentColor = state.nextColor;
+    // Existing checkpoints retain their preview queue and RNG consumption. Only
+    // newly created rounds replace a preview color which disappeared this turn.
+    state.currentColor = state.rulesVersion === RULES_VERSION && !activeColors(state.board).includes(state.nextColor)
+      ? chooseNextColor(state.board, random, config) : state.nextColor;
     state.nextColor = chooseNextColor(state.board, random, config);
     state.rngState = random.getState();
   }

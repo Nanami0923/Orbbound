@@ -1,7 +1,7 @@
 import { loadProgress } from '../storage/campaign';
 import { CAMPAIGN_LEVELS } from '../content/campaign';
 import { loadGame } from '../storage/storage';
-import { loadHistory, rankingKey, formatDuration } from '../storage/history';
+import { loadHistory, leaderboard, formatDuration, rulesLabel } from '../storage/history';
 
 export function buildHome(touch: boolean): void {
   document.querySelector('.hero-copy .eyebrow')?.remove();
@@ -45,12 +45,11 @@ export function updateHome(): void {
     const saved = loadGame(mode);
     const description = document.querySelector(`[data-mode-description="${mode}"]`);
     if (!description) continue;
-    description.textContent = saved ? (mode === 'endless' ? `已存档 · ${saved.score.toLocaleString('zh-CN')} 分` : `已存档 · 剩余 ${formatDuration(Math.max(0, (saved.durationMs ?? 300000) - (saved.elapsedMs ?? 0)) + 999)}`) : mode === 'endless' ? '自由节奏 · 自动存档' : '5 / 10 分钟 · 争分夺秒';
+    description.textContent = saved ? (mode === 'endless' ? `${rulesLabel(saved.rulesVersion)}存档 · 基础分 ${saved.score.toLocaleString('zh-CN')}` : `${rulesLabel(saved.rulesVersion)}存档 · 剩余 ${formatDuration(Math.max(0, (saved.durationMs ?? 300000) - (saved.elapsedMs ?? 0)) + 999)}`) : mode === 'endless' ? '自由节奏 · 自动存档' : '5 / 10 分钟 · 争分夺秒';
     document.querySelector(`[data-mode-action="${mode}"]`)!.textContent = saved ? '继续 →' : '开始 →';
     const newButton = document.querySelector<HTMLButtonElement>(`[data-new-mode="${mode}"]`)!;
     newButton.hidden = !saved;
     const best = document.querySelector<HTMLElement>(`[data-mode-best="${mode}"]`)!;
-    const entries = history.top.filter(row => mode === 'endless' ? rankingKey(row) === 'endless' : rankingKey(row).startsWith('timed-'));
-    best.textContent = mode === 'endless' ? `最高 ${Math.max(0, ...entries.map(row => row.score)).toLocaleString('zh-CN')}` : [300000, 600000].map(duration => `${duration / 60000} 分钟最高 ${Math.max(0, ...entries.filter(row => rankingKey(row) === `timed-${duration}`).map(row => row.score)).toLocaleString('zh-CN')}`).join(' · ');
+    best.textContent = mode === 'endless' ? `新规则最高结算分 ${(leaderboard(history, 'endless')[0]?.score ?? 0).toLocaleString('zh-CN')}` : [300000, 600000].map(duration => `${duration / 60000} 分钟最高结算分 ${(leaderboard(history, `timed-${duration}`)[0]?.score ?? 0).toLocaleString('zh-CN')}`).join(' · ');
   }
 }

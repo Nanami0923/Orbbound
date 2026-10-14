@@ -22,10 +22,12 @@ export function validateBackup(text: string): Values {
       if (!isGameState(value) || (key === BACKUP_KEYS[1]) !== (value.mode === 'timed') || (key === BACKUP_KEYS[5] || key === BACKUP_KEYS[7]) !== (value.mode === 'campaign') || (value.mode === 'campaign' && (key === BACKUP_KEYS[7]) !== (value.campaignRevision === 2))) throw Error('对局存档已损坏或版本过旧');
     } else if (key === BACKUP_KEYS[2]) {
       const ranges: Record<string, [number,number]> = { volume:[0,100],musicVolume:[0,100],sensitivity:[50,150],controlOffset:[0,48],fireSize:[76,120] };
-      const booleans = ['adaptiveMusic','immersiveMode','sound','hapticShoot','hapticMatch','aimAssist','controlsSwapped','independentLaunch','reducedMotion'];
+      const booleans = ['adaptiveMusic','immersiveMode','sound','hapticShoot','hapticMatch','aimAssist','controlsSwapped','independentLaunch','reducedMotion','showPerformance'];
       if (!value || typeof value !== 'object' || Array.isArray(value)) throw Error('设置无效');
       for (const [name,v] of Object.entries(value)) {
         if (name === 'shortcuts') { if (!validShortcuts(v)) throw Error('快捷键设置无效或重复'); continue; }
+        if (name === 'frameRate') { if (!['auto',30,60,90,120].includes(v as string | number)) throw Error('帧率设置无效'); continue; }
+        if (name === 'quality') { if (!['auto',1,1.5,2].includes(v as string | number)) throw Error('画质设置无效'); continue; }
         if (ranges[name] ? typeof v !== 'number' || !Number.isFinite(v) || v < ranges[name][0] || v > ranges[name][1] : !booleans.includes(name) || typeof v !== 'boolean') throw Error('设置字段或数值无效');
       }
     } else if (key === BACKUP_KEYS[3]) {
@@ -33,16 +35,24 @@ export function validateBackup(text: string): Values {
     } else if (key === CAMPAIGN_PROGRESS_KEY || key === LEGACY_PROGRESS_KEY) {
       if (!validProgress(value) || (key === LEGACY_PROGRESS_KEY && Object.keys(value).some(id => Number(id) > 12))) throw Error('闯关进度无效');
     } else {
-      if (!value || !Array.isArray(value.recent) || !Array.isArray(value.top) || value.recent.length > 500 || value.top.length > 30) throw Error('历史记录无效');
+      if (!value || !Array.isArray(value.recent) || !Array.isArray(value.top) || value.recent.length > 500 || value.top.length > 180) throw Error('历史记录无效');
       for (const r of [...value.recent,...value.top]) {
         if (r?.startedAt > 8_640_000_000_000_000 || r?.endedAt > 8_640_000_000_000_000) throw Error('记录日期无效');
-        if (!r || typeof r.id !== 'string' || r.id.length > 200 || !['easy','normal','hard'].includes(r.difficulty) || !['WON','LOST','ABANDONED','TIMEOUT','SETTLED'].includes(r.result) || ![undefined,'endless','timed'].includes(r.mode) || (r.mode === 'timed' && ![300000,600000].includes(r.durationMs)) || ![r.score,r.startedAt,r.endedAt,r.elapsedMs,r.shots].every(n=>Number.isSafeInteger(n)&&n>=0) || (r.rawScore !== undefined && (!Number.isSafeInteger(r.rawScore)||r.rawScore<0)) || (r.multiplier !== undefined && ![1,1.5,2].includes(r.multiplier))) throw Error('历史记录字段无效');
+        if (!r || typeof r.id !== 'string' || r.id.length > 200 || !['easy','normal','hard'].includes(r.difficulty) || !['WON','LOST','ABANDONED','TIMEOUT','SETTLED'].includes(r.result) || ![undefined,'endless','timed'].includes(r.mode) || (r.mode === 'timed' && ![300000,600000].includes(r.durationMs)) || ![r.score,r.startedAt,r.endedAt,r.elapsedMs,r.shots].every(n=>Number.isSafeInteger(n)&&n>=0) || (r.rawScore !== undefined && (!Number.isSafeInteger(r.rawScore)||r.rawScore<0)) || (r.multiplier !== undefined && ![1,1.5,2].includes(r.multiplier)) || ![undefined,'classic-v2','classic-v3'].includes(r.rulesVersion)) throw Error('历史记录字段无效');
       }
     }
     values[key] = source;
   }
   if (!Object.keys(values).length) throw Error('备份中没有游戏数据');
   return values;
+}
+export function backupSummary(text: string): string {
+  const values = validateBackup(text);
+  const saves = [BACKUP_KEYS[0], BACKUP_KEYS[1], BACKUP_KEYS[7]].filter(key => values[key]);
+  const progress = JSON.parse(values[CAMPAIGN_PROGRESS_KEY] ?? '{}');
+  const history = JSON.parse(values[BACKUP_KEYS[4]] ?? '{"recent":[]}');
+  const settings = !!values[BACKUP_KEYS[2]];
+  return `包含 ${saves.length} 个进行中对局、${Object.keys(progress).length} 关记录、${history.recent.length} 条历史${settings ? '及设置' : ''}。同名数据会被替换，未包含的数据保留；导入前会保存恢复副本。`;
 }
 export function importBackup(text: string): void {
   const values = validateBackup(text);

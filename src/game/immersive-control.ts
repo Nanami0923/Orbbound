@@ -4,9 +4,11 @@ import { BOARD_GEOMETRY, GAME_HEIGHT, GAME_WIDTH } from '../content/game-config'
 export function immersiveAngle(x: number, y: number): number {
   return Math.max(-78, Math.min(78, Math.atan2(x - BOARD_GEOMETRY.launcherX, Math.max(BOARD_GEOMETRY.radius * 2, BOARD_GEOMETRY.launcherY - y)) * 180 / Math.PI));
 }
-export function bindImmersiveControl(area: HTMLElement, options: { active(): boolean; canFire(): boolean; aim(degrees: number): void; fire(): void; unlock(): void }) {
+export function bindImmersiveControl(area: HTMLElement, options: { active(): boolean; canFire(): boolean; aim(degrees: number): void; fire(): void; unlock(): void; onPending?(pending:boolean):void }) {
   let owner: number | null = null;
   let pending: ReturnType<typeof setTimeout> | undefined;
+  let queued=false;
+  let deadline=0;
   const abort = new AbortController();
   area.addEventListener('contextmenu', event => { if (options.active()) event.preventDefault(); }, { signal: abort.signal });
   // Android can cancel the pointer stream for a long-press action unless the
@@ -16,6 +18,7 @@ export function bindImmersiveControl(area: HTMLElement, options: { active(): boo
   }, { passive: false, signal: abort.signal });
   const reset = () => {
     clearTimeout(pending); pending = undefined;
+    if(queued){queued=false;options.onPending?.(false);}
     const previous = owner; owner = null;
     if (previous !== null && area.hasPointerCapture(previous)) area.releasePointerCapture(previous);
   };
@@ -43,16 +46,18 @@ export function bindImmersiveControl(area: HTMLElement, options: { active(): boo
     reset();
     if (fire) {
       // Retain at most one release while the preceding shot finishes animating.
-      const deadline = Date.now() + 1600;
-      const flush = () => {
-        pending = undefined;
-        if (!options.active() || Date.now() > deadline) return;
-        if (options.canFire()) options.fire();
-        else pending = setTimeout(flush, 16);
-      };
-      flush();
+      if(options.canFire())options.fire();
+      else {queued=true;deadline=Date.now()+1600;options.onPending?.(true);pending=setTimeout(reset,1600);}
     }
   }, { signal: abort.signal });
+  const flush=()=>{
+    if(!queued)return;
+    if(!options.active() || Date.now()>deadline){reset();return;}
+    if(options.canFire()){reset();options.fire();}
+  };
+  window.addEventListener('snood-state',()=>queueMicrotask(flush),{signal:abort.signal});
+  window.addEventListener('blur',reset,{signal:abort.signal});
+  document.addEventListener('visibilitychange',()=>{if(document.hidden)reset();},{signal:abort.signal});
   for (const type of ['pointercancel', 'lostpointercapture']) area.addEventListener(type, event => { if ((event as PointerEvent).pointerId === owner) reset(); }, { signal: abort.signal });
   return { reset, dispose: () => { reset(); abort.abort(); } };
 }

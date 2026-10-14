@@ -3,6 +3,13 @@ import { campaignStars, createCampaign } from './core/campaign';
 import { isUnlocked, loadProgress, recordCampaign } from './storage/campaign';
 import { campaignMarkup, levelMarkup, starRules } from './ui/campaign-panel';
 import { bindDesktopBridge } from './ui/desktop-bridge';
+import { bindModalFocus } from './ui/modal-focus';
+import { bindAndroidServices, refreshPlatformPerformance, replayDisplayInfo } from './ui/platform-services';
+import { bindPracticePanel, practiceMarkup, type PracticeControlMode } from './ui/practice-panel';
+import { backupSummary } from './storage/backup';
+import { readStorage, writeStorage } from './storage/safe-storage';
+import { escapeText, failureAdvice, starBudget } from './ui/progress-feedback';
+import { RULES_VERSION } from './core/engine';
 import './ui/android-insets';
 import { shortcutAction, shortcutLabel, type ShortcutAction } from './game/shortcuts';
 import { bindImmersiveControl } from './game/immersive-control';
@@ -26,7 +33,7 @@ import { bindSteeringControl } from './game/steering-control';
 import { directAimDegrees } from './game/rotation';
 import { settingsMarkup, bindSettingsPanel, settingsBack } from './ui/settings-panel';
 import { formatHeadings } from './ui/typography';
-import { loadHistory, recordRound, formatDuration, rankingKey } from './storage/history';
+import { loadHistory, recordRound, formatDuration, rankingKey, leaderboard, recordRules, roundStanding, type HistoryDifficulty, type HistoryRules } from './storage/history';
 
 interface SceneStateDetail {
   levelId?: number;
@@ -61,6 +68,7 @@ if (!usesButtonControls()) {
   for (const [id, [action, label]] of Object.entries(buttons)) document.querySelector(`#${id}`)!.innerHTML = `${label}<kbd data-shortcut="${action}"></kbd>`;
   document.querySelector('.sidebar-actions [data-history]')!.innerHTML = '历史与排行<kbd data-shortcut="history"></kbd>';
   document.querySelector('.sidebar-actions')!.insertAdjacentHTML('beforeend', '<button id="game-help-button" class="side-button" type="button">玩法提示<kbd data-shortcut="help"></kbd></button>');
+  document.querySelector('.sidebar-actions')!.insertAdjacentHTML('beforeend', '<button id="fullscreen-button" class="side-button" type="button">全屏<kbd>F11</kbd></button>');
 }
 const homeScreen = document.querySelector<HTMLElement>('#home-screen');
 const gameScreen = document.querySelector<HTMLElement>('#game-screen');
@@ -106,6 +114,12 @@ let resumeAfterModal = false;
 let disposeModal: (() => void) | null = null;
 let roundRequest = 0;
 let onModalDismiss: (() => void) | undefined;
+let releaseModalFocus:(()=>void)|null=null;
+let modalReturnFocus:HTMLElement|null=null;
+let roundBootTimer:number|undefined;
+let previousUiDetail:SceneStateDetail|undefined;
+let pendingFire=false;
+let practiceSeen=readStorage('orbbound-practice-seen')==='1';
 
 function syncMobileLayout(): void {
   if (usesButtonControls()) {
@@ -118,6 +132,7 @@ function syncMobileLayout(): void {
   document.documentElement.classList.toggle("desktop-ui", !usesButtonControls());
   document.documentElement.classList.toggle('mobile-ui', usesButtonControls());
   document.documentElement.classList.toggle('controls-swapped', settings.controlsSwapped);
+  document.documentElement.classList.toggle('reduce-motion', settings.reducedMotion);
   document.documentElement.style.setProperty('--fire-width', `${settings.fireSize}px`);
   // Leave enough room for the system gesture area on short phones.
   const offset = Math.min(settings.controlOffset, Math.max(0, (window.innerHeight - 640) * 0.24));
@@ -137,11 +152,12 @@ function loadRuntime() { return runtime ??= import('./game/runtime').catch(error
 async function ensureGame(): Promise<void> {
   if (game) return;
   const module = await loadRuntime();
-  if (!game) game = module.createGame();
+  if (!game) { game = module.createGame(); replayDisplayInfo(); window.dispatchEvent(new Event('orbbound-query-display')); }
 }
 
 function showHome(): void {
   roundRequest++;
+  window.clearTimeout(roundBootTimer); roundBootTimer=undefined;
   document.documentElement.classList.remove('game-loading');
   gameAudio.setScene('menu');
   const scene = getScene();
@@ -153,6 +169,7 @@ function showHome(): void {
   if (gameScreen) gameScreen.hidden = true;
   if (homeScreen) homeScreen.hidden = false;
   updateHomeState();
+  document.querySelector<HTMLElement>('#campaign-button')?.focus({preventScroll:true});
 }
 
 function showGame(): void {
@@ -163,10 +180,19 @@ function showGame(): void {
 async function startRound(state: Parameters<PlayScene['begin']>[0] | null, difficulty = selectedDifficulty): Promise<void> {
   gameAudio.setForeground(true); gameAudio.unlock();
   const request = ++roundRequest, mode = selectedMode, duration = selectedDuration;
+  window.clearTimeout(roundBootTimer);
+  performance.mark('orbbound-round-request');
+  const fail = () => {
+    if(request !== roundRequest)return;
+    showHome();
+    openModal('<button class="modal-close" data-close-modal>返回首页</button><h2>棋盘准备未完成</h2><p>可以重试，存档仍保留在本机。</p><div class="modal-footer"><button id="round-load-retry" class="primary-button">重试</button><button class="quiet-button" data-close-modal>返回首页</button></div>');
+    document.querySelector('#round-load-retry')?.addEventListener('click',()=>{closeModal();void startRound(state,difficulty);});
+  };
+  roundBootTimer=window.setTimeout(fail,15000);
   document.documentElement.classList.add('game-loading');
   await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
   try { await ensureGame(); }
-  catch { document.documentElement.classList.remove('game-loading'); showToast('游戏加载失败，请重试'); return; }
+  catch { fail(); return; }
   if (request !== roundRequest) return;
   showGame();
   const beginWhenReady = () => {
@@ -177,9 +203,12 @@ async function startRound(state: Parameters<PlayScene['begin']>[0] | null, diffi
       return;
     }
     scene.setSettings(settings);
+    previousUiDetail=undefined;
     scene.begin(state ?? createRound(difficulty, mode, duration));
     gameAudio.setScene('play'); gameAudio.unlock();
     document.documentElement.classList.remove('game-loading');
+    window.clearTimeout(roundBootTimer);roundBootTimer=undefined;
+    performance.mark('orbbound-round-ready');
     game?.loop.wake();
   };
   beginWhenReady();
@@ -194,9 +223,9 @@ function updateHomeState(): void {
   const config = getDifficulty(selectedDifficulty);
   if (description) description.textContent = `${config.colors} 种颜色 · 开局 ${config.initialRows} 行 · 首次下降前 ${shotsUntilDescent(config.id,0)} 次发射`;
   if (continueButton) continueButton.disabled = !saved;
-  const best = loadHistory().top.filter(r => rankingKey(r) === 'endless')[0]?.score ?? 0;
+  const best = leaderboard(loadHistory(),'endless')[0]?.score ?? 0;
   if (homeHighScore) homeHighScore.textContent = `无尽最高 ${formatScore(best)}`;
-  if (continueButton) continueButton.textContent = saved ? `无尽存档 · ${saved.score} 分` : '无尽 · 暂无存档';
+  if (continueButton) continueButton.textContent = saved ? `无尽存档 · 基础分 ${saved.score}` : '无尽 · 暂无存档';
   const timedSaved = loadGame('timed');
   if (timedContinueButton) {
     timedContinueButton.disabled = !timedSaved;
@@ -212,16 +241,20 @@ function formatScore(score: number): string {
 }
 
 function updateGameState(detail: SceneStateDetail): void {
+  const previous=previousUiDetail; previousUiDetail=detail;
+  const roundChanged=!previous || previous.mode!==detail.mode || previous.levelId!==detail.levelId || previous.difficultyId!==detail.difficultyId;
   gameAudio.setPressure(detail.musicPressure);
   gameAudio.setScene(!gameScreen?.hidden && modalRoot?.hidden && ['READY', 'FLYING', 'RESOLVING'].includes(detail.phase) ? 'play' : 'menu');
   if (scoreValue && scoreValue.textContent !== formatScore(detail.score)) scoreValue.textContent = formatScore(detail.score);
   const level = detail.mode === 'campaign' ? getLevel(detail.levelId!) : null;
   const timed = detail.mode === 'timed';
-  gameScreen?.classList.toggle('campaign-mode', !!level);
-  gameScreen?.classList.toggle('timed-mode', timed);
-  if (descentTimeRow) descentTimeRow.hidden = !timed;
-  if (descentCaption) descentCaption.hidden = timed;
-  if (shotCountdownLabel) shotCountdownLabel.hidden = !timed;
+  if(roundChanged){
+    gameScreen?.classList.toggle('campaign-mode', !!level);
+    gameScreen?.classList.toggle('timed-mode', timed);
+    if (descentTimeRow) descentTimeRow.hidden = !timed;
+    if (descentCaption) descentCaption.hidden = timed;
+    if (shotCountdownLabel) shotCountdownLabel.hidden = !timed;
+  }
   const bars = countdownProgress(detail.difficultyId, detail.danger, detail.descentRemainingMs, detail.descentIntervalMs);
   const remaining = shotsUntilDescent(detail.difficultyId, detail.danger);
   if (dangerValue) {
@@ -231,10 +264,10 @@ function updateGameState(detail: SceneStateDetail): void {
   }
   if (dangerFill) {
     const progress = level ? (level.timeLimitMs ? Math.max(0, 100 * (1 - detail.elapsedMs / level.timeLimitMs)) : Math.max(0, 100 * (1 - detail.step / level.maxShots))) : timed ? (detail.status === 'READY' ? bars.shotPercent : 0) : Math.max(0, Math.min(100, detail.danger / DANGER_MAX * 100));
-    dangerFill.style.width = `${progress}%`;
-    dangerFill.parentElement?.setAttribute('aria-label', level ? '闯关剩余资源' : '下落次数倒计时');
-    dangerFill.parentElement?.setAttribute('aria-valuenow', String(progress));
-    dangerFill.parentElement?.setAttribute('aria-valuetext', dangerValue?.textContent ?? '');
+    dangerFill.style.transform = `scaleX(${progress/100})`;
+    if(roundChanged)dangerFill.parentElement?.setAttribute('aria-label', level ? '闯关剩余资源' : '下落次数倒计时');
+    setAttributeIfChanged(dangerFill.parentElement,'aria-valuenow',String(Math.round(progress)));
+    setAttributeIfChanged(dangerFill.parentElement,'aria-valuetext',dangerValue?.textContent ?? '');
   }
   if (timed && descentTimeFill && descentTimeValue) {
     const label = detail.status === 'READY' ? `${Math.ceil(detail.descentRemainingMs / 1000)} 秒` : '本局结束';
@@ -245,11 +278,13 @@ function updateGameState(detail: SceneStateDetail): void {
     descentTimeFill.parentElement?.setAttribute('aria-valuetext', label);
     descentTimeRow?.classList.toggle('urgent', detail.status === 'READY' && detail.descentRemainingMs <= 5000);
   }
-  if (descentCaption) descentCaption.textContent = level ? `${level.targets ? `目标剩余 ${detail.targetsRemaining ?? 0}` : '清空棋盘'}${level.descentEvery ? ` · ${level.descentEvery - detail.step % level.descentEvery} 发后下移` : ' · 不下压'}` : '距离棋盘下降';
+  if (descentCaption) setTextIfChanged(descentCaption,level ? `${level.targets ? `目标剩余 ${detail.targetsRemaining ?? 0}` : '清空棋盘'}${level.descentEvery ? ` · ${level.descentEvery - detail.step % level.descentEvery} 发后下移` : ' · 不下压'}` : '距离棋盘下降');
+  const budget=document.querySelector<HTMLElement>('#campaign-budget');
+  if(budget){budget.hidden=!level;if(level)setTextIfChanged(budget,starBudget(level,detail.step,detail.elapsedMs));}
   const difficultyText = level ? `第 ${level.id} 关 · ${level.name}` : `${detail.mode === 'timed' ? '限时' : '无尽'} · ${getDifficulty(detail.difficultyId).label} ×${scoreMultiplier(detail.difficultyId)}`;
   if (difficultyLabel && difficultyLabel.textContent !== difficultyText) difficultyLabel.textContent = difficultyText;
   const phaseText = detail.mode === 'campaign' && detail.status === 'WON' ? '目标完成' : detail.endReason === 'shots' ? '发数用尽' : detail.endReason ? (detail.endReason === 'timeout' ? '时间到' : '已结算') : statusLabel(detail.phase, detail.status);
-  if (gameStatusLabel && gameStatusLabel.textContent !== phaseText) gameStatusLabel.textContent = phaseText;
+  if (gameStatusLabel) setTextIfChanged(gameStatusLabel,pendingFire ? '待发射 · 点击取消' : level && detail.phase==='READY' ? starBudget(level,detail.step,detail.elapsedMs) : phaseText);
   for (const button of [pauseButton, document.querySelector<HTMLButtonElement>('#mobile-pause-button')]) {
     if (!button) continue;
     if (button.textContent !== '存档') button.textContent = '存档';
@@ -280,6 +315,9 @@ function updateGameState(detail: SceneStateDetail): void {
   const settleButton = document.querySelector<HTMLButtonElement>('#settle-button');
   if (settleButton) { settleButton.disabled = detail.status !== 'READY' || !!level; settleButton.hidden = !!level; }
 }
+
+function setTextIfChanged(element:HTMLElement,text:string):void { if(element.textContent!==text)element.textContent=text; }
+function setAttributeIfChanged(element:HTMLElement|null,name:string,value:string):void { if(element?.getAttribute(name)!==value)element?.setAttribute(name,value); }
 
 function statusLabel(phase: SceneStateDetail['phase'], status: SceneStateDetail['status']): string {
   if (phase === 'PAUSED') return '已存档';
@@ -312,14 +350,17 @@ function openModal(content: string, className = '', onDismiss?: () => void): voi
   disposeModal?.(); disposeModal = null;
   stopRotation(); gameAudio.setScene('menu');
   if (modalRoot.hidden) {
+    modalReturnFocus=document.activeElement instanceof HTMLElement ? document.activeElement : null;
     resumeAfterModal = !gameScreen?.hidden && !!getScene() && !getScene()!.isPaused;
     getScene()?.pauseGame();
   }
+  releaseModalFocus?.();releaseModalFocus=null;
   onModalDismiss = onDismiss;
   modalRoot.innerHTML = `<div class="modal-card ${className}" role="dialog" aria-modal="true">${content}</div>`;
   modalRoot.hidden = false;
   document.documentElement.classList.add('modal-open');
   formatHeadings(modalRoot);
+  releaseModalFocus=bindModalFocus(modalRoot.querySelector<HTMLElement>('.modal-card')!,[homeScreen,gameScreen].filter((element):element is HTMLElement=>!!element));
   game?.loop.sleep();
   modalRoot.querySelectorAll<HTMLElement>('[data-close-modal]').forEach(button => button.addEventListener('click', dismissModal));
   modalRoot.onclick = handleModalBackdrop;
@@ -339,21 +380,27 @@ function closeModal(): void {
   onModalDismiss = undefined;
   if (!modalRoot) return;
   disposeModal?.(); disposeModal = null;
+  releaseModalFocus?.();releaseModalFocus=null;
   modalRoot.hidden = true;
   document.documentElement.classList.remove('modal-open');
   modalRoot.innerHTML = '';
   modalRoot.onclick = null;
   if (resumeAfterModal && !gameScreen?.hidden) { game?.loop.wake(); getScene()?.resumeGame(); }
   resumeAfterModal = false;
+  if(modalReturnFocus?.isConnected && !modalReturnFocus.closest('[hidden]'))modalReturnFocus.focus({preventScroll:true});
+  else document.querySelector<HTMLElement>(homeScreen?.hidden ? '#game-container' : '#campaign-button')?.focus({preventScroll:true});
+  modalReturnFocus=null;
 }
 
-function showHistory(top = true, page = 0, board = 'endless'): void {
+function showHistory(top = true, page = 0, board = 'endless', difficulty:HistoryDifficulty='all', rules:HistoryRules=RULES_VERSION): void {
   const data = loadHistory();
-  openModal(historyMarkup(data, top, board, page, usesButtonControls()), 'history-card');
-  document.querySelectorAll<HTMLElement>('[data-board]').forEach(button => button.addEventListener('click', () => showHistory(top, 0, button.dataset.board)));
-  document.querySelector('#history-toggle')?.addEventListener('click', () => showHistory(!top,0,board));
-  document.querySelector('#history-prev')?.addEventListener('click', () => showHistory(top,page-1,board));
-  document.querySelector('#history-next')?.addEventListener('click', () => showHistory(top,page+1,board));
+  openModal(historyMarkup(data, top, board, page, usesButtonControls(),difficulty,rules), 'history-card');
+  document.querySelectorAll<HTMLElement>('[data-board]').forEach(button => button.addEventListener('click', () => showHistory(top, 0, button.dataset.board,difficulty,rules)));
+  document.querySelector('#history-toggle')?.addEventListener('click', () => showHistory(!top,0,board,difficulty,rules));
+  document.querySelector('#history-prev')?.addEventListener('click', () => showHistory(top,page-1,board,difficulty,rules));
+  document.querySelector('#history-next')?.addEventListener('click', () => showHistory(top,page+1,board,difficulty,rules));
+  document.querySelectorAll<HTMLElement>('[data-history-difficulty]').forEach(button=>button.addEventListener('click',()=>showHistory(top,0,board,button.dataset.historyDifficulty as HistoryDifficulty,rules)));
+  document.querySelectorAll<HTMLElement>('[data-history-rules]').forEach(button=>button.addEventListener('click',()=>showHistory(top,0,board,difficulty,button.dataset.historyRules as HistoryRules)));
 }
 
 function showTutorial(): void {
@@ -367,8 +414,16 @@ function showTutorial(): void {
       <div class="tutorial-step"><b>02</b><div><strong>三个同类连在一起</strong><span>同色相连达到 3 球即可消除。一次消除 3、4、5、6 球，分别得 30、50、80、120 分。</span></div></div>
       <div class="tutorial-step"><b>03</b><div><strong>让悬空小球掉落</strong><span>切断顶部支撑，悬空球就会掉落。掉落 1、2、3 球，额外加 30、70、120 分；掉落越多，加分越高。</span></div></div>
     </div>
-    <div class="modal-footer"><button class="primary-button" data-close-modal type="button"><span>知道了，开始</span><b>↗</b></button></div>
+    <div class="modal-footer"><button id="help-practice" class="primary-button" type="button">动手练习 →</button><button class="quiet-button" data-close-modal type="button">继续游戏</button></div>
   `);
+  document.querySelector('#help-practice')?.addEventListener('click',()=>showPractice());
+}
+
+function showPractice(onReturn?:()=>void,onCancel:()=>void=showTutorial):void {
+  const controlMode:PracticeControlMode=usesButtonControls() ? settings.immersiveMode ? 'immersive' : 'buttons' : 'desktop';
+  const finish=()=>{practiceSeen=true;writeStorage('orbbound-practice-seen','1');if(onReturn)onReturn();else closeModal();};
+  openModal(practiceMarkup(controlMode),'practice-card',onCancel);
+  if(modalRoot)disposeModal=bindPracticePanel(modalRoot,{controlMode,shortcuts:settings.shortcuts,sensitivity:settings.sensitivity,onComplete:finish,onSkip:finish,onClose:onCancel});
 }
 
 function showSettings(): void {
@@ -381,7 +436,9 @@ function showSettings(): void {
     gameAudio.setAdaptiveMusic(settings.adaptiveMusic);
     getScene()?.setSettings(settings);
     syncMobileLayout();
+    if(commit)void refreshPlatformPerformance(settings);
   });
+  window.dispatchEvent(new Event('orbbound-settings-open'));
 }
 
 function showCampaign(): void {
@@ -398,6 +455,7 @@ function showCampaign(): void {
 
 function beginCampaign(id: number): void {
   if (!isUnlocked(id)) return;
+  if(!practiceSeen){showPractice(()=>beginCampaign(id),showCampaign);return;}
   selectedMode = 'campaign';
   resumeAfterModal = false; closeModal();
   void startRound(createCampaign(id));
@@ -407,7 +465,7 @@ function showCampaignResult(state: GameState): void {
   recordCampaign(state); clearGame('campaign');
   const level = getLevel(state.levelId!), won = state.status === 'WON', stars = campaignStars(state);
   const next = CAMPAIGN_LEVELS.find(candidate => candidate.id === level.id + 1);
-  openModal(`<button class="modal-close" data-close-modal>关闭</button><p class="eyebrow">第 ${level.id} 关 / ${level.name}</p><h2>${won ? next ? '目标完成，继续向前' : '三十关，全部走过' : state.endReason === 'shots' ? '发数用尽，再想一步' : state.endReason === 'timeout' ? '时间到了，再试一次' : '棋盘触底，再试一次'}</h2><div class="campaign-result-stars" aria-label="${stars} 星">${'★'.repeat(stars)}${'☆'.repeat(3 - stars)}</div><p>${state.step} 次发射 · 操作用时 ${formatDuration(state.elapsedMs ?? 0)}</p><p>${won ? starRules(level) : level.hint}</p>${won && !next ? `<p>你已完成本篇章。可以返回选关，挑战全部 ${CAMPAIGN_LEVELS.length * 3} 星。</p>` : ''}<div class="modal-footer">${won && next ? '<button id="campaign-next" class="primary-button">下一关 →</button>' : ''}<button id="campaign-retry" class="${won && next ? 'quiet-button' : 'primary-button'}">重试本关</button><button id="campaign-select" class="quiet-button">返回选关</button><button id="campaign-home" class="quiet-button">首页</button></div>`, 'result-card', () => { showHome(); showCampaign(); });
+  openModal(`<button class="modal-close" data-close-modal>关闭</button><p class="eyebrow">第 ${level.id} 关 / ${level.name}</p><h2>${won ? next ? '目标完成，继续向前' : '三十关，全部走过' : state.endReason === 'shots' ? '发数用尽，再想一步' : state.endReason === 'timeout' ? '时间到了，再试一次' : '棋盘触底，再试一次'}</h2><div class="campaign-result-stars" aria-label="${stars} 星">${'★'.repeat(stars)}${'☆'.repeat(3 - stars)}</div><p>${state.step} 次发射 · 操作用时 ${formatDuration(state.elapsedMs ?? 0)}</p><p>${won ? starRules(level) : escapeText(failureAdvice(state,level))}</p>${won && stars<3 ? `<p>${escapeText(starBudget(level,state.step,state.elapsedMs??0))}。重试同一布局，争取更少发数或更短操作时间。</p>` : ''}${won && !next ? `<p>你已完成本篇章。可以返回选关，挑战全部 ${CAMPAIGN_LEVELS.length * 3} 星。</p>` : ''}<div class="modal-footer">${won && next ? '<button id="campaign-next" class="primary-button">下一关 →</button>' : ''}<button id="campaign-retry" class="${won && next ? 'quiet-button' : 'primary-button'}">重试本关</button><button id="campaign-select" class="quiet-button">返回选关</button><button id="campaign-home" class="quiet-button">首页</button></div>`, 'result-card', () => { showHome(); showCampaign(); });
   modalRoot?.querySelector('#campaign-next')?.addEventListener('click', () => beginCampaign(next!.id));
   modalRoot?.querySelector('#campaign-retry')?.addEventListener('click', () => beginCampaign(level.id));
   modalRoot?.querySelector('#campaign-select')?.addEventListener('click', () => { showHome(); showCampaign(); });
@@ -423,15 +481,18 @@ function showResult(state: GameState): void {
   selectedDuration = state.durationMs ?? 300000;
   selectedDifficulty = state.difficultyId;
   const title = state.endReason === 'timeout' ? '时间到，挑战完成！' : state.endReason === 'settled' ? '本局已结算' : won ? '全部清空，胜利！' : '棋盘触底了。';
+  const standing=roundStanding(loadHistory(),state);
   openModal(`
     <button class="modal-close" data-close-modal type="button">关闭</button>
     <div class="result-mark">${won ? '✦' : '!'}</div>
     <p class="eyebrow">${state.endReason ? 'ROUND COMPLETE' : won ? 'BOARD CLEARED' : 'ONE MORE TRY'}</p>
     <h2>${title}</h2>
-    <p class="result-description">${state.endReason ? '<span>本局成绩，已为你保存。</span><span>下一局，试着突破自己的纪录。</span>' : won ? '<span>棋盘已清空，这一局很漂亮。</span><span>下一局，试试更大胆的反弹。</span>' : '<span>留意次数，先消掉上方支撑；</span><span>让成片小球一起掉落。</span>'}</p>
+    <p class="result-description">${state.endReason ? '<span>本局成绩，已为你保存。</span><span>下一局，试着突破自己的纪录。</span>' : won ? '<span>棋盘已清空，这一局很漂亮。</span><span>下一局，试试更大胆的反弹。</span>' : `<span>${escapeText(failureAdvice(state))}</span>`}</p>
+    <p class="eyebrow">结算分</p>
     <div class="result-score">${formatScore(weightedScore(state))}</div>
-    <div class="result-meta">原始分 ${state.score} × 难度 ${scoreMultiplier(state.difficultyId)}<br>${state.step} 次发射 · 已计入${state.mode === 'timed' ? `限时 ${state.durationMs! / 60000} 分钟` : '无尽'}排行榜</div>
-    <div class="modal-footer"><button id="result-retry" class="primary-button" type="button"><span>${won ? '再开一局' : '再试一次'}</span><b>↗</b></button><button id="result-home" class="quiet-button" type="button">返回首页</button></div>
+    <div class="result-meta">基础分 ${state.score} × 难度 ${scoreMultiplier(state.difficultyId)}<br>${state.step} 次发射 · 已计入${state.mode === 'timed' ? `限时 ${state.durationMs! / 60000} 分钟` : '无尽'}排行榜</div>
+    <p class="result-progress">${standing.newRecord ? '新纪录！' : standing.difference===0 ? '追平个人最佳' : `距个人最佳 ${Math.abs(standing.difference).toLocaleString('zh-CN')} 分`}${standing.rank ? ` · 本榜第 ${standing.rank}` : ' · 本榜前十之外'}</p>
+    <div class="modal-footer"><button id="result-retry" class="primary-button" type="button"><span>${won ? '再开一局' : '再试一次'}</span><b>↗</b></button><button id="result-ranking" class="quiet-button" type="button">查看本榜</button><button id="result-home" class="quiet-button" type="button">返回首页</button></div>
   `, `result-card${won ? '' : ' lost'}`);
   modalRoot?.querySelector<HTMLButtonElement>('#result-retry')?.addEventListener('click', () => {
     resumeAfterModal = false;
@@ -442,6 +503,7 @@ function showResult(state: GameState): void {
     closeModal();
     showHome();
   });
+  modalRoot?.querySelector('#result-ranking')?.addEventListener('click',()=>{showHome();showHistory(true,0,rankingKey(state),'all',recordRules(state));});
 }
 
 function showModeSetup(mode: GameMode): void {
@@ -463,9 +525,8 @@ function showModeSetup(mode: GameMode): void {
   }));
   document.querySelector('#mode-ranking')?.addEventListener('click', () => showHistory(true,0,mode === 'timed' ? `timed-${selectedDuration}` : 'endless'));
   document.querySelector('#mode-begin')?.addEventListener('click', () => {
-    const previous = loadGame(mode);
-    if (previous) recordRound(previous, true);
-    clearGame(mode); closeModal(); startRound(null);
+    const begin=()=>{const previous = loadGame(mode);if (previous) recordRound(previous, true);clearGame(mode); closeModal();void startRound(null);};
+    if(!practiceSeen)showPractice(begin,()=>showModeSetup(mode));else begin();
   });
   // Warm the engine after the setup panel paints, when play intent is explicit.
   requestAnimationFrame(() => requestAnimationFrame(() => { void loadRuntime().catch(() => {}); }));
@@ -501,6 +562,8 @@ document.querySelector<HTMLButtonElement>('#tutorial-button')?.addEventListener(
 document.querySelector<HTMLButtonElement>('#settings-button')?.addEventListener('click', showSettings);
 document.querySelector<HTMLButtonElement>('#game-settings-button')?.addEventListener('click', showSettings);
 document.querySelector('#game-help-button')?.addEventListener('click', showTutorial);
+document.querySelector('#fullscreen-button')?.addEventListener('click',()=>window.dispatchEvent(new Event('orbbound-request-fullscreen')));
+document.querySelector('#round-load-cancel')?.addEventListener('click',showHome);
 function saveAndHome(): void {
   getScene()?.pauseGame();
   showHome();
@@ -546,7 +609,9 @@ const controlActive = () => !gameScreen?.hidden && !!modalRoot?.hidden;
 immersiveControl = bindImmersiveControl(document.querySelector<HTMLElement>('#game-container')!, {
   active: () => usesButtonControls() && settings.immersiveMode && controlActive(), canFire: () => getScene()?.isReady === true,
   aim: degrees => getScene()?.setAimDegrees(degrees), fire: () => getScene()?.launchFromButton(), unlock: () => gameAudio.unlock(),
+  onPending:pending=>{pendingFire=pending;const badge=document.querySelector<HTMLElement>('#pending-fire');if(badge)badge.hidden=!pending;if(gameStatusLabel)setTextIfChanged(gameStatusLabel,pending ? '待发射 · 点击取消' : previousUiDetail ? statusLabel(previousUiDetail.phase,previousUiDetail.status) : '选择角度');},
 });
+document.querySelector('#pending-fire')?.addEventListener('click',()=>immersiveControl?.reset());
 aimControl = bindSteeringControl(aimSlider, { fine: false, hitArea: aimSlider.closest<HTMLElement>('.steering-control')!, active: controlActive, onStart: stopRotation,
   onValue: value => getScene()?.setAimDegrees(directAimDegrees(value)) });
 fineControl = bindSteeringControl(fineSlider, { fine: true, hitArea: fineSlider.closest<HTMLElement>('.steering-control')!, active: controlActive, onStart: stopRotation,
@@ -561,6 +626,7 @@ window.addEventListener('snood-angle', event => {
 window.addEventListener('blur', stopRotation);
 document.addEventListener('visibilitychange', stopRotation);
 window.addEventListener('snood-fired', () => {
+  if(settings.reducedMotion)return;
   document.querySelector('#mobile-fire')?.animate([
     { transform: 'scale(1)', filter: 'brightness(1)' },
     { transform: 'scale(.95)', filter: 'brightness(1.25)' },
@@ -568,8 +634,11 @@ window.addEventListener('snood-fired', () => {
   ], { duration: 160 });
 });
 document.querySelector<HTMLButtonElement>('#restart-button')?.addEventListener('click', () => {
-  getScene()?.restartGame();
-  showToast('新回合已开始');
+  const scene=getScene();if(!scene)return;
+  const restart=()=>{closeModal();scene.restartGame();showToast('新回合已开始');};
+  if(scene.activeState.step===0 || scene.activeState.status!=='READY'){restart();return;}
+  openModal('<button class="modal-close" data-close-modal>继续游戏</button><h2>放弃当前局并重开？</h2><p>当前进度会结束，重开不计入正常排行榜。</p><div class="modal-footer"><button class="quiet-button" data-autofocus data-close-modal>继续游戏</button><button id="confirm-restart" class="primary-button">放弃并重开</button></div>');
+  document.querySelector('#confirm-restart')?.addEventListener('click',restart);
 });
 document.querySelector<HTMLButtonElement>('#back-home-button')?.addEventListener('click', () => {
   saveAndHome();
@@ -642,6 +711,21 @@ requestAnimationFrame(() => {
   window.dispatchEvent(new Event('orbbound-ready'));
 });
 
-bindDesktopBridge(() => { settings = loadSettings(); gameAudio.setMix(settings.volume, settings.musicVolume); gameAudio.setAdaptiveMusic(settings.adaptiveMusic); syncMobileLayout(); closeModal(); updateHomeState(); }, showToast);
+bindDesktopBridge(() => {
+  const previousGame=game;game=null;resumeAfterModal=false;roundRequest++;
+  previousGame?.destroy(true);previousGame?.loop.wake();
+  settings=loadSettings();gameAudio.setMix(settings.volume,settings.musicVolume);gameAudio.setAdaptiveMusic(settings.adaptiveMusic);
+  previousUiDetail=undefined;syncMobileLayout();showHome();void refreshPlatformPerformance(settings);
+}, showToast,(text,commit)=>{
+  openModal(`<button class="modal-close" data-close-modal>取消</button><h2>导入备份？</h2><p>${escapeText(backupSummary(text))}</p><p>同名数据会替换，导入前会保留恢复副本。</p><div class="modal-footer"><button class="quiet-button" data-autofocus data-close-modal>取消</button><button id="confirm-backup-import" class="primary-button">确认导入</button></div>`);
+  document.querySelector('#confirm-backup-import')?.addEventListener('click',commit);
+});
+bindAndroidServices(()=>settings);
+window.addEventListener('snood-performance',event=>{
+  const detail=(event as CustomEvent<{renderFps:number;targetFps:number;idle:boolean;reason:string}>).detail;
+  const label=`${Math.round(detail.renderFps)} FPS · ${detail.idle ? '静止省电' : `目标 ${detail.targetFps}`}`;
+  const badge=document.querySelector<HTMLElement>('#performance-badge');if(badge){badge.hidden=!settings.showPerformance||!!gameScreen?.hidden;if(settings.showPerformance)setTextIfChanged(badge,label);}
+  const status=document.querySelector<HTMLElement>('#settings-performance-status');if(status)setTextIfChanged(status,label);
+});
 window.addEventListener('orbbound-host-background', () => { gameAudio.setForeground(false); if (!gameScreen?.hidden) showHome(); });
 window.addEventListener('orbbound-host-foreground', () => gameAudio.setForeground(true));

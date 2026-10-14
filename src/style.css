@@ -1003,3 +1003,53 @@ button:focus-visible { outline: 2px solid var(--mint); outline-offset: 3px; }
 }
 
 .campaign-panel > .modal-close { position: sticky; top: 0; z-index: 1; }
+
+/* 4.2: keep controls readable, use the board to teach, and expose high-refresh choices. */
+.danger-meter #danger-fill { width: 100%; transform-origin: left; }
+.campaign-budget { display: none; }
+.pending-fire { position: absolute; right: 8px; bottom: 8px; z-index: 4; min-height: 44px; padding: 8px 12px; border: 1px solid var(--mint); border-radius: 12px; background: #173c3a; color: var(--cream); }
+.board-wrap { position: relative; }
+.performance-badge { position: fixed; right: calc(12px + var(--safe-area-right, 0px)); bottom: calc(6px + var(--safe-area-bottom, 0px)); z-index: 5; font-size: 11px; color: var(--mint); background: #101b2ae6; padding: 3px 8px; border-radius: 6px; pointer-events: none; }
+.loading-panel { display: none; position: fixed; inset: 0; z-index: 60; align-items: center; justify-content: center; flex-direction: column; gap: 22px; background: #0d1221f5; color: var(--cream); }
+.game-loading .loading-panel { display: flex; }
+.game-loading::after { display: none; }
+.setting-row select { min-height: 44px; max-width: 56%; padding: 8px; border: 1px solid #506078; border-radius: 8px; color: var(--cream); background: #142136; font: inherit; }
+.result-progress { color: var(--mint); font-weight: 600; }
+.history-rule-filter, .history-difficulty-filter { margin-top: 8px; }
+.history-difficulty-filter button { min-height: 40px; }
+.history-scroll tr.recent-best { background: #63d7bd12; }
+.campaign-record { display: flex; flex-wrap: wrap; gap: 8px 16px; }
+.campaign-record small { color: var(--muted); }
+.practice-card { width: min(680px, 100%); }
+.practice-board { display: block; width: 100%; max-height: 260px; touch-action: none; border-radius: 12px; }
+.practice-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.practice-controls[hidden] { display: none; }
+.practice-controls .steering-control { min-width: 0; min-height: 58px; padding: 6px 10px; }
+.practice-shot-actions { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 8px; }
+.practice-shot-actions output { color: var(--mint); font-variant-numeric: tabular-nums; }
+.practice-shot-actions button { min-height: 44px; padding: 10px 20px; }
+.practice-card .modal-footer { flex-wrap: wrap; }
+.modal-card :focus-visible, .game-screen button:focus-visible { outline: 2px solid var(--mint); outline-offset: 3px; }
+.reduce-motion button { transition: none !important; }
+.desktop-ui .game-screen .side-button { min-height: 32px; font-size: 12px; }
+@media (max-height: 700px) and (orientation: portrait) {
+  .mobile-ui:not(.immersive-mode) .game-screen, .mobile-ui:not(.immersive-mode) .game-screen.timed-mode { grid-template-rows: 32px 46px minmax(0, 1fr) 92px; gap: 5px; padding-top: calc(var(--safe-area-top, env(safe-area-inset-top)) + 6px); }
+  .mobile-ui:not(.immersive-mode) .mobile-topbar { min-height: 32px; }
+  .mobile-ui:not(.immersive-mode) .mobile-topbar button { min-height: 32px; height: 32px; }
+  .mobile-ui:not(.immersive-mode) .game-header { gap: 8px; padding: 0; }
+  .mobile-ui:not(.immersive-mode) .header-stat strong { font-size: 20px; }
+  .mobile-ui:not(.immersive-mode) .danger-stat strong { font-size: 12px; }
+  .mobile-ui:not(.immersive-mode) .header-stat small { font-size: 10px; }
+  .mobile-ui:not(.immersive-mode) .board-heading { flex-basis: 38px; gap: 2px 8px; padding-bottom: 4px; }
+  .mobile-ui:not(.immersive-mode) .game-container { width: min(100%, calc((100dvh - 230px - var(--safe-area-top, env(safe-area-inset-top)) - var(--safe-area-bottom, env(safe-area-inset-bottom))) * 640 / 760)) !important; }
+  .mobile-ui:not(.immersive-mode) .mobile-controls { grid-template-rows: 92px; }
+  .mobile-ui:not(.immersive-mode) .steering-sliders { grid-template-rows: 44px 44px; gap: 4px; }
+  .mobile-ui:not(.immersive-mode) .steering-control { padding: 2px 8px; font-size: 10px; }
+  .mobile-ui:not(.immersive-mode) .steering-control input { height: 30px; }
+  .mobile-ui:not(.immersive-mode) #mobile-fire { height: 84px; min-height: 84px; }
+  .mobile-ui:not(.immersive-mode) .next-card .dom-orb { width: 30px; height: 30px; font-size: 17px; }
+  .mobile-ui:not(.immersive-mode) .next-card .next-preview { width: 32px; height: 32px; flex-basis: 32px; }
+  .mobile-ui .practice-board { max-height: 210px; }
+  .mobile-ui .practice-card { padding: 18px; }
+  .mobile-ui .practice-card p { margin-block: 8px; }
+}
