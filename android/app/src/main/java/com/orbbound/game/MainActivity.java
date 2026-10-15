@@ -15,6 +15,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(GameFeedbackPlugin.class);
+        registerPlugin(LanMultiplayerPlugin.class);
         super.onCreate(savedInstanceState);
         // Long presses belong to aiming, not WebView image/context actions.
         getBridge().getWebView().setOnLongClickListener(view -> true);

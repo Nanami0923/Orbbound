@@ -34,6 +34,7 @@ import { directAimDegrees } from './game/rotation';
 import { settingsMarkup, bindSettingsPanel, settingsBack } from './ui/settings-panel';
 import { formatHeadings } from './ui/typography';
 import { loadHistory, recordRound, formatDuration, rankingKey, leaderboard, recordRules, roundStanding, type HistoryDifficulty, type HistoryRules } from './storage/history';
+import { installLan } from './ui/lan-panel';
 
 interface SceneStateDetail {
   levelId?: number;
@@ -56,6 +57,7 @@ interface SceneStateDetail {
 }
 
 buildHome(usesButtonControls());
+const lan = installLan(showHome);
 if (!usesButtonControls()) {
   document.querySelector('.mobile-launch-row')?.remove();
   document.querySelector('.current-card')?.remove();
@@ -661,6 +663,7 @@ window.addEventListener('snood-finished', (event) => {
 });
 
 document.addEventListener('visibilitychange', () => {
+  if (lan.isActive()) { lan.foreground(!document.hidden); return; }
   if (document.hidden && !gameScreen?.hidden) showHome();
 });
 
@@ -668,9 +671,11 @@ if (Capacitor.isNativePlatform()) {
   void App.addListener('appStateChange', ({ isActive }) => {
     stopRotation();
     gameAudio.setForeground(isActive);
+    if (lan.isActive()) { lan.foreground(isActive); return; }
     if (!isActive && !gameScreen?.hidden) showHome();
   });
   void App.addListener('backButton', () => {
+    if (lan.isActive()) { lan.back(); return; }
     if (modalRoot && !modalRoot.hidden) {
       if (!settingsBack(modalRoot)) dismissModal();
     } else if (gameScreen && !gameScreen.hidden) {
@@ -727,5 +732,5 @@ window.addEventListener('snood-performance',event=>{
   const badge=document.querySelector<HTMLElement>('#performance-badge');if(badge){badge.hidden=!settings.showPerformance||!!gameScreen?.hidden;if(settings.showPerformance)setTextIfChanged(badge,label);}
   const status=document.querySelector<HTMLElement>('#settings-performance-status');if(status)setTextIfChanged(status,label);
 });
-window.addEventListener('orbbound-host-background', () => { gameAudio.setForeground(false); if (!gameScreen?.hidden) showHome(); });
-window.addEventListener('orbbound-host-foreground', () => gameAudio.setForeground(true));
+window.addEventListener('orbbound-host-background', () => { gameAudio.setForeground(false); if (lan.isActive()) { lan.foreground(false); return; } if (!gameScreen?.hidden) showHome(); });
+window.addEventListener('orbbound-host-foreground', () => { gameAudio.setForeground(true); if (lan.isActive()) lan.foreground(true); });

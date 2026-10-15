@@ -79,13 +79,18 @@ internal sealed class GameWindow : Form {
     int recoveryAttempts, lifecycleVersion, transientFailures;
     DateTime transientWindow=DateTime.UtcNow;
     string lastDisplayInfo;
+    LanService lan;
+    int lanGeneration;
+    readonly object lanEventsLock=new object();
+    readonly Queue<Dictionary<string,object>> lanEvents=new Queue<Dictionary<string,object>>();
+    bool lanEventsScheduled;
     IntPtr powerNotification;
     Rectangle fullRestore;
     FormWindowState fullState;
     public GameWindow(string[] arguments) {
         args=arguments; Text="ORBBOUND "+System.Reflection.Assembly.GetExecutingAssembly().GetName().Version.ToString(3); BackColor=Color.FromArgb(13,18,33); StartPosition=FormStartPosition.Manual;
         MinimumSize=new Size(Math.Min(780,Screen.PrimaryScreen.WorkingArea.Width),Math.Min(500,Screen.PrimaryScreen.WorkingArea.Height));
-        RestoreWindow(); MountWebView();
+        RestoreWindow(); MountWebView();ResetLan();
         recovery.BackColor=BackColor; recovery.Controls.Add(status); recovery.Controls.Add(recoveryActions);
         recoveryActions.Controls.Add(retryButton);recoveryActions.Controls.Add(waitButton);recoveryActions.Controls.Add(exitButton);
         recoveryActions.Visible=false; Controls.Add(recovery); recovery.BringToFront();
@@ -132,7 +137,7 @@ internal sealed class GameWindow : Form {
             core.Settings.IsZoomControlEnabled=false;
             core.Settings.AreBrowserAcceleratorKeysEnabled=false;
             core.SetVirtualHostNameToFolderMapping("orbbound.local",Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"web"),CoreWebView2HostResourceAccessKind.DenyCors);
-            core.NavigationStarting+=delegate(object sender,CoreWebView2NavigationStartingEventArgs e) { if(!e.Uri.StartsWith("https://orbbound.local/",StringComparison.Ordinal)) e.Cancel=true; };
+            core.NavigationStarting+=delegate(object sender,CoreWebView2NavigationStartingEventArgs e) { if(!TrustedSource(e.Uri))e.Cancel=true;else ResetLan(); };
             core.NewWindowRequested+=delegate(object sender,CoreWebView2NewWindowRequestedEventArgs e) { e.Handled=true; };
             core.PermissionRequested+=delegate(object sender,CoreWebView2PermissionRequestedEventArgs e) { e.State=CoreWebView2PermissionState.Deny; };
             core.WebMessageReceived+=OnMessage;
@@ -162,11 +167,12 @@ internal sealed class GameWindow : Form {
         runtimeLink.Click+=delegate { Process.Start(new ProcessStartInfo("https://developer.microsoft.com/en-us/microsoft-edge/webview2#download-section") { UseShellExecute=true }); }; recoveryActions.Controls.Add(runtimeLink);
     }
     async void OnMessage(object sender,CoreWebView2WebMessageReceivedEventArgs e) {
-        if(!e.Source.StartsWith("https://orbbound.local/",StringComparison.Ordinal))return;
+        if(sender!=web.CoreWebView2||!TrustedSource(e.Source))return;
         try {
             var message=Program.Json.Deserialize<Dictionary<string,object>>(e.WebMessageAsJson);
             string type=message.ContainsKey("type")?message["type"] as string:null;
-            if(type=="ready") { ready=true;recoveryAttempts=0;loadTimeout.Stop();recovery.Visible=false;web.Visible=true;if(windowActive)web.Focus();PublishDisplayInfo(true);QueueLifecycle(); }
+            if(type=="lan") { await HandleLan(message,e.WebMessageAsJson.Length); }
+            else if(type=="ready") { ready=true;recoveryAttempts=0;loadTimeout.Stop();recovery.Visible=false;web.Visible=true;if(windowActive)web.Focus();PublishDisplayInfo(true);QueueLifecycle(); }
             else if(type=="fullscreen") ToggleFullscreen();
             else if(type=="close") Close();
             else if(type=="display-info") PublishDisplayInfo(true);
@@ -185,6 +191,64 @@ internal sealed class GameWindow : Form {
     }
     void Post(string type,string text) { if(!closing&&web.CoreWebView2!=null)web.CoreWebView2.PostWebMessageAsJson(Program.Json.Serialize(new {type=type,text=text})); }
     void Notice(string text) { Post("notice",text); }
+
+    internal static bool TrustedSource(string source) {
+        Uri uri;return Uri.TryCreate(source,UriKind.Absolute,out uri)&&uri.Scheme=="https"&&uri.Host=="orbbound.local"&&uri.Port==443&&String.IsNullOrEmpty(uri.UserInfo);
+    }
+    void ResetLan() {
+        Interlocked.Increment(ref lanGeneration);
+        if(lan!=null)lan.Dispose();
+        lock(lanEventsLock) { lanEvents.Clear();lanEventsScheduled=false; }
+        int generation=lanGeneration;
+        lan=new LanService(delegate(Dictionary<string,object> evt) { QueueLanEvent(evt,generation); });
+    }
+    void QueueLanEvent(Dictionary<string,object> evt,int generation) {
+        bool schedule=false;LanService overflowService=null;
+        lock(lanEventsLock) {
+            if(closing||generation!=lanGeneration)return;
+            if(lanEvents.Count>=256) {
+                lanEvents.Clear();overflowService=lan;
+                evt=new Dictionary<string,object> { {"type","lan-event"},{"event","error"},{"error","联机消息积压，连接已关闭，请重新进入房间"} };
+            }
+            lanEvents.Enqueue(evt);
+            if(!lanEventsScheduled) { lanEventsScheduled=true;schedule=true; }
+        }
+        if(overflowService!=null)overflowService.Dispose();
+        if(schedule)OnUi(delegate { DrainLanEvents(generation); });
+    }
+    void DrainLanEvents(int generation) {
+        if(generation!=lanGeneration||closing)return;
+        for(int count=0;count<32;count++) {
+            Dictionary<string,object> evt;
+            lock(lanEventsLock) {
+                if(lanEvents.Count==0) { lanEventsScheduled=false;return; }
+                evt=lanEvents.Dequeue();
+            }
+            try { if(ready&&web.CoreWebView2!=null&&!web.CoreWebView2.IsSuspended)web.CoreWebView2.PostWebMessageAsJson(Program.Json.Serialize(evt)); }
+            catch(Exception error) { Log("lan event: "+error.Message); }
+        }
+        // Yield the UI thread even when a remote sender continuously produces packets.
+        if(!closing&&IsHandleCreated)BeginInvoke(new Action(delegate { DrainLanEvents(generation); }));
+    }
+    async Task HandleLan(Dictionary<string,object> message,int rawLength) {
+        object raw;string requestId=message.TryGetValue("requestId",out raw)?raw as string:null;
+        if(String.IsNullOrEmpty(requestId)||requestId.Length>128)return;
+        int generation=lanGeneration;var source=web.CoreWebView2;var service=lan;
+        object response;
+        try {
+            if(rawLength>400000)throw new ArgumentException("联机请求过大");
+            string action=message.TryGetValue("action",out raw)?raw as string:null;
+            if(String.IsNullOrEmpty(action)||action.Length>32)throw new ArgumentException("无效的联机操作");
+            Dictionary<string,object> payload=null;
+            if(message.TryGetValue("payload",out raw)) { payload=raw as Dictionary<string,object>;if(payload==null)throw new ArgumentException("无效的联机参数"); }
+            object result=await service.Handle(action,payload);
+            response=new {type="lan-response",requestId=requestId,ok=true,result=result};
+            // A disposed transport can be recreated when the user opens LAN again.
+            if(action=="dispose"&&generation==lanGeneration&&service==lan) { ResetLan();generation=lanGeneration; }
+        } catch(Exception error) { response=new {type="lan-response",requestId=requestId,ok=false,error=error.Message}; }
+        if(!closing&&source==web.CoreWebView2&&generation==lanGeneration)
+            source.PostWebMessageAsJson(Program.Json.Serialize(response));
+    }
 
     void Log(string message) {
         try {
@@ -220,7 +284,7 @@ internal sealed class GameWindow : Form {
 
     async Task RetryView() {
         if(initializing||waiting||closing||recoveryAttempts>=3)return;
-        recoveryAttempts++;retryButton.Enabled=false;waitButton.Visible=false;status.Text="正在重新载入 ORBBOUND…";
+        recoveryAttempts++;retryButton.Enabled=false;waitButton.Visible=false;status.Text="正在重新载入 ORBBOUND…";ResetLan();
         try {
             if(recreateRequired||web.CoreWebView2==null) {
                 Controls.Remove(web);web.Dispose();web=new WebView2();MountWebView();
@@ -269,6 +333,7 @@ internal sealed class GameWindow : Form {
                 if(IsBackground) {
                     bool saved=core.IsSuspended;
                     if(!saved) {
+                        core.PostWebMessageAsJson(Program.Json.Serialize(new {type="lan-event",@event="background"}));
                         var save=core.ExecuteScriptAsync("window.dispatchEvent(new Event('orbbound-host-background'))");
                         if(await Task.WhenAny(save,Task.Delay(1000))==save) { await save;saved=true; }
                         else Log("background-save acknowledgement timed out; suspension skipped");
@@ -282,6 +347,7 @@ internal sealed class GameWindow : Form {
                     }
                 } else {
                     core.Resume();currentWeb.Visible=true;
+                    core.PostWebMessageAsJson(Program.Json.Serialize(new {type="lan-event",@event="foreground"}));
                     await core.ExecuteScriptAsync("window.dispatchEvent(new Event('orbbound-host-foreground'))");
                     ScheduleDisplayInfo();
                 }
@@ -400,10 +466,11 @@ internal sealed class GameWindow : Form {
             File.WriteAllText(windowFile,Program.Json.Serialize(new {x=b.X,y=b.Y,width=b.Width,height=b.Height,maximized=(fullscreen?fullState:WindowState)==FormWindowState.Maximized?1:0}));
             if(ready&&!web.CoreWebView2.IsSuspended)await Task.WhenAny(web.CoreWebView2.ExecuteScriptAsync("window.dispatchEvent(new Event('orbbound-host-background'))"),Task.Delay(1000));
         } catch { }
-        web.Dispose();Close();
+        if(lan!=null)lan.Dispose();web.Dispose();Close();
     }
     protected override void Dispose(bool disposing) {
         if(disposing) {
+            Interlocked.Increment(ref lanGeneration);if(lan!=null)lan.Dispose();
             SystemEvents.SessionSwitch-=OnSessionSwitch;SystemEvents.PowerModeChanged-=OnPowerModeChanged;SystemEvents.DisplaySettingsChanged-=OnDisplaySettingsChanged;
             loadTimeout.Dispose();displayDelay.Dispose();
         }

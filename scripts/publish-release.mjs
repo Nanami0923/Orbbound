@@ -38,7 +38,7 @@ for(const file of files.filter(file=>!file.endsWith('.sha256')&&!file.endsWith('
 }
 const lookup=await fetch(`https://api.github.com/repos/${repository}/releases/tags/${tag}`,{headers});
 let release;
-if(lookup.status===404)release=await api('releases','POST',{tag_name:tag,target_commitish:sha,name:`Orbbound ${version} · 自适应高刷与体验更新（Android / Windows）`,body:readFileSync(`docs/releases/${version}-notes.md`,'utf8'),draft:true,prerelease:false});
+if(lookup.status===404)release=await api('releases','POST',{tag_name:tag,target_commitish:sha,name:`Orbbound ${version} · ${metadata.title ?? 'Android / Windows'}`,body:readFileSync(`docs/releases/${version}-notes.md`,'utf8'),draft:true,prerelease:false});
 else if(lookup.ok){release=await lookup.json();if(!release.draft)throw Error('Release is public; assets will not be replaced');}
 else throw Error(`Release lookup failed: ${lookup.status}`);
 for(const file of files){

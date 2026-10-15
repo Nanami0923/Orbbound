@@ -1,0 +1,18 @@
+{
+  "version": "4.3.0",
+  "title": "局域网双人竞分（Android / Windows）",
+  "artifacts": [
+    {
+      "platform": "Android",
+      "file": "Orbbound-4.3.0-Android.apk",
+      "bytes": 1340191,
+      "sha256": "7e440cbe8aab661ad0c365669c5a5ec1109c2d88bf53fa5a8c3f1f5620655438"
+    },
+    {
+      "platform": "Windows",
+      "file": "Orbbound-Windows-4.3.0-x64.zip",
+      "bytes": 685064,
+      "sha256": "0f6d712e9aa45f4755be87e7b5869d6e4b28778bf44ffc917df9bd986150bbe6"
+    }
+  ]
+}
