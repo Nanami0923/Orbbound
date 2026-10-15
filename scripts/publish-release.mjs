@@ -38,7 +38,7 @@ for(const file of files.filter(file=>!file.endsWith('.sha256')&&!file.endsWith('
 }
 const lookup=await fetch(`https://api.github.com/repos/${repository}/releases/tags/${tag}`,{headers});
 let release;
-if(lookup.status===404)release=await api('releases','POST',{tag_name:tag,target_commitish:sha,name:`Orbbound ${version} · ${metadata.title ?? 'Android / Windows'}`,body:readFileSync(`docs/releases/${version}-notes.md`,'utf8'),draft:true,prerelease:false});
+if(lookup.status===404)release=await api('releases','POST',{tag_name:tag,target_commitish:sha,name:`Orbbound ${version} · ${metadata.title ?? 'Android / Windows'}`,body:readFileSync(`docs/releases/${version}-notes.md`,'utf8'),draft:true,prerelease:metadata.prerelease===true});
 else if(lookup.ok){release=await lookup.json();if(!release.draft)throw Error('Release is public; assets will not be replaced');}
 else throw Error(`Release lookup failed: ${lookup.status}`);
 for(const file of files){
@@ -51,9 +51,9 @@ for(const file of files){
   if(asset.size!==bytes.length||asset.digest!==`sha256:${hash}`)throw Error(`Uploaded checksum mismatch: ${name}`);
   console.log(`Verified ${name} (${bytes.length} bytes)`);
 }
-await api(`releases/${release.id}`,'PATCH',{draft:false,make_latest:'true'});
+await api(`releases/${release.id}`,'PATCH',{draft:false,prerelease:metadata.prerelease===true,make_latest:metadata.prerelease===true?'false':'true'});
 const published=await api(`releases/tags/${tag}`);
-if(published.draft || published.assets.length!==files.length)throw Error('Published release validation failed');
-const result={url:published.html_url,tag:published.tag_name,commit:sha,assets:published.assets.map(asset=>({name:asset.name,size:asset.size,digest:asset.digest,url:asset.browser_download_url}))};
+if(published.draft || published.prerelease!==(metadata.prerelease===true) || published.assets.length!==files.length)throw Error('Published release validation failed');
+const result={url:published.html_url,tag:published.tag_name,commit:sha,prerelease:published.prerelease,assets:published.assets.map(asset=>({name:asset.name,size:asset.size,digest:asset.digest,url:asset.browser_download_url}))};
 writeFileSync(`.build/published-${version}.json`,JSON.stringify(result,null,2));
 console.log(JSON.stringify(result,null,2));

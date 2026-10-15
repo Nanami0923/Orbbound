@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -18,10 +19,16 @@ internal static class LanInteropHarness {
         readonly BlockingCollection<Dictionary<string,object>> queue=new BlockingCollection<Dictionary<string,object>>(128);
         internal void Add(Dictionary<string,object> evt) { if(!queue.TryAdd(evt))throw new Exception("Event overflow"); }
         internal Dictionary<string,object> Next(string kind) {
-            Dictionary<string,object> evt;
-            if(!queue.TryTake(out evt,10000))throw new Exception("Timed out waiting for "+kind);
-            if(!kind.Equals(evt["event"]))throw new Exception("Expected "+kind+", received "+evt["event"]);
-            return evt;
+            var timeout=Stopwatch.StartNew();
+            while(timeout.ElapsedMilliseconds<10000) {
+                Dictionary<string,object> evt;
+                if(!queue.TryTake(out evt,(int)(10000-timeout.ElapsedMilliseconds)))break;
+                // Discovery health notifications are independent of the TCP stream under test.
+                if("advertisement-status".Equals(evt["event"]))continue;
+                if(!kind.Equals(evt["event"]))throw new Exception("Expected "+kind+", received "+evt["event"]);
+                return evt;
+            }
+            throw new Exception("Timed out waiting for "+kind);
         }
     }
     static List<string> Messages() {
@@ -44,7 +51,7 @@ internal static class LanInteropHarness {
             using(var service=new LanService(events.Add)) {
                 if(args[0]=="host") {
                     var info=(Dictionary<string,object>)Call(service,"startHost",Map("name","互通测试","port",FreePort(),
-                        "metadata",Map("roomId","interop-test","protocolVersion",1,"rulesHash","interop-v1")));
+                        "metadata",Map("roomId","interop-test","protocolVersion",2,"rulesHash","interop-v2")));
                     Console.WriteLine("READY "+info["port"]);Console.Out.Flush();
                     string id=(string)events.Next("connected")["connectionId"];
                     foreach(string expected in messages) {

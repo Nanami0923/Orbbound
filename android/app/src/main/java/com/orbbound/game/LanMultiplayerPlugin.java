@@ -10,12 +10,17 @@ import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 @CapacitorPlugin(name = "LanMultiplayer")
@@ -35,14 +40,22 @@ public class LanMultiplayerPlugin extends Plugin {
     private synchronized LanService service() {
         if (service == null || service.isClosed()) {
             final int token = ++generation;
-            service = new LanService(getContext(), (event, connectionId, message, room, error) -> {
-                if (destroyed || token != generation) return;
-                JSObject data = new JSObject().put("type", "lan-event").put("event", event);
-                if (connectionId != null) data.put("connectionId", connectionId);
-                if (message != null) data.put("message", message);
-                if (room != null) data.put("room", room);
-                if (error != null) data.put("error", error);
-                queueEvent(data);
+            service = new LanService(getContext(), new LanService.Listener() {
+                @Override public void onEvent(String event, String connectionId, String message, JSONObject room, String error) {
+                    if (destroyed || token != generation) return;
+                    JSObject data = new JSObject().put("type", "lan-event").put("event", event);
+                    if (connectionId != null) data.put("connectionId", connectionId);
+                    if (message != null) data.put("message", message);
+                    if (room != null) data.put("room", room);
+                    if (error != null) data.put("error", error);
+                    queueEvent(data);
+                }
+                @Override public void onDiscoveryEvent(Map<String, Object> event) {
+                    if (destroyed || token != generation) return;
+                    JSObject data = new JSObject();
+                    for (Map.Entry<String, Object> field : event.entrySet()) data.put(field.getKey(), JSONObject.wrap(field.getValue()));
+                    queueEvent(data);
+                }
             });
         }
         return service;
@@ -68,16 +81,36 @@ public class LanMultiplayerPlugin extends Plugin {
         perform(call, () -> {
             String name = call.getString("name", "").trim();
             if (name.isEmpty() || name.codePointCount(0, name.length()) > 24 || containsControl(name)) throw new IOException("INVALID_NAME");
-            JSONObject metadata = call.getObject("metadata");
-            if (metadata == null || metadata.toString().length() > 1024
-                || metadata.optInt("protocolVersion", 0) != 1
-                || metadata.optString("roomId", "").isEmpty() || metadata.optString("roomId").length() > 80
-                || metadata.optString("rulesHash", "").isEmpty() || metadata.optString("rulesHash").length() > 128) throw new IOException("INVALID_METADATA");
+            JSONObject metadata = metadata(call);
             LanService.HostInfo result = service().startHost(name, metadata, call.getInt("port", LanTcpService.DEFAULT_PORT));
             main.post(() -> { hosting = true; updateAwake(); });
-            call.resolve(new JSObject().put("addresses", new JSArray().put(result.address)).put("port", result.port)
+            JSArray addresses = new JSArray();
+            for (String address : result.addresses) addresses.put(address);
+            call.resolve(new JSObject().put("addresses", addresses).put("port", result.port)
                 .put("discoveryAvailable", result.discoveryAvailable));
         });
+    }
+
+    @PluginMethod public void updateAdvertisement(PluginCall call) {
+        perform(call, () -> {
+            String name = call.getString("name");
+            if (name != null) {
+                name = name.trim();
+                if (name.isEmpty() || name.codePointCount(0, name.length()) > 24 || containsControl(name)) throw new IOException("INVALID_NAME");
+            }
+            service().updateAdvertisement(name, metadata(call));
+            call.resolve();
+        });
+    }
+
+    private static JSONObject metadata(PluginCall call) throws IOException {
+        JSONObject metadata = call.getObject("metadata");
+        if (metadata == null || metadata.toString().getBytes(StandardCharsets.UTF_8).length > 1024
+            || !(metadata.opt("protocolVersion") instanceof Number) || metadata.optInt("protocolVersion", 0) < 1
+            || metadata.optDouble("protocolVersion", 0) != metadata.optInt("protocolVersion", 0)
+            || metadata.optString("roomId", "").isEmpty() || metadata.optString("roomId").length() > 80
+            || metadata.optString("rulesHash", "").isEmpty() || metadata.optString("rulesHash").length() > 128) throw new IOException("INVALID_METADATA");
+        return metadata;
     }
 
     @PluginMethod public void stopHost(PluginCall call) {
@@ -111,7 +144,15 @@ public class LanMultiplayerPlugin extends Plugin {
     }
 
     @PluginMethod public void discover(PluginCall call) {
-        perform(call, () -> { service().discover(); call.resolve(); });
+        perform(call, () -> {
+            List<String> recent = new ArrayList<>();
+            JSONArray input = call.getArray("recentAddresses");
+            if (input != null) for (int index = 0; index < Math.min(input.length(), 8); index++) {
+                Object value = input.opt(index);
+                if (value instanceof String && ((String) value).length() <= 64) recent.add((String) value);
+            }
+            service().discover(call.getString("scanId"), recent); call.resolve();
+        });
     }
 
     @PluginMethod public void stopDiscovery(PluginCall call) {

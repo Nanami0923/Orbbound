@@ -1,0 +1,19 @@
+{
+  "version": "4.3.1",
+  "title": "局域网对战与检索优化（测试版）",
+  "prerelease": true,
+  "artifacts": [
+    {
+      "platform": "Android",
+      "file": "Orbbound-4.3.1-Android.apk",
+      "bytes": 1352479,
+      "sha256": "382b5be5d4c25dfb1acf4dc300457eb5d6f2700420c6cc8ae3b45da7889c256c"
+    },
+    {
+      "platform": "Windows",
+      "file": "Orbbound-Windows-4.3.1-x64.zip",
+      "bytes": 699366,
+      "sha256": "3afffc6375f45a248668cd6cd5005d216f328127b586db52216a7e306205d211"
+    }
+  ]
+}

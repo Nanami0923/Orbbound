@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { LanSession } from '../src/lan/session';
+import { LanSession, type RoomConfig } from '../src/lan/session';
 import type { HostInfo, LanEvent, LanTransport } from '../src/lan/transport';
 
 type WirePacket = { v: number; type: string; roomId: string; matchId?: string; data: Record<string, unknown> };
@@ -80,13 +80,13 @@ function pair(guestOffset = 0) {
   return { network, hostTransport, guestTransport, host, guest };
 }
 type Pair = ReturnType<typeof pair>;
-async function lobby(game = pair()): Promise<Pair> {
-  await game.host.host('房主', '测试房间', config);
+async function lobby(game = pair(), roomConfig: RoomConfig = config): Promise<Pair> {
+  await game.host.host('房主', '测试房间', roomConfig);
   await game.guest.join('客人', '127.0.0.1', 42171); await flush();
   expect(game.host.view.phase).toBe('lobby'); expect(game.guest.view.phase).toBe('lobby'); return game;
 }
-async function start(game = pair()): Promise<Pair> {
-  await lobby(game); game.host.ready(); game.guest.ready(); await flush(); game.host.start(); await flush();
+async function start(game = pair(), roomConfig: RoomConfig = config): Promise<Pair> {
+  await lobby(game, roomConfig); game.host.ready(); game.guest.ready(); await flush(); game.host.start(); await flush();
   expect(game.host.view.phase).toBe('countdown'); expect(game.guest.view.phase).toBe('countdown');
   await vi.advanceTimersByTimeAsync(3050);
   expect(game.host.view.phase).toBe('playing'); expect(game.guest.view.phase).toBe('playing'); return game;
@@ -102,8 +102,14 @@ async function rematch(game: Pair): Promise<void> {
 }
 
 describe('LAN two-session integration over an asynchronous serialized transport', () => {
-  beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(100000); });
-  afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); });
+  beforeEach(() => {
+    const storage = new Map<string, string>();
+    const localStorage = { getItem: (key: string) => storage.get(key) ?? null, setItem: (key: string, value: string) => storage.set(key, value), removeItem: (key: string) => storage.delete(key) };
+    vi.stubGlobal('window', { dispatchEvent: () => true, localStorage });
+    vi.stubGlobal('localStorage', localStorage);
+    vi.useFakeTimers(); vi.setSystemTime(100000);
+  });
+  afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 
   it('requires both ready and loaded, then starts equal boards despite different local clock origins', async () => {
     const game = await lobby(pair(80000));
@@ -378,5 +384,57 @@ describe('LAN two-session integration over an asynchronous serialized transport'
     expect(game.host.view.phase).toBe('reconnecting');
     expect(game.host.view.snapshot!.elapsedMs).toBe(elapsed);
     expect(game.host.view.snapshot!.players.host.boardRevision).toBe(revisions);
+  });
+
+  it('batches both battle inputs at one authoritative tick and delivers their committed presentation once', async () => {
+    const game = await start(pair(), { ...config, mode: 'battle' });
+    game.guest.shoot(0); game.host.shoot(0); await flush();
+    expect(game.host.view.pendingShot).toBe(true); expect(game.guest.view.pendingShot).toBe(true);
+    expect(game.host.view.snapshot!.players.host.totalShots).toBe(0);
+    expect(game.host.view.snapshot!.players.guest.totalShots).toBe(0);
+    const shot = game.network.last('SHOT', game.guestTransport); game.network.replay(shot); await flush();
+    await vi.advanceTimersByTimeAsync(50);
+    expect(game.host.view.pendingShot).toBe(false); expect(game.guest.view.pendingShot).toBe(false);
+    expect(game.host.view.snapshot!.players.host.totalShots).toBe(1);
+    expect(game.host.view.snapshot!.players.guest.totalShots).toBe(1);
+    const events = game.host.view.presentationEvents.filter(event => event.type === 'shot-resolved');
+    expect(events).toHaveLength(2); expect(events[0].atMs).toBe(events[1].atMs);
+    expect(game.guest.view.presentationEvents).toEqual(game.host.view.presentationEvents);
+    expect(game.guest.view.snapshot).toEqual(game.host.view.snapshot);
+    const state = game.network.last('STATE', game.hostTransport), sequences = game.guest.view.presentationEvents.map(event => event.eventSeq);
+    game.network.replay(shot); game.network.replay(state); await flush(); await vi.advanceTimersByTimeAsync(50);
+    expect(game.host.view.snapshot!.players.guest.totalShots).toBe(1);
+    expect(game.guest.view.presentationEvents.map(event => event.eventSeq)).toEqual(sequences);
+  });
+
+  it('discards uncommitted battle inputs on background freeze rather than replaying them after recovery', async () => {
+    const game = await start(pair(), { ...config, mode: 'battle' });
+    game.host.shoot(0); game.guest.shoot(0); await flush();
+    game.guest.foregroundChanged(false); await flush(); await vi.advanceTimersByTimeAsync(1000);
+    expect(game.host.view.phase).toBe('reconnecting');
+    expect(game.host.view.snapshot!.players.host.totalShots).toBe(0); expect(game.host.view.snapshot!.players.guest.totalShots).toBe(0);
+    game.guest.foregroundChanged(true); game.host.resume(); game.guest.resume(); await flush(); await vi.advanceTimersByTimeAsync(3100);
+    expect(game.host.view.snapshot!.players.host.totalShots).toBe(0); expect(game.host.view.snapshot!.players.guest.totalShots).toBe(0);
+    expect(game.host.view.presentationEvents).toEqual([]); expect(game.guest.view.presentationEvents).toEqual([]);
+    game.host.shoot(0); game.guest.shoot(0); await flush(); await vi.advanceTimersByTimeAsync(50);
+    expect(game.host.view.snapshot!.players.host.totalShots).toBe(1); expect(game.host.view.snapshot!.players.guest.totalShots).toBe(1);
+    expect(game.guest.view.snapshot).toEqual(game.host.view.snapshot);
+  });
+
+  it('resumes battle at the snapshot event watermark without replaying old shots or presentation effects', async () => {
+    const game = await start(pair(), { ...config, mode: 'battle' });
+    game.guest.shoot(0); await flush(); await vi.advanceTimersByTimeAsync(50);
+    const watermark = game.guest.view.snapshot!.eventSeq, oldState = game.network.last('STATE', game.hostTransport).packet;
+    expect(watermark).toBeGreaterThan(0); expect(game.guest.view.presentationEvents.length).toBeGreaterThan(0);
+    game.network.disconnectAll(); await vi.advanceTimersByTimeAsync(1600); await flush();
+    expect(game.guest.view.presentationEvents).toEqual([]); expect(game.guest.view.snapshot!.eventSeq).toBe(watermark);
+    game.network.replay(game.network.last('WELCOME', game.hostTransport), oldState); await flush();
+    expect(game.guest.view.presentationEvents).toEqual([]);
+    game.host.resume(); game.guest.resume(); await flush(); await vi.advanceTimersByTimeAsync(4700);
+    game.guest.shoot(23000); await flush(); await vi.advanceTimersByTimeAsync(50);
+    expect(game.host.view.snapshot!.players.guest.totalShots).toBe(2);
+    expect(game.guest.view.presentationEvents.length).toBeGreaterThan(0);
+    expect(game.guest.view.presentationEvents.every(event => event.eventSeq > watermark)).toBe(true);
+    expect(game.guest.view.snapshot).toEqual(game.host.view.snapshot);
   });
 });

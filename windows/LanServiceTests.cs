@@ -29,6 +29,18 @@ internal static class LanServiceTests {
             throw new Exception("Timed out waiting for "+kind+" "+text);
         }
         internal int Count { get { lock(items)return items.Count; } }
+        internal Dictionary<string,object>[] Snapshot() { lock(items)return items.ToArray(); }
+        internal Dictionary<string,object> Status(string scanId,string status,int timeout=10000) {
+            var end=DateTime.UtcNow.AddMilliseconds(timeout);
+            while(DateTime.UtcNow<end) {
+                lock(items) {
+                    var found=items.FirstOrDefault(e=>Equals(e["event"],"discovery-status")&&Equals(e["scanId"],scanId)&&Equals(e["status"],status));
+                    if(found!=null)return found;
+                }
+                Thread.Sleep(10);
+            }
+            throw new Exception("Timed out waiting for discovery "+scanId+" "+status);
+        }
     }
     sealed class Pair : IDisposable {
         internal readonly TcpClient Writer,Reader;
@@ -140,11 +152,98 @@ internal static class LanServiceTests {
             Call(host,"startHost",HostPayload("重建房间"));
             Call(host,"dispose");bool closed=false;try { Call(host,"discover"); } catch(ObjectDisposedException) { closed=true; }
             Assert(closed,"Disposed service rejects new operations");
-            Assert(hostEvents.Count==0,"Dispose suppresses stale callbacks");
+            Assert(!hostEvents.Snapshot().Any(e=>!Equals(e["event"],"advertisement-status")),"Dispose suppresses stale callbacks");
+        }
+    }
+    static LanService.LanPath[] LoopbackPaths() {
+        return new[]{new LanService.LanPath("loopback-one",IPAddress.Parse("127.0.0.1"),IPAddress.Parse("255.0.0.0")),
+            new LanService.LanPath("loopback-two",IPAddress.Parse("127.0.0.2"),IPAddress.Parse("255.0.0.0"))};
+    }
+    static void DiscoveryTests() {
+        var local=new LanService.LanPath("ethernet",IPAddress.Parse("192.168.7.12"),IPAddress.Parse("255.255.255.0"));
+        var targets=LanService.Targets(local,new[]{"192.168.7.20","192.168.8.20","203.0.113.1","192.168.7.21","192.168.7.22","192.168.7.23","192.168.7.24","192.168.7.25","192.168.7.26"}).Select(ip=>ip.ToString()).ToArray();
+        Assert(targets.Contains("192.168.7.255")&&targets.Contains("255.255.255.255"),"Discovery sends actual subnet and limited broadcasts");
+        Assert(targets.Contains("192.168.7.20")&&!targets.Contains("192.168.8.20")&&!targets.Contains("203.0.113.1"),"Recent UDP probes remain in the bound subnet");
+        Assert(!targets.Contains("192.168.7.26"),"Recent addresses are bounded to eight");
+        Assert(new LanService.LanPath("point-to-point",IPAddress.Parse("192.168.7.12"),IPAddress.Parse("255.255.255.254")).Broadcast()==null,"A /31 network has no invented directed broadcast");
+        var none=new Events();using(var noNetwork=new LanService(none.Add,delegate { return new LanService.LanPath[0]; })) {
+            Call(noNetwork,"discover",Map("scanId","no-network"));var status=none.Status("no-network","failed");
+            Assert(Equals(status["error"],"NO_LOCAL_NETWORK")&&(int)status["paths"]==0,"No LAN paths fail immediately with a useful reason");
+        }
+        var hostEvents=new Events();var scannerEvents=new Events();
+        var sent=new List<Tuple<string,string,long>>();var clock=System.Diagnostics.Stopwatch.StartNew();
+        Action<UdpClient,byte[],IPEndPoint> failingBroadcast=delegate(UdpClient socket,byte[] bytes,IPEndPoint endpoint) {
+            string source=((IPEndPoint)socket.Client.LocalEndPoint).Address.ToString();
+            lock(sent)sent.Add(Tuple.Create(source,endpoint.Address.ToString(),clock.ElapsedMilliseconds));
+            if(endpoint.Address.Equals(IPAddress.Broadcast)||endpoint.Address.Equals(IPAddress.Parse("127.255.255.255")))throw new SocketException((int)SocketError.NetworkUnreachable);
+            socket.Send(bytes,bytes.Length,endpoint);
+        };
+        using(var host=new LanService(hostEvents.Add))
+        using(var scanner=new LanService(scannerEvents.Add,LoopbackPaths,failingBroadcast)) {
+            var hostPayload=HostPayload("更新前");((Dictionary<string,object>)hostPayload["metadata"])["protocolVersion"]=2;
+            var info=(Dictionary<string,object>)Call(host,"startHost",hostPayload);int port=(int)info["port"];
+            Call(scanner,"discover",Map("scanId","bounded-scan","recentAddresses",new[]{"127.0.0.1:61234","192.0.2.10"}));
+            var found=scannerEvents.Wait("discovered");
+            Assert(Equals(found["scanId"],"bounded-scan"),"Discovery result carries the UI scan generation");
+            Assert(Equals(((Dictionary<string,object>)found["room"])["port"],port),"Discovery uses advertised TCP port, never recent history's port");
+            Assert(Equals(((Dictionary<string,object>)((Dictionary<string,object>)found["room"])["metadata"])["protocolVersion"],2),"Native advertising passes protocol v2 through for shared-session compatibility checks");
+            var metadata=Map("roomId","room-test","protocolVersion",2,"rulesHash","updated-hash","platform","windows","mode","battle","players",2,"joinable",false);
+            Call(host,"updateAdvertisement",Map("name","更新后","metadata",metadata));
+            Dictionary<string,object> updated=null;var limit=DateTime.UtcNow.AddSeconds(4);
+            while(DateTime.UtcNow<limit&&updated==null) {
+                var evt=scannerEvents.Wait("discovered");var room=(Dictionary<string,object>)evt["room"];
+                if(Equals(room["name"],"更新后"))updated=room;
+            }
+            Assert(updated!=null&&Equals(updated["port"],port),"Advertisement updates without changing TCP port");
+            var advertised=(Dictionary<string,object>)updated["metadata"];
+            Assert(Equals(advertised["mode"],"battle")&&Equals(advertised["players"],2)&&Equals(advertised["joinable"],false),"Dynamic advertisement metadata is retained in replies");
+            using(var socket=new TcpClient()) { socket.Connect(IPAddress.Loopback,port);Assert(socket.Connected,"Metadata update leaves TCP listener available"); }
+            Call(scanner,"stopDiscovery",Map("scanId","an-older-scan"));
+            var completed=scannerEvents.Status("bounded-scan","completed");
+            Assert((int)completed["paths"]==2,"Each local IPv4 has an independently bound scan socket");
+            Assert((int)completed["sent"]==8&&(int)completed["errors"]==16,"Each target failure is isolated; four scheduled bursts still send on both paths");
+            Assert((int)completed["received"]>=2,"Receive counters report responses despite broadcast failures");
+            Assert(((string[])completed["diagnostics"]).Length<=200,"Diagnostics remain bounded");
+            Tuple<string,string,long>[] attempts;lock(sent)attempts=sent.ToArray();
+            Assert(attempts.Any(x=>x.Item1=="127.0.0.1")&&attempts.Any(x=>x.Item1=="127.0.0.2"),"UDP source addresses match each configured interface");
+            var bursts=attempts.Where(x=>x.Item1=="127.0.0.1"&&x.Item2=="127.0.0.1").Select(x=>x.Item3).ToArray();
+            Assert(bursts.Length==4&&bursts[1]-bursts[0]>=800&&bursts[2]-bursts[0]>=2300&&bursts[3]-bursts[0]>=4800,"Queries follow the 0/1/2.5/5 second schedule");
+            int afterComplete;lock(sent)afterComplete=sent.Count;Thread.Sleep(150);
+            lock(sent)Assert(sent.Count==afterComplete,"Completed scan sends no residual queries");
+            Call(scanner,"discover",Map("scanId","cancel-old","recentAddresses",new[]{"127.0.0.1"}));
+            Call(scanner,"discover",Map("scanId","cancel-new","recentAddresses",new[]{"127.0.0.1"}));
+            scannerEvents.Status("cancel-old","cancelled");scannerEvents.Status("cancel-new","scanning");
+            Call(scanner,"stopDiscovery");scannerEvents.Status("cancel-new","cancelled");Thread.Sleep(100);
+            var events=scannerEvents.Snapshot();
+            foreach(string id in new[]{"cancel-old","cancel-new"}) {
+                int end=Array.FindIndex(events,e=>Equals(e["event"],"discovery-status")&&Equals(e["scanId"],id)&&Equals(e["status"],"cancelled"));
+                Assert(!events.Skip(end+1).Any(e=>e.ContainsKey("scanId")&&Equals(e["scanId"],id)),"No stale callbacks follow cancellation: "+id);
+            }
+        }
+        var failureEvents=new Events();
+        using(var failed=new LanService(failureEvents.Add,delegate { return new[]{new LanService.LanPath("absent",IPAddress.Parse("192.0.2.8"),IPAddress.Parse("255.255.255.0"))}; })) {
+            Call(failed,"discover",Map("scanId","bind-failure"));
+            Assert(Equals(failureEvents.Status("bind-failure","failed")["error"],"DISCOVERY_BIND_FAILED"),"All interface binding failures report their stage");
+        }
+    }
+    static void AdvertisementRecoveryTests() {
+        var events=new Events();
+        using(var owner=new UdpClient(AddressFamily.InterNetwork))
+        using(var host=new LanService(events.Add)) {
+            owner.ExclusiveAddressUse=true;owner.Client.Bind(new IPEndPoint(IPAddress.Any,LanService.DiscoveryPort));
+            var info=(Dictionary<string,object>)Call(host,"startHost",HostPayload("等待端口"));
+            Assert(!(bool)info["discoveryAvailable"],"Occupied advertisement port preserves manual hosting");
+            owner.Close();Thread.Sleep(650);
+            Assert(events.Snapshot().Any(e=>Equals(e["event"],"advertisement-status")&&Equals(e["discoveryAvailable"],true)),"Host advertisement recovers after the occupied port is released");
+            using(var probe=new UdpClient(new IPEndPoint(IPAddress.Loopback,0))) {
+                probe.Client.ReceiveTimeout=2000;byte[] query=Encoding.UTF8.GetBytes("{\"magic\":\"ORBBOUND_LAN_1\",\"queryId\":\"probe\"}");
+                probe.Send(query,query.Length,new IPEndPoint(IPAddress.Loopback,LanService.DiscoveryPort));var source=new IPEndPoint(IPAddress.Any,0);
+                Assert(Encoding.UTF8.GetString(probe.Receive(ref source)).Contains("等待端口"),"Recovered advertiser answers a real UDP query");
+            }
         }
     }
     static int Main() {
-        try { FrameTests();DatagramResetTests();SocketTests();Console.WriteLine(checks+" native LAN checks passed (real TCP/UDP loopback)");return 0; }
+        try { FrameTests();DatagramResetTests();SocketTests();DiscoveryTests();AdvertisementRecoveryTests();Console.WriteLine(checks+" native LAN checks passed (real TCP/UDP loopback)");return 0; }
         catch(Exception error) { Console.Error.WriteLine(error);return 1; }
     }
 }

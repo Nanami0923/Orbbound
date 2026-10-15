@@ -245,8 +245,10 @@ function formatScore(score: number): string {
 function updateGameState(detail: SceneStateDetail): void {
   const previous=previousUiDetail; previousUiDetail=detail;
   const roundChanged=!previous || previous.mode!==detail.mode || previous.levelId!==detail.levelId || previous.difficultyId!==detail.difficultyId;
-  gameAudio.setPressure(detail.musicPressure);
-  gameAudio.setScene(!gameScreen?.hidden && modalRoot?.hidden && ['READY', 'FLYING', 'RESOLVING'].includes(detail.phase) ? 'play' : 'menu');
+  if (!lan.isActive()) {
+    gameAudio.setPressure(detail.musicPressure);
+    gameAudio.setScene(!gameScreen?.hidden && modalRoot?.hidden && ['READY', 'FLYING', 'RESOLVING'].includes(detail.phase) ? 'play' : 'menu');
+  }
   if (scoreValue && scoreValue.textContent !== formatScore(detail.score)) scoreValue.textContent = formatScore(detail.score);
   const level = detail.mode === 'campaign' ? getLevel(detail.levelId!) : null;
   const timed = detail.mode === 'timed';

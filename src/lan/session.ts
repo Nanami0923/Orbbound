@@ -1,27 +1,33 @@
-import { advanceMatch, applyShot, createMatch, finishMatch, forfeitMatch } from './authority';
-import { isMatchSnapshot, LAN_CONTENT_HASH, LAN_PROTOCOL_VERSION, LAN_RULES_HASH, type MatchSnapshot } from './protocol';
-import type { DiscoveredRoom, HostInfo, LanEvent, LanTransport } from './transport';
+import { advanceWithEvents, applyShot, createMatch, finishMatch, forfeitMatch } from './authority';
+import { applyBattleBatch } from './battle';
+import { isPresentationEvent, type PresentationEvent } from './presentation';
+import { isMatchSnapshot, LAN_CONTENT_HASH, LAN_PROTOCOL_VERSION, LAN_RULES_HASH, type MatchSnapshot, type BattleBatchOutcome } from './protocol';
+import { lanPlatform, parseAddress, type DiscoveredRoom, type HostInfo, type LanEvent, type LanTransport, type DiscoveryStatus } from './transport';
+import { recentLanAddresses, rememberLanAddress } from '../storage/lan-history';
 
 export type SessionPhase = 'idle' | 'browsing' | 'joining' | 'lobby' | 'preparing' | 'countdown' | 'playing' | 'paused' | 'reconnecting' | 'finished' | 'closed';
-export interface RoomConfig { difficultyId: 'easy' | 'normal' | 'hard'; durationMs: 180000 | 300000 }
+export interface RoomConfig { mode?: 'score' | 'battle'; difficultyId: 'easy' | 'normal' | 'hard'; durationMs: 180000 | 300000 }
+export interface SessionRoom extends DiscoveredRoom { endpoints: Array<{ address: string; port: number }>; lastSeenAt: number; seenScanId: string }
+export interface DiscoveryView { scanId: string; status: DiscoveryStatus; paths: number; sent: number; received: number; errors: number; diagnostics: string[] }
 export interface RoomPlayer { id: string; name: string; ready: boolean; connected: boolean }
 export interface SessionView {
   phase: SessionPhase; isHost: boolean; selfId: string; roomId: string; roomName: string;
   config: RoomConfig; players: RoomPlayer[]; hostInfo?: HostInfo; snapshot?: MatchSnapshot;
   countdown: number; rtt: number; error: string; notice: string; pauseRequester?: string;
-  resumeReady: string[]; pendingShot: boolean; rooms: DiscoveredRoom[];
+  resumeReady: string[]; pendingShot: boolean; rooms: SessionRoom[]; discovery: DiscoveryView; presentationEvents: PresentationEvent[];
 }
 type Packet = { v: number; type: string; roomId: string; matchId?: string; data: Record<string, unknown> };
 const id = () => globalThis.crypto.randomUUID();
 const cleanName = (value: unknown, max = 16) => typeof value === 'string' ? Array.from(value.replace(/[\u0000-\u001f\u007f]/g, '').trim()).slice(0, max).join('') : '';
 export function validRoomConfig(value: unknown): value is RoomConfig {
   const c = value as RoomConfig | null;
-  return !!c && ['easy', 'normal', 'hard'].includes(c.difficultyId) && [180000, 300000].includes(c.durationMs);
+  return !!c && (c.mode === undefined || c.mode === 'score' || c.mode === 'battle') && ['easy', 'normal', 'hard'].includes(c.difficultyId) && [180000, 300000].includes(c.durationMs);
 }
 export class LanSession {
   readonly view: SessionView = { phase: 'idle', isHost: false, selfId: 'guest', roomId: '', roomName: '',
     config: { difficultyId: 'normal', durationMs: 180000 }, players: [], countdown: 0, rtt: 0,
-    error: '', notice: '', resumeReady: [], pendingShot: false, rooms: [] };
+    error: '', notice: '', resumeReady: [], pendingShot: false, rooms: [], presentationEvents: [],
+    discovery: { scanId: '', status: 'cancelled', paths: 0, sent: 0, received: 0, errors: 0, diagnostics: [] } };
   private listeners = new Set<() => void>();
   private unsubscribe: () => void;
   private timer: ReturnType<typeof setInterval>;
@@ -55,7 +61,6 @@ export class LanSession {
   private preparationDeadline = 0;
   private pauseDeadline = 0;
   private pauseUsed = new Set<string>();
-  private roomSeen = new Map<string, number>();
   private closed = false;
   private generation = 0;
   private commands = new Map<string, Record<string, unknown>>();
@@ -63,6 +68,10 @@ export class LanSession {
   private packetCount = 0;
   private seenMatches = new Set<string>();
   private awaitingWelcome = false;
+  private scanDeadline = 0;
+  private lastEventSeq = 0;
+  private queuedShots = new Map<string, Record<string, unknown>>();
+  private lastAdvertisement = '';
 
   constructor(readonly transport: LanTransport, private now = () => performance.now()) {
     this.unsubscribe = transport.subscribe(event => this.event(event));
@@ -73,7 +82,7 @@ export class LanSession {
   private fail(error: unknown): void { this.view.error = error instanceof Error ? error.message : String(error); this.changed(); }
   private send(type: string, data: Record<string, unknown> = {}, connectionId = this.peer): void {
     if (!connectionId || this.closed) return;
-    const message: Packet = { v: 1, type, roomId: this.view.roomId, matchId: this.view.snapshot?.matchId, data };
+    const message: Packet = { v: LAN_PROTOCOL_VERSION, type, roomId: this.view.roomId, matchId: this.view.snapshot?.matchId, data };
     void this.transport.request('send', { connectionId, message: JSON.stringify(message) }).catch(() => {
       if (this.peer === connectionId && !this.closed) this.disconnected(connectionId);
     });
@@ -84,27 +93,56 @@ export class LanSession {
       players: this.view.players, phase: this.view.phase, pauseRequester: this.view.pauseRequester ?? null,
       resumeReady: this.view.resumeReady, notice: this.view.notice };
   }
-  private publishRoom(): void { this.send('ROOM', this.roomState()); this.changed(); }
-  private publishSnapshot(): void {
+  private metadata() { return { roomId: this.view.roomId, protocolVersion: LAN_PROTOCOL_VERSION, rulesHash: LAN_RULES_HASH, contentHash: LAN_CONTENT_HASH,
+    mode: this.view.config.mode ?? 'score', platform: lanPlatform(), players: this.view.players.length, phase: this.view.phase }; }
+  private publishRoom(): void {
+    this.send('ROOM', this.roomState());
+    if (this.view.isHost && this.view.hostInfo) {
+      const metadata = this.metadata(), value = JSON.stringify(metadata);
+      if (value !== this.lastAdvertisement) { this.lastAdvertisement = value; void this.transport.request('updateAdvertisement', { name: this.view.roomName, metadata }).catch(() => {}); }
+    }
+    this.changed();
+  }
+  private acceptEvents(events: PresentationEvent[]): void {
+    const fresh = events.filter(event => event.eventSeq > this.lastEventSeq);
+    if (fresh.length) { this.lastEventSeq = fresh[fresh.length - 1].eventSeq; this.view.presentationEvents = [...this.view.presentationEvents, ...fresh].slice(-32); }
+  }
+  private eventBaseline(): void { this.lastEventSeq = this.view.snapshot?.eventSeq ?? 0; this.view.presentationEvents = []; }
+  private publishSnapshot(events: PresentationEvent[] = []): void {
     if (!this.view.snapshot) return;
-    this.send('STATE', { snapshot: this.view.snapshot, serverSeq: ++this.serverSeq, epoch: this.epoch });
+    this.acceptEvents(events);
+    this.send('STATE', { snapshot: this.view.snapshot, serverSeq: ++this.serverSeq, epoch: this.epoch, events });
     this.lastPublish = this.now(); this.changed();
   }
   private async reset(): Promise<void> {
-    this.generation++; this.peer = undefined; this.awaitingWelcome = false; this.candidates.clear(); this.commands.clear();
+    this.generation++; this.peer = undefined; this.awaitingWelcome = false; this.candidates.clear(); this.commands.clear(); this.queuedShots.clear();
+    this.scanDeadline = 0; this.view.discovery = { scanId: '', status: 'cancelled', paths: 0, sent: 0, received: 0, errors: 0, diagnostics: [] };
+    this.lastEventSeq = 0; this.view.presentationEvents = []; this.lastAdvertisement = '';
     this.view.pendingShot = false; this.pendingSeq = undefined; this.view.snapshot = undefined;
     this.view.resumeReady = []; this.view.pauseRequester = undefined; this.reconnectToken = '';
     this.recoveryDeadline = 0; this.recoverySpent = 0; this.recoveryCount = 0;
     this.pauseUsed.clear(); this.epoch = 0; this.lastServerSeq = -1; this.receivedEpoch = 0;
     this.bestRtt = Infinity; this.offset = 0; this.sequence = 0; this.serverSeq = 0;
     this.target = undefined; this.retrying = false; this.retryAt = 0; this.view.hostInfo = undefined; this.view.error = ''; this.view.notice = '';
-    this.view.players = []; this.view.roomId = ''; this.view.rooms = []; this.roomSeen.clear();
+    this.view.players = []; this.view.roomId = ''; this.view.rooms = [];
     await this.transport.request('dispose').catch(() => {});
   }
   async browse(): Promise<void> {
     const operation = this.reset(), generation = this.generation; await operation; if (generation !== this.generation || this.closed) return;
     this.view.isHost = false; this.view.selfId = 'guest'; this.view.phase = 'browsing'; this.changed();
-    try { await this.transport.request('discover'); } catch (error) { if (generation === this.generation) this.fail(error); }
+    await this.refreshDiscovery();
+  }
+  async refreshDiscovery(extraAddresses: string[] = []): Promise<void> {
+    if (this.view.phase !== 'browsing' || this.closed || !this.foreground) return;
+    const scanId = id(); this.scanDeadline = this.now() + 8500; this.view.error = '';
+    this.view.discovery = { scanId, status: 'scanning', paths: 0, sent: 0, received: 0, errors: 0, diagnostics: [] }; this.changed();
+    const candidates = [...new Set([...extraAddresses, ...recentLanAddresses().map(r => r.address)])].filter(address => !!parseAddress(address)).slice(0, 8);
+    try { await this.transport.request('discover', { scanId, recentAddresses: candidates }); }
+    catch (error) { if (this.view.discovery.scanId === scanId && this.view.discovery.status === 'scanning' && this.view.phase === 'browsing') { this.view.discovery.status = 'failed'; this.scanDeadline = 0; this.fail(error); } }
+  }
+  async stopDiscovery(): Promise<void> {
+    this.scanDeadline = 0; this.view.discovery.status = 'cancelled'; this.changed();
+    await this.transport.request('stopDiscovery').catch(() => {});
   }
   async host(name: string, roomName: string, config: RoomConfig): Promise<void> {
     if (!validRoomConfig(config)) throw new Error('房间设置无效');
@@ -115,10 +153,10 @@ export class LanSession {
     this.view.phase = 'joining'; this.changed();
     try {
       const hostInfo = await this.transport.request<HostInfo>('startHost', { name: this.view.roomName,
-        metadata: { roomId: this.view.roomId, protocolVersion: LAN_PROTOCOL_VERSION, rulesHash: LAN_RULES_HASH } });
+        metadata: this.metadata() });
       if (generation !== this.generation || this.closed) return;
       this.view.hostInfo = hostInfo;
-      this.view.phase = 'lobby'; this.changed();
+      this.view.phase = 'lobby'; this.publishRoom();
     } catch (error) { if (generation !== this.generation) return; this.view.phase = 'idle'; this.fail(error); throw error; }
   }
   async join(name: string, address: string, port: number): Promise<void> {
@@ -149,7 +187,7 @@ export class LanSession {
   }
   start(): void {
     if (!this.view.isHost || this.view.phase !== 'lobby' || this.view.players.length !== 2 || this.view.players.some(p => !p.ready || !p.connected) || !this.foreground || !this.peerForeground) return;
-    this.activeMs = 0; this.sequence = 0; this.commands.clear(); this.pauseUsed.clear(); this.recoveryCount = 0; this.recoverySpent = 0; this.epoch++;
+    this.activeMs = 0; this.sequence = 0; this.commands.clear(); this.queuedShots.clear(); this.lastEventSeq = 0; this.view.presentationEvents = []; this.pauseUsed.clear(); this.recoveryCount = 0; this.recoverySpent = 0; this.epoch++;
     this.view.snapshot = createMatch({ ...this.view.config, seed: crypto.getRandomValues(new Uint32Array(1))[0], matchId: id(), playerIds: ['host', 'guest'] }, 0);
     this.view.phase = 'preparing'; this.preparationDeadline = this.now() + 10000; this.view.notice = '等待双方棋盘就绪';
     this.send('PREPARE', { snapshot: this.view.snapshot, epoch: this.epoch }); this.publishRoom();
@@ -160,25 +198,33 @@ export class LanSession {
     const player = snapshot.players[this.view.selfId]; if (!player || player.sealed) return;
     const seq = ++this.sequence;
     const data = { seq, boardRevision: player.boardRevision, angleMilliDeg, epoch: this.view.isHost ? this.epoch : this.receivedEpoch };
-    if (this.view.isHost) this.acceptShot('host', data);
+    if (this.view.isHost) { if (snapshot.mode === 'battle') { this.pendingSeq = seq; this.view.pendingShot = true; } this.acceptShot('host', data); }
     else { this.pendingSeq = seq; this.view.pendingShot = true; this.send('SHOT', data); this.changed(); }
   }
   private acceptShot(playerId: string, data: Record<string, unknown>): void {
     if (this.view.phase !== 'playing' || !this.view.snapshot || data.epoch !== this.epoch) return;
     const now = this.now(), delta = Math.max(0, now - this.lastTick);
     if (delta > 1500 || !this.foreground || !this.peerForeground) { this.freeze('等待双方返回对局', true); return; }
-    this.activeMs += delta; this.lastTick = now;
     const key = `${playerId}:${String(data.seq)}`;
     const cached = this.commands.get(key);
     if (cached) { if (playerId === 'guest') this.send('COMMAND', cached); return; }
+    if (this.view.snapshot.mode === 'battle') {
+      if (!this.queuedShots.has(playerId)) this.queuedShots.set(playerId, { ...data, playerId });
+      else if (this.queuedShots.get(playerId)!.seq !== data.seq) this.completeCommand(playerId, { seq: data.seq, accepted: false, reason: 'COOLDOWN', epoch: this.epoch });
+      return;
+    }
+    this.activeMs += delta; this.lastTick = now;
     const response = applyShot(this.view.snapshot, { playerId, seq: data.seq as number,
       boardRevision: data.boardRevision as number, angleMilliDeg: data.angleMilliDeg as number }, this.activeMs);
     this.view.snapshot = response.snapshot;
     const result = { seq: data.seq, accepted: response.accepted, reason: response.reason ?? '', epoch: this.epoch };
-    this.commands.set(key, result); if (this.commands.size > 512) this.commands.delete(this.commands.keys().next().value!);
+    this.completeCommand(playerId, result);
+    this.publishSnapshot(response.presentationEvents); this.checkFinished();
+  }
+  private completeCommand(playerId: string, result: Record<string, unknown>): void {
+    this.commands.set(`${playerId}:${String(result.seq)}`, result); if (this.commands.size > 512) this.commands.delete(this.commands.keys().next().value!);
     if (playerId === 'guest') this.send('COMMAND', result);
-    else if (!response.accepted) this.view.notice = rejectionMessage(response.reason);
-    this.publishSnapshot(); this.checkFinished();
+    else { this.view.pendingShot = false; this.pendingSeq = undefined; if (result.accepted !== true) this.view.notice = rejectionMessage(result.reason); }
   }
   requestPause(): void {
     if (this.view.phase !== 'playing' || this.view.pauseRequester) return;
@@ -212,6 +258,7 @@ export class LanSession {
     if (this.recoveryDeadline) this.recoverySpent += Math.max(0, this.now() - this.recoveryBegan);
     this.recoveryDeadline = 0; this.pauseDeadline = 0; this.view.resumeReady = [];
     this.view.pendingShot = false; this.pendingSeq = undefined; this.view.phase = 'countdown';
+    this.queuedShots.clear(); this.eventBaseline();
     this.startAt = this.now() + 3000; this.view.countdown = 3; this.view.notice = ''; this.epoch++;
     this.send('START', { startAt: this.startAt, snapshot: this.view.snapshot, epoch: this.epoch }); this.publishRoom();
   }
@@ -224,12 +271,14 @@ export class LanSession {
     }
     this.view.phase = recovery ? 'reconnecting' : 'paused'; this.view.notice = reason;
     this.view.resumeReady = []; this.view.pauseRequester = undefined; this.view.pendingShot = false; this.pendingSeq = undefined;
+    this.queuedShots.clear();
     if (!recovery) this.pauseDeadline = this.now() + 30000;
     if (this.view.isHost) { this.send('FREEZE', { snapshot: this.view.snapshot, recovery, reason, epoch: this.epoch }); this.publishRoom(); }
     this.changed();
   }
   foregroundChanged(active: boolean): void {
     if (this.foreground === active) return; this.foreground = active;
+    if (this.view.phase === 'browsing') { if (active) void this.refreshDiscovery(); else void this.stopDiscovery(); }
     if (!active) {
       this.send('BACKGROUND');
       if (['playing', 'countdown', 'paused', 'preparing'].includes(this.view.phase)) this.freeze('玩家离开前台，等待恢复 · 最多 20 秒', true);
@@ -280,12 +329,35 @@ export class LanSession {
   private event(event: LanEvent): void {
     if (this.closed) return;
     if (event.event === 'background' || event.event === 'foreground') { this.foregroundChanged(event.event === 'foreground'); return; }
-    if (event.event === 'discovered' && this.view.phase === 'browsing' && event.room) {
+    if (event.event === 'advertisement-status' && this.view.isHost && this.view.hostInfo) {
+      this.view.hostInfo.discoveryAvailable = event.discoveryAvailable === true;
+      if (event.error) this.view.notice = `自动发现状态：${event.error}，仍可尝试地址加入`; this.changed(); return;
+    }
+    if (event.event === 'discovery-status' && this.view.phase === 'browsing' && event.scanId === this.view.discovery.scanId) {
+      if (this.view.discovery.status !== 'scanning') return;
+      if (['scanning', 'completed', 'cancelled', 'failed'].includes(event.status ?? '')) this.view.discovery.status = event.status!;
+      for (const field of ['paths', 'sent', 'received', 'errors'] as const) if (Number.isSafeInteger(event[field]) && event[field]! >= 0) this.view.discovery[field] = event[field]!;
+      if (Array.isArray(event.diagnostics)) this.view.discovery.diagnostics = event.diagnostics.filter(x => typeof x === 'string').slice(-200).map(x => x.slice(0, 300));
+      if (event.error && event.status === 'failed') this.view.error = event.error.slice(0, 300);
+      if (event.status !== 'scanning') this.scanDeadline = 0;
+      this.changed(); return;
+    }
+    if (event.event === 'discovered' && this.view.phase === 'browsing' && event.scanId === this.view.discovery.scanId && this.view.discovery.status === 'scanning' && event.room) {
       const room = event.room;
-      if (typeof room.name !== 'string' || typeof room.address !== 'string' || !Number.isInteger(room.port)
-        || !room.metadata || typeof room.metadata.roomId !== 'string') return;
-      const key = `${room.metadata.roomId}:${room.address}:${room.port}`; this.roomSeen.set(key, this.now());
-      this.view.rooms = [...this.view.rooms.filter(r => `${r.metadata.roomId}:${r.address}:${r.port}` !== key), room].slice(-30); this.changed(); return;
+      if (typeof room.name !== 'string' || !Number.isInteger(room.port) || !parseAddress(`${room.address}:${room.port}`)
+        || !room.metadata || typeof room.metadata.roomId !== 'string' || !/^[a-zA-Z0-9_-]{1,96}$/.test(room.metadata.roomId)) return;
+      room.metadata = { roomId: room.metadata.roomId, protocolVersion: Number(room.metadata.protocolVersion),
+        rulesHash: typeof room.metadata.rulesHash === 'string' ? room.metadata.rulesHash.slice(0, 64) : '',
+        contentHash: typeof room.metadata.contentHash === 'string' ? room.metadata.contentHash.slice(0, 64) : undefined,
+        mode: room.metadata.mode === 'battle' ? 'battle' : 'score', platform: cleanName(room.metadata.platform, 24) || undefined,
+        players: Number.isInteger(room.metadata.players) && room.metadata.players! >= 0 && room.metadata.players! <= 2 ? room.metadata.players : undefined,
+        phase: typeof room.metadata.phase === 'string' ? cleanName(room.metadata.phase, 24) : undefined };
+      const existing = this.view.rooms.find(r => r.metadata.roomId === room.metadata.roomId);
+      const endpoint = { address: room.address, port: room.port };
+      if (existing) { existing.name = cleanName(room.name, 24); existing.metadata = room.metadata; existing.lastSeenAt = this.now(); existing.seenScanId = event.scanId!;
+        if (!existing.endpoints.some(e => e.address === room.address && e.port === room.port)) existing.endpoints = [...existing.endpoints, endpoint].slice(-8);
+      } else this.view.rooms = [...this.view.rooms, { ...room, name: cleanName(room.name, 24), endpoints: [endpoint], lastSeenAt: this.now(), seenScanId: event.scanId! }].slice(-30);
+      this.changed(); return;
     }
     if (event.event === 'error') { this.fail(event.error ?? '网络服务异常'); return; }
     if (!event.connectionId) return;
@@ -308,7 +380,7 @@ export class LanSession {
     if (text.length > 65536) { this.disconnect(connectionId); return; }
     let packet: Packet;
     try { packet = JSON.parse(text); } catch { this.disconnect(connectionId); return; }
-    if (!packet || packet.v !== 1 || typeof packet.type !== 'string' || !packet.data || typeof packet.data !== 'object' || Array.isArray(packet.data)) { this.disconnect(connectionId); return; }
+    if (!packet || packet.v !== LAN_PROTOCOL_VERSION || typeof packet.type !== 'string' || !packet.data || typeof packet.data !== 'object' || Array.isArray(packet.data)) { this.disconnect(connectionId); return; }
     const data = packet.data;
     if (this.view.isHost && packet.type === 'HELLO') { this.hello(connectionId, data, packet.roomId); return; }
     if (connectionId !== this.peer) return;
@@ -332,7 +404,7 @@ export class LanSession {
   private hello(connectionId: string, data: Record<string, unknown>, roomId: string): void {
     const reject = (reason: string) => { this.send('REJECT', { reason }, connectionId); setTimeout(() => this.disconnect(connectionId), 150); };
     if (!['lobby', 'reconnecting', 'paused', 'finished'].includes(this.view.phase)) { reject('房间正在对局中'); return; }
-    if (data.protocolVersion !== 1 || data.rulesHash !== LAN_RULES_HASH || data.contentHash !== LAN_CONTENT_HASH) { reject('版本不兼容，请双方更新到相同联机版本'); return; }
+    if (data.protocolVersion !== LAN_PROTOCOL_VERSION || data.rulesHash !== LAN_RULES_HASH || data.contentHash !== LAN_CONTENT_HASH) { reject('版本不兼容，请双方更新到相同联机版本'); return; }
     if (roomId && roomId !== this.view.roomId) { reject('房间已失效，请重新查找'); return; }
     const resume = !!this.reconnectToken && data.token === this.reconnectToken;
     if ((this.peer && this.peer !== connectionId) || (this.view.phase !== 'lobby' && !resume)) { reject('房间已满，或恢复身份不匹配'); return; }
@@ -390,16 +462,19 @@ export class LanSession {
           this.sequence = Math.max(this.sequence, data.snapshot.players.guest.lastSeq);
           this.view.phase = data.snapshot.status === 'finished' ? 'finished' : 'reconnecting';
         } else { this.view.phase = 'lobby'; this.view.snapshot = undefined; }
+        this.eventBaseline();
+        if (this.target) rememberLanAddress(this.target.address, this.target.port, this.view.roomName);
         this.send('PING', { sent: this.now() }); this.changed(); break;
       }
       case 'ROOM': this.readRoom(data); this.changed(); break;
-      case 'LOBBY': this.readRoom(data); this.view.snapshot = undefined; this.view.phase = 'lobby'; this.recoveryDeadline = 0; this.view.pendingShot = false; this.changed(); break;
+      case 'LOBBY': this.readRoom(data); this.view.snapshot = undefined; this.eventBaseline(); this.view.phase = 'lobby'; this.recoveryDeadline = 0; this.view.pendingShot = false; this.changed(); break;
       case 'PREPARE':
         if (!isMatchSnapshot(data.snapshot)) { this.fail('初始棋盘校验失败，请重新加入'); return; }
         if (this.view.phase === 'preparing' && this.view.snapshot?.matchId === data.snapshot.matchId) { if (this.foreground) this.send('LOADED'); return; }
         if (this.view.phase !== 'lobby' || this.seenMatches.has(data.snapshot.matchId)) return;
         this.seenMatches.add(data.snapshot.matchId);
         this.view.snapshot = data.snapshot; this.receivedEpoch = data.epoch as number; this.sequence = 0; this.lastServerSeq = -1;
+        this.eventBaseline();
         this.view.phase = 'preparing'; this.activeMs = 0; this.preparationDeadline = this.now() + 10000;
         if (this.foreground) this.send('LOADED'); else this.send('BACKGROUND'); this.changed(); break;
       case 'START':
@@ -407,12 +482,16 @@ export class LanSession {
         if (!['preparing', 'paused', 'reconnecting', 'countdown'].includes(this.view.phase) || typeof data.epoch !== 'number' || data.epoch < this.receivedEpoch) return;
         if (!this.foreground) { this.send('BACKGROUND'); return; }
         this.view.snapshot = data.snapshot; this.receivedEpoch = data.epoch; this.activeMs = data.snapshot.elapsedMs; this.lastPublish = this.now();
+        this.eventBaseline();
         this.view.phase = 'countdown'; this.startAt = data.startAt - this.offset; this.recoveryDeadline = 0;
         this.view.pendingShot = false; this.pendingSeq = undefined; this.view.notice = ''; this.changed(); break;
       case 'STATE': {
         if (!isMatchSnapshot(data.snapshot) || data.snapshot.matchId !== this.view.snapshot?.matchId || data.epoch !== this.receivedEpoch
           || typeof data.serverSeq !== 'number' || data.serverSeq < this.lastServerSeq) return;
         this.lastServerSeq = data.serverSeq; this.view.snapshot = data.snapshot; this.activeMs = data.snapshot.elapsedMs; this.lastPublish = this.now();
+        if (Array.isArray(data.events) && data.events.length <= 32 && data.events.every(isPresentationEvent)
+          && data.events.every(event => event.eventSeq <= this.view.snapshot!.eventSeq)) this.acceptEvents(data.events);
+        else if (data.events !== undefined) { this.eventBaseline(); this.send('RESYNC'); }
         this.checkFinished(); this.changed(); break;
       }
       case 'COMMAND':
@@ -424,6 +503,7 @@ export class LanSession {
       case 'FREEZE':
         if (isMatchSnapshot(data.snapshot) && data.snapshot.matchId === this.view.snapshot?.matchId) {
           this.view.snapshot = data.snapshot; this.activeMs = data.snapshot.elapsedMs;
+          this.eventBaseline();
           this.freeze(typeof data.reason === 'string' ? data.reason.slice(0, 160) : '比赛已暂停', data.recovery === true);
         }
         break;
@@ -460,17 +540,25 @@ export class LanSession {
       if (delta > 1500 || !this.foreground) { this.freeze('游戏暂时挂起，等待双方恢复', true); return; }
       if (this.view.isHost) {
         const previous = this.view.snapshot;
-        this.activeMs += delta; this.view.snapshot = advanceMatch(previous, this.activeMs);
+        this.activeMs += delta;
+        const update = previous.mode === 'battle'
+          ? applyBattleBatch(previous, [...this.queuedShots.values()].map(data => ({ playerId: data.playerId as string, seq: data.seq as number, boardRevision: data.boardRevision as number, angleMilliDeg: data.angleMilliDeg as number })), this.activeMs)
+          : advanceWithEvents(previous, this.activeMs);
+        this.queuedShots.clear(); this.view.snapshot = update.snapshot;
+        if (previous.mode === 'battle') for (const outcome of (update as BattleBatchOutcome).outcomes) this.completeCommand(outcome.playerId, { ...outcome, epoch: this.epoch });
         const boardChanged = previous.playerIds.some(p => previous.players[p].boardRevision !== this.view.snapshot!.players[p].boardRevision);
-        if (boardChanged || now - this.lastPublish >= 1000 || this.view.snapshot.status === 'finished') this.publishSnapshot();
+        if (boardChanged || update.presentationEvents.length || now - this.lastPublish >= 1000 || update.snapshot.status === 'finished') this.publishSnapshot(update.presentationEvents);
         this.checkFinished();
       }
       this.changed();
     }
     if (this.view.phase === 'browsing') {
+      if (this.scanDeadline && now >= this.scanDeadline && this.view.discovery.status === 'scanning') {
+        this.scanDeadline = 0; this.view.discovery.status = 'completed'; void this.transport.request('stopDiscovery').catch(() => {});
+      }
       const before = this.view.rooms.length;
-      this.view.rooms = this.view.rooms.filter(r => now - (this.roomSeen.get(`${r.metadata.roomId}:${r.address}:${r.port}`) ?? 0) < 6000);
-      if (before !== this.view.rooms.length) this.changed();
+      this.view.rooms = this.view.rooms.filter(r => now - r.lastSeenAt < 30000);
+      if (before !== this.view.rooms.length || now % 1000 < 60) this.changed();
     }
   }
   displayElapsed(): number {
@@ -478,6 +566,7 @@ export class LanSession {
     const extra = !this.view.isHost && this.view.phase === 'playing' ? Math.min(1200, Math.max(0, this.now() - this.lastPublish)) : 0;
     return Math.min(this.view.snapshot.durationMs, this.view.snapshot.elapsedMs + extra);
   }
+  roomAgeMs(room: SessionRoom): number { return Math.max(0, this.now() - room.lastSeenAt); }
 }
 function rejectionMessage(reason: unknown): string {
   const messages: Record<string, string> = { STALE_STATE: '棋盘已下移，请重新瞄准', COOLDOWN: '正在完成上一发',

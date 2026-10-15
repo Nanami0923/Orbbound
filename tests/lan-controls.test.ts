@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const options = vi.hoisted(() => ({ touch: true, immersive: true, reducedMotion: false }));
 vi.mock('../src/game/input-mode', () => ({ usesButtonControls: () => options.touch }));
-vi.mock('../src/game/audio', () => ({ gameAudio: { unlock: vi.fn(), blip: vi.fn(), setScene: vi.fn() } }));
+vi.mock('../src/game/audio', async importOriginal => ({ ...await importOriginal<typeof import('../src/game/audio')>(), gameAudio: { unlock: vi.fn(), blip: vi.fn(), setScene: vi.fn(), setPressure: vi.fn() } }));
 vi.mock('../src/game/feedback', () => ({ haptic: vi.fn() }));
 vi.mock('../src/storage/storage', async importOriginal => {
   const original = await importOriginal<typeof import('../src/storage/storage')>();
@@ -59,6 +59,7 @@ function setup() {
   const dispose = bindLanBoard(root as unknown as HTMLElement, session as unknown as LanSession); disposals.push(dispose);
   return { root, board, fire, slider, fine, session, windowEvents, documentEvents, dispose,
     activeTime: (value: number) => { clock = value; },
+    wallTime: (value: number) => { renderClock = value; },
     notify: () => listeners.forEach(listener => listener()),
     frame: (value: number) => { renderClock = value; nextFrame?.(value); },
   };
@@ -68,6 +69,11 @@ beforeEach(() => { options.touch = true; options.immersive = true; options.reduc
 afterEach(() => { disposals.splice(0).forEach(dispose => dispose()); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe('LAN actual control event lifecycle', () => {
+  it('clamps prediction when a sampled RAF timestamp precedes the pointer event clock', () => {
+    const game = setup(); game.frame(900); game.wallTime(1000);
+    send(game.fire, 'pointerdown');
+    expect(() => game.frame(990)).not.toThrow();
+  });
   it('scales the backing canvas with DPR while retaining CSS-space aim coordinates', () => {
     options.touch = false;
     const { board, session } = setup();

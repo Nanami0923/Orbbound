@@ -1,10 +1,13 @@
 import { Capacitor, registerPlugin, type PluginListenerHandle } from '@capacitor/core';
 
-export interface DiscoveredRoom { name: string; address: string; port: number; metadata: { roomId: string; protocolVersion: number; rulesHash: string } }
+export interface RoomMetadata { roomId: string; protocolVersion: number; rulesHash: string; mode?: 'score' | 'battle'; platform?: string; players?: number; phase?: string; contentHash?: string }
+export interface DiscoveredRoom { name: string; address: string; port: number; metadata: RoomMetadata }
+export type DiscoveryStatus = 'scanning' | 'completed' | 'cancelled' | 'failed';
 export interface LanEvent {
   type: 'lan-event';
-  event: 'connected' | 'message' | 'disconnected' | 'discovered' | 'error' | 'background' | 'foreground';
+  event: 'connected' | 'message' | 'disconnected' | 'discovered' | 'discovery-status' | 'advertisement-status' | 'error' | 'background' | 'foreground';
   connectionId?: string; message?: string; room?: DiscoveredRoom; error?: string;
+  scanId?: string; status?: DiscoveryStatus; paths?: number; sent?: number; received?: number; errors?: number; diagnostics?: string[]; discoveryAvailable?: boolean;
 }
 export interface HostInfo { addresses: string[]; port: number; discoveryAvailable: boolean }
 export interface LanTransport {
@@ -23,7 +26,8 @@ interface NativeLan {
   addListener(name: 'lanEvent', listener: (event: LanEvent) => void): Promise<PluginListenerHandle>;
 }
 const plugin = registerPlugin<NativeLan>('LanMultiplayer');
-const webview = () => (window as unknown as { chrome?: { webview?: WebViewHost } }).chrome?.webview;
+const webview = () => typeof window === 'undefined' ? undefined : (window as unknown as { chrome?: { webview?: WebViewHost } }).chrome?.webview;
+export const lanPlatform = () => Capacitor.getPlatform() === 'android' ? 'Android' : webview() ? 'Windows' : '预览';
 
 export class NativeLanTransport implements LanTransport {
   readonly available = Capacitor.getPlatform() === 'android' || !!webview();

@@ -3,7 +3,9 @@ import { getOrbTheme } from '../content/theme';
 import { cellToPoint } from '../core/grid';
 import { traceShot } from '../core/physics';
 import type { GameState, ShotTrace } from '../core/types';
-import { gameAudio } from '../game/audio';
+import { gameAudio, boardMusicPressure } from '../game/audio';
+import { LanPresentation } from './lan-presentation';
+import { pointOnTrace } from '../lan/presentation';
 import { FrameBudget } from '../game/frame-rate';
 import { haptic } from '../game/feedback';
 import { usesButtonControls } from '../game/input-mode';
@@ -21,7 +23,7 @@ function orb(context: CanvasRenderingContext2D, color: number, x: number, y: num
   context.fillStyle = theme.ink; context.font = `bold ${radius}px sans-serif`; context.textAlign = 'center'; context.textBaseline = 'middle'; context.fillText(theme.symbol, x, y + 1);
   context.beginPath(); context.ellipse(x - radius * .3, y - radius * .42, radius * .3, radius * .14, -.4, 0, Math.PI * 2); context.fillStyle = '#ffffff55'; context.fill();
 }
-export function drawLanBoard(canvas: HTMLCanvasElement, state: GameState, angle?: number, aim?: ShotTrace): void {
+export function drawLanBoard(canvas: HTMLCanvasElement, state: GameState, angle?: number, aim?: ShotTrace, boardOffset = 0): void {
   const context = canvas.getContext('2d'); if (!context) return;
   context.setTransform(canvas.width / 640, 0, 0, canvas.height / 760, 0, 0);
   context.clearRect(0, 0, 640, 760); context.fillStyle = '#101a2d'; context.fillRect(0, 0, 640, 760);
@@ -29,10 +31,12 @@ export function drawLanBoard(canvas: HTMLCanvasElement, state: GameState, angle?
   context.strokeStyle = '#354563'; context.lineWidth = 2; context.strokeRect(40, 58, 560, 577);
   context.strokeStyle = '#ff777b77'; context.setLineDash([9, 10]); context.beginPath(); context.moveTo(40, 616); context.lineTo(600, 616); context.stroke(); context.setLineDash([]);
   const geometry = { ...BOARD_GEOMETRY, rowOffset: state.rowOffset ?? 0 };
+  context.save(); context.beginPath(); context.rect(40, 58, 560, 577); context.clip();
   for (let row = 0; row < state.board.length; row++) for (let col = 0; col < state.board[row].length; col++) {
     const color = state.board[row][col]; if (color === null) continue;
-    const point = cellToPoint({ row, col }, geometry); orb(context, color, point.x, point.y);
+    const point = cellToPoint({ row, col }, geometry); orb(context, color, point.x, point.y + boardOffset);
   }
+  context.restore();
   if (angle === undefined) return;
   if (aim?.points.length) {
     context.lineWidth = 2; context.strokeStyle = '#b0e7d78a'; context.setLineDash([6, 10]); context.beginPath();
@@ -58,6 +62,9 @@ export function bindLanBoard(root: HTMLElement, session: LanSession): () => void
   let pointer: number | null = null, queued: { angle: number; expiresAt: number } | undefined;
   let lastState: GameState | undefined, cachedState: GameState | undefined, cachedAngle = NaN, cachedTrace: ShotTrace | undefined;
   let animation: { state: GameState; trace: ShotTrace; start: number; duration: number; color: number; seqShots: number } | undefined;
+  const presentation = new LanPresentation(drawLanBoard, orb, kind => { gameAudio.blip(kind); if (kind !== 'danger') haptic('match', settings); });
+  presentation.reset(session.view.snapshot?.eventSeq ?? 0);
+  let terminalAt: number | undefined;
   const budget = new FrameBudget(); const heldKeys = new Set<number>();
   const releasePointer = () => { const previous = pointer; pointer = null; if (previous !== null && canvas.hasPointerCapture(previous)) canvas.releasePointerCapture(previous); };
   const resetInput = () => { direction = 0; held = 0; heldKeys.clear(); fine.value = '0'; queued = undefined; releasePointer(); directControl.reset(); fineControl.reset(); dirty = true; };
@@ -145,7 +152,11 @@ export function bindLanBoard(root: HTMLElement, session: LanSession): () => void
   let previousPhase = session.view.phase;
   let previousInputActive = active();
   const unsubscribe = session.subscribe(() => {
-    if (previousPhase !== session.view.phase) { resetInput(); animation = undefined; previousPhase = session.view.phase; }
+    if (previousPhase !== session.view.phase) {
+      resetInput(); animation = undefined;
+      if (session.view.phase === 'countdown' || session.view.phase === 'reconnecting') presentation.reset(session.view.snapshot?.eventSeq ?? 0);
+      previousPhase = session.view.phase;
+    }
     const player = state();
     if (player && player.state !== lastState) { dirty = true; lastState = player.state; }
     if (animation && !session.view.pendingShot && player?.totalShots === animation.seqShots && performance.now() > animation.start + 150) animation = undefined;
@@ -165,20 +176,29 @@ export function bindLanBoard(root: HTMLElement, session: LanSession): () => void
     fireButton.textContent = session.view.pendingShot ? '确认中' : state()?.sealed ? '已触底' : queued ? '已待发' : canFire() ? '发射 ↑' : '准备中';
     if (budget.next(at, settings.frameRate === 'auto' ? 120 : settings.frameRate) === null) return;
     const player = state(), snapshot = session.view.snapshot; if (!player || !snapshot) return;
+    const musicPlaying = session.view.phase === 'playing' && !player.sealed;
+    gameAudio.setScene(musicPlaying ? 'play' : 'menu');
+    gameAudio.setPressure(musicPlaying ? boardMusicPressure(player.state.board) : 0);
+    if (session.view.phase === 'finished' && terminalAt === undefined) terminalAt = at;
+    if (session.view.phase !== 'finished') terminalAt = undefined;
+    const logicalTime = snapshot.startedAtMs + session.displayElapsed() + (terminalAt === undefined ? 0 : Math.min(2000, at - terminalAt));
+    presentation.ingest(session.view.presentationEvents ?? [], snapshot.eventSeq ?? 0, logicalTime);
     const rival = snapshot.players[session.view.selfId === 'host' ? 'guest' : 'host'];
-    if (rival && rival.boardRevision !== opponentRevision) { drawLanBoard(other, rival.state); opponentRevision = rival.boardRevision; }
-    if (!dirty && !animation && at - lastPaint < 200) return;
+    if (rival && (rival.boardRevision !== opponentRevision || presentation.busy)) { presentation.draw(other, rival.playerId, rival.state, logicalTime, true, false); opponentRevision = rival.boardRevision; }
+    if (!dirty && !animation && !presentation.busy && at - lastPaint < 200) return;
     dirty = false; lastPaint = at;
     if (animation && at - animation.start >= animation.duration) animation = undefined;
     const visibleState = animation?.state ?? player.state;
-    drawLanBoard(canvas, visibleState, angle * Math.PI / 180, !animation && settings.aimAssist && session.view.phase === 'playing' ? getTrace() : undefined);
-    if (animation && !settings.reducedMotion) {
-      const progress = Math.min(1, (at - animation.start) / animation.duration) * (animation.trace.points.length - 1);
-      const index = Math.floor(progress), p = animation.trace.points[index], next = animation.trace.points[Math.min(index + 1, animation.trace.points.length - 1)];
-      orb(canvas.getContext('2d')!, animation.color, p.x + (next.x - p.x) * (progress - index), p.y + (next.y - p.y) * (progress - index));
+    const presenting = presentation.busy;
+    presentation.draw(canvas, player.playerId, presenting ? player.state : visibleState, logicalTime, settings.reducedMotion, true, angle * Math.PI / 180,
+      !animation && settings.aimAssist && session.view.phase === 'playing' ? getTrace() : undefined);
+    if (animation && !presenting && !settings.reducedMotion) {
+      // A pointer event can arrive after this RAF's timestamp was sampled.
+      const point = pointOnTrace(animation.trace, (at - animation.start) / animation.duration);
+      orb(canvas.getContext('2d')!, animation.color, point.x, point.y);
     }
     root.querySelector<HTMLOutputElement>('#lan-angle-value')!.value = `${angle.toFixed(1)}°`;
   };
   raf = requestAnimationFrame(frame);
-  return () => { resetInput(); directControl.dispose(); fineControl.dispose(); abort.abort(); cancelAnimationFrame(raf); observer.disconnect(); unsubscribe(); };
+  return () => { resetInput(); presentation.reset(); gameAudio.setPressure(0); gameAudio.setScene('menu'); directControl.dispose(); fineControl.dispose(); abort.abort(); cancelAnimationFrame(raf); observer.disconnect(); unsubscribe(); };
 }

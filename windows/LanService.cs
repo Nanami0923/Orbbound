@@ -24,12 +24,20 @@ internal sealed class LanService : IDisposable {
     readonly Action<Dictionary<string,object>> publish;
     readonly SemaphoreSlim actions=new SemaphoreSlim(1,1);
     TcpListener listener;
-    UdpClient advertiser, discovery;
-    System.Threading.Timer discoveryTimer;
-    int hostGeneration, discoveryGeneration;
+    UdpClient advertiser;
+    Scan discovery;
+    Advertisement advertisement;
+    CancellationTokenSource advertisingCancellation;
+    int hostGeneration, advertisementRetries;
+    readonly Func<LanPath[]> enumeratePaths;
+    readonly Action<UdpClient,byte[],IPEndPoint> sendDatagram;
     bool disposed;
 
-    internal LanService(Action<Dictionary<string,object>> publishEvent) { publish=publishEvent; }
+    internal LanService(Action<Dictionary<string,object>> publishEvent) : this(publishEvent,EnumeratePaths,null) { }
+    internal LanService(Action<Dictionary<string,object>> publishEvent,Func<LanPath[]> paths,Action<UdpClient,byte[],IPEndPoint> sender=null) {
+        publish=publishEvent;enumeratePaths=paths;
+        sendDatagram=sender??delegate(UdpClient udp,byte[] bytes,IPEndPoint endpoint) { udp.Send(bytes,bytes.Length,endpoint); };
+    }
     static Dictionary<string,object> Map(params object[] values) {
         var result=new Dictionary<string,object>();
         for(int i=0;i<values.Length;i+=2)result.Add((string)values[i],values[i+1]);
@@ -76,8 +84,9 @@ internal sealed class LanService : IDisposable {
                     lock(sync)peers.TryGetValue(id,out peer);
                     if(peer!=null)peer.Close(null);break;
                 }
-                case "discover":StartDiscovery();break;
-                case "stopDiscovery":StopDiscovery();break;
+                case "discover":StartDiscovery(payload);break;
+                case "stopDiscovery":StopDiscovery(payload);break;
+                case "updateAdvertisement":UpdateAdvertisement(payload);break;
                 default:throw new ArgumentException("未知的联机操作");
             }
             return Map();
@@ -86,11 +95,7 @@ internal sealed class LanService : IDisposable {
 
     object StartHost(Dictionary<string,object> payload) {
         string name=StringField(payload,"name",96);
-        object raw;var metadata=payload.TryGetValue("metadata",out raw)?raw as Dictionary<string,object>:null;
-        if(metadata==null)throw new ArgumentException("缺少房间信息");
-        string roomId=StringField(metadata,"roomId",128),rulesHash=StringField(metadata,"rulesHash",128);
-        object protocol;if(!metadata.TryGetValue("protocolVersion",out protocol)||!(protocol is int)||(int)protocol!=1)throw new ArgumentException("不兼容的发现协议");
-        var safeMetadata=Map("roomId",roomId,"protocolVersion",1,"rulesHash",rulesHash);
+        var safeMetadata=AdvertisementMetadata(payload);
         int port=PortField(payload,DefaultPort);
         StopHost();
         var server=new TcpListener(IPAddress.Any,port);
@@ -102,21 +107,12 @@ internal sealed class LanService : IDisposable {
         int generation;
         lock(sync) {
             if(disposed) { server.Stop();throw new ObjectDisposedException("LAN"); }
-            listener=server;generation=++hostGeneration;
+            listener=server;generation=++hostGeneration;advertisementRetries=0;advertisingCancellation=new CancellationTokenSource();
         }
         int actualPort=((IPEndPoint)server.LocalEndpoint).Port;
         Task.Run(delegate { AcceptLoop(server,generation); });
-        bool available=false;
-        try {
-            var udp=new UdpClient(AddressFamily.InterNetwork);
-            try { ConfigureDatagramSocket(udp.Client);udp.ExclusiveAddressUse=true;udp.Client.Bind(new IPEndPoint(IPAddress.Any,DiscoveryPort)); }
-            catch { udp.Close();throw; }
-            lock(sync) {
-                if(disposed||generation!=hostGeneration) { udp.Close();throw new ObjectDisposedException("LAN"); }
-                advertiser=udp;
-            }
-            Task.Run(delegate { AdvertiseLoop(udp,generation,name,actualPort,safeMetadata); });available=true;
-        } catch(SocketException) { /* Discovery can be occupied; the TCP address remains usable. */ }
+        lock(sync)advertisement=new Advertisement(name,actualPort,safeMetadata);
+        bool available=StartAdvertiser(generation);
         return Map("addresses",LocalAddresses(),"port",actualPort,"discoveryAvailable",available);
     }
     static string[] LocalAddresses() {
@@ -186,12 +182,14 @@ internal sealed class LanService : IDisposable {
         }
     }
     void StopHost() {
-        TcpListener server;UdpClient udp;Peer[] accepted;
+        TcpListener server;UdpClient udp;Peer[] accepted;CancellationTokenSource cancellation;
         lock(sync) {
             hostGeneration++;server=listener;listener=null;udp=advertiser;advertiser=null;
+            advertisement=null;cancellation=advertisingCancellation;advertisingCancellation=null;
             accepted=peers.Values.Where(p=>p.Accepted).ToArray();
         }
         if(server!=null)server.Stop();if(udp!=null)udp.Close();
+        if(cancellation!=null) { cancellation.Cancel();cancellation.Dispose(); }
         foreach(var peer in accepted)peer.Close(null);
     }
     static JavaScriptSerializer Serializer() { return new JavaScriptSerializer { MaxJsonLength=8192,RecursionLimit=8 }; }
@@ -204,86 +202,259 @@ internal sealed class LanService : IDisposable {
         if(bytes.Length==0||bytes.Length>4096)return null;
         try { return Serializer().Deserialize<Dictionary<string,object>>(Utf8.GetString(bytes)); } catch { return null; }
     }
-    void AdvertiseLoop(UdpClient udp,int generation,string name,int port,Dictionary<string,object> metadata) {
-        var throttle=Stopwatch.StartNew();int inWindow=0;
+    sealed class Advertisement {
+        internal readonly string Name;internal readonly int Port;internal readonly Dictionary<string,object> Metadata;
+        internal Advertisement(string name,int port,Dictionary<string,object> metadata) { Name=name;Port=port;Metadata=metadata; }
+    }
+    static Dictionary<string,object> AdvertisementMetadata(Dictionary<string,object> payload) {
+        object raw;var metadata=payload.TryGetValue("metadata",out raw)?raw as Dictionary<string,object>:null;
+        if(metadata==null)throw new ArgumentException("缺少房间信息");
+        StringField(metadata,"roomId",80);StringField(metadata,"rulesHash",128);
+        object protocol;if(!metadata.TryGetValue("protocolVersion",out protocol)||!(protocol is int)||(int)protocol<1||(int)protocol>65535)throw new ArgumentException("无效的发现协议版本");
+        string json=Serializer().Serialize(metadata);
+        if(Utf8.GetByteCount(json)>1024)throw new ArgumentException("房间信息过大");
+        return Serializer().Deserialize<Dictionary<string,object>>(json);
+    }
+    void UpdateAdvertisement(Dictionary<string,object> payload) {
+        var metadata=AdvertisementMetadata(payload);
+        lock(sync) {
+            if(advertisement==null||listener==null)throw new IOException("尚未创建房间");
+            if(!Equals(metadata["roomId"],advertisement.Metadata["roomId"]))throw new ArgumentException("不能更改房间身份");
+            string name=payload.ContainsKey("name")?StringField(payload,"name",96):advertisement.Name;
+            advertisement=new Advertisement(name,advertisement.Port,metadata);
+        }
+    }
+    bool HostCurrent(int generation) { return !disposed&&generation==hostGeneration&&listener!=null&&advertisement!=null; }
+    bool StartAdvertiser(int generation) {
+        UdpClient udp=null;
+        try {
+            udp=new UdpClient(AddressFamily.InterNetwork);ConfigureDatagramSocket(udp.Client);
+            udp.ExclusiveAddressUse=true;udp.Client.Bind(new IPEndPoint(IPAddress.Any,DiscoveryPort));
+            lock(sync) {
+                if(!HostCurrent(generation)) { udp.Close();return false; }
+                advertiser=udp;
+                Emit("advertisement-status","discoveryAvailable",true);
+            }
+            Observe(AdvertiseLoop(udp,generation));return true;
+        } catch(SocketException error) {
+            if(udp!=null)udp.Close();AdvertisementFailed(generation,error.SocketErrorCode.ToString());return false;
+        } catch(ObjectDisposedException) { if(udp!=null)udp.Close();return false; }
+    }
+    void AdvertisementFailed(int generation,string reason) {
+        int attempt;CancellationToken cancellation;
+        lock(sync) {
+            if(!HostCurrent(generation))return;
+            Emit("advertisement-status","discoveryAvailable",false,"error",reason);
+            if(advertisementRetries>=3)return;
+            attempt=advertisementRetries++;cancellation=advertisingCancellation.Token;
+        }
+        Observe(RetryAdvertisement(generation,attempt,cancellation));
+    }
+    async Task RetryAdvertisement(int generation,int attempt,CancellationToken cancellation) {
+        try { await Task.Delay(new[]{500,1000,2000}[attempt],cancellation).ConfigureAwait(false); }
+        catch(OperationCanceledException) { return; }
+        lock(sync) { if(!HostCurrent(generation)||advertiser!=null)return; }
+        StartAdvertiser(generation);
+    }
+    async Task AdvertiseLoop(UdpClient udp,int generation) {
+        var throttle=Stopwatch.StartNew();int inWindow=0;string failure=null;
         try {
             while(true) {
-                var endpoint=new IPEndPoint(IPAddress.Any,0);byte[] bytes=udp.Receive(ref endpoint);
-                lock(sync) { if(disposed||generation!=hostGeneration)return; }
+                var datagram=await udp.ReceiveAsync().ConfigureAwait(false);var endpoint=datagram.RemoteEndPoint;
+                lock(sync) { if(!HostCurrent(generation)||advertiser!=udp)return; }
                 if(throttle.ElapsedMilliseconds>=1000) { throttle.Restart();inWindow=0; }
                 if(++inWindow>30)continue;
-                var query=ParseDiscovery(bytes);object magic,queryId;
-                if(query==null||!query.TryGetValue("magic",out magic)||!(magic is string)||(string)magic!=Magic||!query.TryGetValue("queryId",out queryId)||!(queryId is string)||((string)queryId).Length>128)continue;
-                byte[] reply=Utf8.GetBytes(Serializer().Serialize(Map("magic",Magic,"queryId",queryId,"name",name,"port",port,"metadata",metadata)));
+                var query=ParseDiscovery(datagram.Buffer);object magic,queryId;
+                if(query==null||!query.TryGetValue("magic",out magic)||!Equals(magic,Magic)||!query.TryGetValue("queryId",out queryId)||!(queryId is string)||String.IsNullOrEmpty((string)queryId)||((string)queryId).Length>80)continue;
+                Advertisement current;lock(sync)current=advertisement;
+                if(current==null)return;
+                byte[] reply=Utf8.GetBytes(Serializer().Serialize(Map("magic",Magic,"queryId",queryId,"name",current.Name,"port",current.Port,"metadata",current.Metadata)));
                 udp.Send(reply,reply.Length,endpoint);
             }
-        } catch(SocketException) { }
+        } catch(SocketException error) { failure=error.SocketErrorCode.ToString(); }
         catch(ObjectDisposedException) { }
-    }
-    void StartDiscovery() {
-        StopDiscovery();
-        var udp=new UdpClient(AddressFamily.InterNetwork);
-        try { ConfigureDatagramSocket(udp.Client);udp.Client.Bind(new IPEndPoint(IPAddress.Any,0));udp.EnableBroadcast=true; }
-        catch { udp.Close();throw; }
-        string queryId=Guid.NewGuid().ToString("N");
-        byte[] request=Utf8.GetBytes(Serializer().Serialize(Map("magic",Magic,"queryId",queryId)));
-        int generation;
-        lock(sync) {
-            if(disposed) { udp.Close();throw new ObjectDisposedException("LAN"); }
-            discovery=udp;generation=++discoveryGeneration;
-            discoveryTimer=new System.Threading.Timer(delegate { SendDiscovery(udp,generation,request); },null,0,2000);
+        finally {
+            udp.Close();
+            lock(sync) { if(advertiser==udp)advertiser=null; }
+            if(failure!=null)AdvertisementFailed(generation,failure);
         }
-        Task.Run(delegate { DiscoveryLoop(udp,generation,queryId); });
     }
-    void SendDiscovery(UdpClient udp,int generation,byte[] request) {
-        lock(sync) { if(disposed||generation!=discoveryGeneration)return; }
-        try {
-            udp.Send(request,request.Length,new IPEndPoint(IPAddress.Broadcast,DiscoveryPort));
-            // Directed subnet broadcasts cover multi-interface PCs; loopback supports local QA.
-            var targets=new HashSet<string>();targets.Add("127.0.0.1");
-            foreach(var nic in NetworkInterface.GetAllNetworkInterfaces()) {
-                if(nic.OperationalStatus!=OperationalStatus.Up)continue;
+    internal sealed class LanPath {
+        internal readonly IPAddress Address,Mask;internal readonly string Name;
+        internal LanPath(string name,IPAddress address,IPAddress mask) { Name=name;Address=address;Mask=mask; }
+        internal bool SameSubnet(IPAddress target) {
+            if(target.AddressFamily!=AddressFamily.InterNetwork)return false;
+            byte[] local=Address.GetAddressBytes(),other=target.GetAddressBytes(),mask=Mask.GetAddressBytes();
+            for(int i=0;i<4;i++)if((local[i]&mask[i])!=(other[i]&mask[i]))return false;
+            return true;
+        }
+        internal IPAddress Broadcast() {
+            byte[] address=Address.GetAddressBytes(),mask=Mask.GetAddressBytes();int hostBits=0;
+            for(int i=0;i<4;i++) { for(int bit=0;bit<8;bit++)if((mask[i]&(1<<bit))==0)hostBits++;address[i]=(byte)(address[i]|(byte)~mask[i]); }
+            return hostBits>=2&&hostBits<32?new IPAddress(address):null;
+        }
+    }
+    static LanPath[] EnumeratePaths() {
+        var result=new List<LanPath>();var known=new HashSet<string>();
+        foreach(var nic in NetworkInterface.GetAllNetworkInterfaces()) {
+            try {
+                if(nic.OperationalStatus!=OperationalStatus.Up||nic.NetworkInterfaceType==NetworkInterfaceType.Loopback||nic.NetworkInterfaceType==NetworkInterfaceType.Tunnel||nic.NetworkInterfaceType==NetworkInterfaceType.Ppp)continue;
                 foreach(var entry in nic.GetIPProperties().UnicastAddresses) {
-                    if(entry.Address.AddressFamily!=AddressFamily.InterNetwork||entry.IPv4Mask==null)continue;
-                    byte[] ip=entry.Address.GetAddressBytes(),mask=entry.IPv4Mask.GetAddressBytes();
-                    for(int i=0;i<4;i++)ip[i]=(byte)(ip[i]|(byte)~mask[i]);
-                    targets.Add(new IPAddress(ip).ToString());
+                    if(entry.Address.AddressFamily!=AddressFamily.InterNetwork||IPAddress.IsLoopback(entry.Address)||entry.Address.Equals(IPAddress.Any)||entry.IPv4Mask==null||entry.IPv4Mask.Equals(IPAddress.Any)||!known.Add(entry.Address.ToString()))continue;
+                    result.Add(new LanPath(nic.Name,entry.Address,entry.IPv4Mask));if(result.Count==32)return result.ToArray();
                 }
-            }
-            foreach(string target in targets) {
-                try { udp.Send(request,request.Length,new IPEndPoint(IPAddress.Parse(target),DiscoveryPort)); } catch(SocketException) { }
-            }
-        } catch(SocketException) { }
-        catch(ObjectDisposedException) { }
-        catch(NetworkInformationException) { }
+            } catch(NetworkInformationException) { /* A removed interface must not hide other LAN paths. */ }
+        }
+        return result.ToArray();
     }
-    void DiscoveryLoop(UdpClient udp,int generation,string queryId) {
-        var announced=new Dictionary<string,long>();var timer=Stopwatch.StartNew();
+    sealed class ScanSocket {
+        internal readonly LanPath Path;internal readonly UdpClient Socket;internal bool Failed;
+        internal ScanSocket(LanPath path,UdpClient socket) { Path=path;Socket=socket; }
+    }
+    sealed class Scan {
+        internal readonly string Id,QueryId=Guid.NewGuid().ToString("N");
+        internal readonly CancellationTokenSource Cancellation=new CancellationTokenSource();
+        internal readonly Stopwatch Clock=Stopwatch.StartNew();
+        internal readonly List<ScanSocket> Sockets=new List<ScanSocket>();
+        internal readonly List<string> Diagnostics=new List<string>();
+        internal readonly Dictionary<string,long> Seen=new Dictionary<string,long>();
+        internal readonly string[] Recent;
+        internal int Sent,Received,Errors,ReceiveWindowCount;internal long LastStatus,ReceiveWindow;internal bool Finished;
+        internal Scan(string id,string[] recent) { Id=id;Recent=recent; }
+    }
+    static string[] RecentAddresses(Dictionary<string,object> payload) {
+        object value;if(!payload.TryGetValue("recentAddresses",out value))return new string[0];
+        var values=value as System.Collections.IEnumerable;
+        if(values==null||value is string)throw new ArgumentException("最近地址列表无效");
+        var addresses=new List<string>();int inspected=0;
+        foreach(object item in values) {
+            if(++inspected>8)break;
+            string text=item as string;if(text==null||text.Length>64)continue;
+            string host=text.Split(':')[0];IPAddress ip;
+            if(host.Split('.').Length!=4||!IPAddress.TryParse(host,out ip)||ip.AddressFamily!=AddressFamily.InterNetwork||ip.Equals(IPAddress.Any)||ip.Equals(IPAddress.Broadcast)||ip.GetAddressBytes()[0]>=224)continue;
+            if(!addresses.Contains(ip.ToString()))addresses.Add(ip.ToString());
+        }
+        return addresses.ToArray();
+    }
+    bool ScanCurrent(Scan scan) { return !disposed&&discovery==scan&&!scan.Finished; }
+    void ScanDiagnostic(Scan scan,string detail,bool error) {
+        if(error)scan.Errors++;
+        if(scan.Diagnostics.Count==200)scan.Diagnostics.RemoveAt(0);
+        scan.Diagnostics.Add(detail);
+    }
+    void ScanStatus(Scan scan,string status,string error=null) {
+        var evt=Map("type","lan-event","event","discovery-status","scanId",scan.Id,"status",status,"paths",scan.Sockets.Count,"sent",scan.Sent,"received",scan.Received,"errors",scan.Errors,"diagnostics",scan.Diagnostics.ToArray());
+        if(error!=null)evt["error"]=error;
+        try { publish(evt); } catch { }
+        scan.LastStatus=scan.Clock.ElapsedMilliseconds;
+    }
+    void StartDiscovery(Dictionary<string,object> payload) {
+        string scanId=payload.ContainsKey("scanId")?StringField(payload,"scanId",80):Guid.NewGuid().ToString("N");
+        var scan=new Scan(scanId,RecentAddresses(payload));StopDiscovery(null);
+        lock(sync) { if(disposed) { scan.Cancellation.Dispose();throw new ObjectDisposedException("LAN"); }discovery=scan; }
+        LanPath[] paths;
+        try { paths=enumeratePaths(); }
+        catch(NetworkInformationException error) { paths=new LanPath[0];lock(sync)ScanDiagnostic(scan,"interfaces:"+error.ErrorCode,true); }
+        foreach(var path in paths.Take(32)) {
+            UdpClient udp=null;
+            try {
+                udp=new UdpClient(AddressFamily.InterNetwork);ConfigureDatagramSocket(udp.Client);udp.EnableBroadcast=true;
+                udp.Client.SendTimeout=250;udp.Client.Bind(new IPEndPoint(path.Address,0));
+                lock(sync) {
+                    if(!ScanCurrent(scan)) { udp.Close();break; }
+                    scan.Sockets.Add(new ScanSocket(path,udp));ScanDiagnostic(scan,"bound:"+path.Name+":"+path.Address,false);
+                }
+            } catch(SocketException error) { if(udp!=null)udp.Close();lock(sync)ScanDiagnostic(scan,"bind:"+path.Address+":"+error.SocketErrorCode,true); }
+        }
+        lock(sync) { if(!ScanCurrent(scan)) { scan.Cancellation.Dispose();return; }ScanStatus(scan,"scanning"); }
+        if(scan.Sockets.Count==0) { FinishScan(scan,"failed",paths.Length==0?"NO_LOCAL_NETWORK":"DISCOVERY_BIND_FAILED");scan.Cancellation.Dispose();return; }
+        foreach(var path in scan.Sockets)Observe(DiscoveryLoop(scan,path));
+        Observe(Task.Run(delegate { return RunScan(scan); }));
+    }
+    async Task RunScan(Scan scan) {
+        try {
+            byte[] request=Utf8.GetBytes(Serializer().Serialize(Map("magic",Magic,"queryId",scan.QueryId)));
+            foreach(int due in new[]{0,1000,2500,5000}) {
+                int delay=due-(int)scan.Clock.ElapsedMilliseconds;
+                if(delay>0)await Task.Delay(delay,scan.Cancellation.Token).ConfigureAwait(false);
+                lock(sync) { if(!ScanCurrent(scan))return; }
+                foreach(var path in scan.Sockets)SendDiscovery(scan,path,request);
+                lock(sync) { if(ScanCurrent(scan))ScanStatus(scan,"scanning"); }
+            }
+            int remaining=8000-(int)scan.Clock.ElapsedMilliseconds;
+            if(remaining>0)await Task.Delay(remaining,scan.Cancellation.Token).ConfigureAwait(false);
+            FinishScan(scan,scan.Sent==0?"failed":"completed",scan.Sent==0?"DISCOVERY_SEND_FAILED":null);
+        } catch(OperationCanceledException) { }
+        finally { scan.Cancellation.Dispose(); }
+    }
+    internal static IPAddress[] Targets(LanPath path,string[] recent) {
+        var result=new List<IPAddress>();var broadcast=path.Broadcast();if(broadcast!=null)result.Add(broadcast);
+        if(!result.Contains(IPAddress.Broadcast))result.Add(IPAddress.Broadcast);
+        foreach(string address in recent.Take(8)) {
+            IPAddress target;if(!IPAddress.TryParse(address,out target)||!path.SameSubnet(target)||target.Equals(IPAddress.Any)||target.Equals(IPAddress.Broadcast)||target.GetAddressBytes()[0]>=224)continue;
+            if(!result.Contains(target))result.Add(target);
+        }
+        return result.ToArray();
+    }
+    void SendDiscovery(Scan scan,ScanSocket path,byte[] request) {
+        foreach(var target in Targets(path.Path,scan.Recent)) {
+            lock(sync) { if(!ScanCurrent(scan)||path.Failed||scan.Clock.ElapsedMilliseconds>=8000)return; }
+            try {
+                sendDatagram(path.Socket,request,new IPEndPoint(target,DiscoveryPort));
+                lock(sync) { if(!ScanCurrent(scan))return;scan.Sent++;ScanDiagnostic(scan,"sent:"+path.Path.Address+">"+target,false); }
+            } catch(SocketException error) { lock(sync) { if(ScanCurrent(scan))ScanDiagnostic(scan,"send:"+path.Path.Address+">"+target+":"+error.SocketErrorCode,true); } }
+            catch(ObjectDisposedException) { return; }
+        }
+    }
+    async Task DiscoveryLoop(Scan scan,ScanSocket path) {
         try {
             while(true) {
-                var endpoint=new IPEndPoint(IPAddress.Any,0);var packet=ParseDiscovery(udp.Receive(ref endpoint));
-                lock(sync) { if(disposed||generation!=discoveryGeneration)return; }
-                if(packet==null)continue;
-                object magic,id,rawName,rawPort,metadata;
-                if(!packet.TryGetValue("magic",out magic)||!Equals(magic,Magic)||!packet.TryGetValue("queryId",out id)||!Equals(id,queryId)||!packet.TryGetValue("name",out rawName)||!(rawName is string)||((string)rawName).Length>96||((string)rawName).Any(Char.IsControl)||!packet.TryGetValue("port",out rawPort)||!(rawPort is int)||(int)rawPort<1||(int)rawPort>65535||!packet.TryGetValue("metadata",out metadata)||!(metadata is Dictionary<string,object>))continue;
-                string key=endpoint.Address+":"+rawPort;long last;
-                if(announced.TryGetValue(key,out last)&&timer.ElapsedMilliseconds-last<1500)continue;
-                if(announced.Count>=128)announced.Clear();announced[key]=timer.ElapsedMilliseconds;
-                Emit("discovered","room",Map("name",rawName,"address",endpoint.Address.ToString(),"port",rawPort,"metadata",metadata));
+                var datagram=await path.Socket.ReceiveAsync().ConfigureAwait(false);
+                var endpoint=datagram.RemoteEndPoint;var packet=ParseDiscovery(datagram.Buffer);
+                lock(sync) {
+                    if(!ScanCurrent(scan))return;scan.Received++;
+                    long now=scan.Clock.ElapsedMilliseconds;
+                    if(now-scan.ReceiveWindow>=1000) { scan.ReceiveWindow=now;scan.ReceiveWindowCount=0; }
+                    if(++scan.ReceiveWindowCount>60)continue;
+                    object magic,id,rawName,rawPort,metadata;
+                    if(packet==null||!packet.TryGetValue("magic",out magic)||!Equals(magic,Magic)||!packet.TryGetValue("queryId",out id)||!Equals(id,scan.QueryId)||!packet.TryGetValue("name",out rawName)||!(rawName is string)||((string)rawName).Length>96||((string)rawName).Any(Char.IsControl)||!packet.TryGetValue("port",out rawPort)||!(rawPort is int)||(int)rawPort<1||(int)rawPort>65535||!packet.TryGetValue("metadata",out metadata)||!(metadata is Dictionary<string,object>)) {
+                        ScanDiagnostic(scan,"receive:invalid-reply",false);continue;
+                    }
+                    string key=endpoint.Address+":"+rawPort;long last;
+                    if(scan.Seen.TryGetValue(key,out last)&&now-last<500)continue;
+                    if(scan.Seen.Count>=64&&!scan.Seen.ContainsKey(key))continue;scan.Seen[key]=now;
+                    Emit("discovered","scanId",scan.Id,"room",Map("name",rawName,"address",endpoint.Address.ToString(),"port",rawPort,"metadata",metadata));
+                    if(now-scan.LastStatus>=250)ScanStatus(scan,"scanning");
+                }
             }
-        } catch(SocketException) { }
-        catch(ObjectDisposedException) { }
+        } catch(SocketException error) {
+            bool failed=false;
+            lock(sync) {
+                if(ScanCurrent(scan)) { path.Failed=true;ScanDiagnostic(scan,"receive:"+path.Path.Address+":"+error.SocketErrorCode,true);failed=scan.Sockets.All(item=>item.Failed); }
+            }
+            if(failed)FinishScan(scan,"failed","DISCOVERY_RECEIVE_FAILED");
+        } catch(ObjectDisposedException) { }
+        finally { path.Socket.Close(); }
     }
-    void StopDiscovery() {
-        UdpClient udp;System.Threading.Timer timer;
-        lock(sync) { discoveryGeneration++;udp=discovery;discovery=null;timer=discoveryTimer;discoveryTimer=null; }
-        if(timer!=null)timer.Dispose();if(udp!=null)udp.Close();
+    void FinishScan(Scan scan,string status,string error=null) {
+        lock(sync) {
+            if(discovery!=scan||scan.Finished)return;
+            scan.Finished=true;discovery=null;scan.Cancellation.Cancel();
+            foreach(var path in scan.Sockets)path.Socket.Close();
+            if(!disposed)ScanStatus(scan,status,error);
+        }
+    }
+    void StopDiscovery(Dictionary<string,object> payload) {
+        Scan scan;lock(sync)scan=discovery;
+        if(scan==null)return;
+        if(payload!=null&&payload.ContainsKey("scanId")&&!Equals(payload["scanId"],scan.Id))return;
+        FinishScan(scan,"cancelled");
     }
     public void Dispose() {
         Peer[] connected;TcpClient[] pending;
         lock(sync) { if(disposed)return;disposed=true;connected=peers.Values.ToArray();pending=connecting.ToArray(); }
         foreach(var client in pending)client.Close();
-        StopHost();StopDiscovery();foreach(var peer in connected)peer.Close(null);
+        StopHost();StopDiscovery(null);foreach(var peer in connected)peer.Close(null);
     }
 
     // Deadline applies to the entire partial frame, not separately to each byte.

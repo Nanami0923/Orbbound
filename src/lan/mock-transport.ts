@@ -9,6 +9,8 @@ export class MockLanTransport implements LanTransport {
   private links = new Map<string, string>();
   private room?: DiscoveredRoom;
   private scan?: ReturnType<typeof setInterval>;
+  private scanId = '';
+  private scanEnd?: ReturnType<typeof setTimeout>;
   private pending = new Map<string, { resolve: (value: unknown) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>();
   constructor() { this.channel.onmessage = event => this.receive(event.data); }
   private emit(event: Omit<LanEvent, 'type'>): void { for (const listener of this.listeners) listener({ type: 'lan-event', ...event }); }
@@ -23,9 +25,13 @@ export class MockLanTransport implements LanTransport {
         result = { addresses: ['127.0.0.1'], port, discoveryAvailable: true } satisfies HostInfo; break;
       }
       case 'stopHost': this.room = undefined; break;
+      case 'updateAdvertisement': if (this.room) { this.room.metadata = payload.metadata as DiscoveredRoom['metadata']; if (typeof payload.name === 'string') this.room.name = payload.name; } break;
       case 'discover':
-        clearInterval(this.scan); this.post({ kind: 'query' }); this.scan = setInterval(() => this.post({ kind: 'query' }), 1500); break;
-      case 'stopDiscovery': clearInterval(this.scan); this.scan = undefined; break;
+        clearInterval(this.scan); clearTimeout(this.scanEnd); this.scanId = String(payload.scanId ?? crypto.randomUUID());
+        this.emit({ event: 'discovery-status', scanId: this.scanId, status: 'scanning', paths: 1, sent: 1, received: 0, errors: 0 });
+        this.post({ kind: 'query', scanId: this.scanId }); this.scan = setInterval(() => this.post({ kind: 'query', scanId: this.scanId }), 1500);
+        this.scanEnd = setTimeout(() => { clearInterval(this.scan); this.scan = undefined; this.emit({ event: 'discovery-status', scanId: this.scanId, status: 'completed', paths: 1, sent: 5, errors: 0 }); }, 8000); break;
+      case 'stopDiscovery': clearInterval(this.scan); clearTimeout(this.scanEnd); this.scan = undefined; this.emit({ event: 'discovery-status', scanId: this.scanId, status: 'cancelled' }); break;
       case 'connect': {
         const connectionId = crypto.randomUUID();
         result = await new Promise((resolve, reject) => {
@@ -43,7 +49,7 @@ export class MockLanTransport implements LanTransport {
       case 'dispose':
         for (const connectionId of [...this.links.keys()]) this.drop(connectionId);
         for (const pending of this.pending.values()) { clearTimeout(pending.timer); pending.reject(new Error('模拟连接已取消')); }
-        this.pending.clear(); this.room = undefined; clearInterval(this.scan); this.scan = undefined; break;
+        this.pending.clear(); this.room = undefined; clearInterval(this.scan); clearTimeout(this.scanEnd); this.scan = undefined; break;
       default: throw new Error(`未知模拟操作：${action}`);
     }
     return result as T;
@@ -55,8 +61,8 @@ export class MockLanTransport implements LanTransport {
   private receive(data: Record<string, unknown>): void {
     if (data.from === this.identity || (data.target && data.target !== this.identity)) return;
     const connectionId = String(data.connectionId ?? '');
-    if (data.kind === 'query' && this.room) this.post({ kind: 'offer', target: data.from, room: this.room });
-    if (data.kind === 'offer' && this.scan) this.emit({ event: 'discovered', room: data.room as DiscoveredRoom });
+    if (data.kind === 'query' && this.room) this.post({ kind: 'offer', target: data.from, scanId: data.scanId, room: this.room });
+    if (data.kind === 'offer' && this.scan && data.scanId === this.scanId) this.emit({ event: 'discovered', scanId: this.scanId, room: data.room as DiscoveredRoom });
     if (data.kind === 'connect' && this.room?.port === data.port) {
       this.links.set(connectionId, String(data.from)); this.post({ kind: 'accepted', target: data.from, connectionId }); this.emit({ event: 'connected', connectionId });
     }
