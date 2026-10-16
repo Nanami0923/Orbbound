@@ -20,13 +20,13 @@ internal static class LanDeviceHarness {
         }
         throw new Exception("Timeout waiting for "+type);
     }
-    static string[] Payloads() { return new[]{"设备互通✓🎮",new string('a',65536),"{\"v\":2,\"mode\":\"battle\",\"eventSeq\":7}"}; }
+    static string[] Payloads() { return new[]{"设备互通✓🎮",new string('a',65536),"{\"v\":3,\"mode\":\"battle\",\"eventSeq\":7}"}; }
     static int Main(string[] args) {
         Console.OutputEncoding=new UTF8Encoding(false);
         try {
             using(var service=new LanService(evt=>Events.TryAdd(evt))) {
                 if(args.Length==0||args[0]=="host") {
-                    var info=Call(service,"startHost",Map("name","设备网络验证","port",42179,"metadata",Map("roomId","device-test-windows","protocolVersion",2,"rulesHash","device-check","mode","battle","platform","Windows","players",1,"phase","lobby")));
+                    var info=Call(service,"startHost",Map("name","设备网络验证","port",42179,"metadata",Map("roomId","device-test-windows","protocolVersion",3,"rulesHash","device-check","mode","battle","platform","Windows","players",1,"phase","lobby")));
                     Console.WriteLine("READY "+Json.Serialize(info));Console.Out.Flush();
                     string connection=(string)Next("connected",120000)["connectionId"];
                     while(true) {

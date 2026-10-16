@@ -15,8 +15,10 @@ function setup(mode: 'endless' | 'timed' = 'endless') {
   Object.assign(scene, { gameState: createRound('normal', mode), drawAim: vi.fn(), emitState: vi.fn(), launch: vi.fn() });
   const runtime = scene as unknown as {
     angle: number; phase: string; pointerActive: boolean;
+    launch: ReturnType<typeof vi.fn>;
     handleKeyDown(event: unknown): void; handleKeyUp(event: unknown): void;
     handlePointerMove(pointer: unknown): void;
+    handlePointerDown(pointer: unknown): void; handlePointerUp(pointer: unknown): void;
   };
   return { scene, runtime };
 }
@@ -56,4 +58,14 @@ it('does not consume gameplay shortcuts while a dialog is open', () => {
   runtime.handleKeyDown(key('KeyE'));
   scene.update(0, 260);
   expect(runtime.angle).toBe(0);
+});
+
+it('accepts right-button release once and cancels release outside the shared game surface', () => {
+  const { runtime } = setup();
+  runtime.phase = 'READY'; runtime.handlePointerDown({ button: 2, worldX: 320, worldY: 100 });
+  expect(runtime.launch).not.toHaveBeenCalled();
+  runtime.handlePointerUp({ worldX: -1, worldY: 100 }); expect(runtime.launch).not.toHaveBeenCalled();
+  runtime.handlePointerDown({ button: 2, worldX: 320, worldY: 100 });
+  runtime.handlePointerUp({ worldX: 320, worldY: 100 }); runtime.handlePointerUp({ worldX: 320, worldY: 100 });
+  expect(runtime.launch).toHaveBeenCalledOnce();
 });

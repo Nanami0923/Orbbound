@@ -1,6 +1,6 @@
 import { Capacitor, registerPlugin, type PluginListenerHandle } from '@capacitor/core';
 
-export interface RoomMetadata { roomId: string; protocolVersion: number; rulesHash: string; mode?: 'score' | 'battle'; platform?: string; players?: number; phase?: string; contentHash?: string }
+export interface RoomMetadata { roomId: string; protocolVersion: number; rulesHash: string; mode?: 'score' | 'battle'; platform?: string; players?: number; capacity?: number; phase?: string; contentHash?: string }
 export interface DiscoveredRoom { name: string; address: string; port: number; metadata: RoomMetadata }
 export type DiscoveryStatus = 'scanning' | 'completed' | 'cancelled' | 'failed';
 export interface LanEvent {

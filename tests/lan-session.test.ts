@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { LanSession, type RoomConfig } from '../src/lan/session';
+import { LanSession, LAN_WIRE_TARGET_BYTES, type RoomConfig } from '../src/lan/session';
 import type { HostInfo, LanEvent, LanTransport } from '../src/lan/transport';
 
 type WirePacket = { v: number; type: string; roomId: string; matchId?: string; data: Record<string, unknown> };
@@ -100,6 +100,26 @@ async function rematch(game: Pair): Promise<void> {
   await vi.advanceTimersByTimeAsync(3050);
   expect(game.host.view.phase).toBe('playing'); expect(game.guest.view.phase).toBe('playing');
 }
+async function group(count = 4, mode: 'score' | 'battle' = 'score', startNow = true) {
+  const game = await lobby(pair(), { ...config, mode });
+  const sessions = [game.host, game.guest], transports = [game.hostTransport, game.guestTransport];
+  for (let index = 2; index < count; index++) {
+    const transport = new MemoryTransport(game.network), session = new LanSession(transport, () => Date.now() + index * 17000);
+    transports.push(transport); sessions.push(session); await session.join(`选手${index}🙂`, '127.0.0.1', 42171); await flush();
+  }
+  if (startNow) {
+    for (const session of sessions) session.ready(); await flush(); game.host.start(); await flush();
+    expect(sessions.every(session => session.view.phase === 'countdown')).toBe(true);
+    await vi.advanceTimersByTimeAsync(3050); expect(sessions.every(session => session.view.phase === 'playing')).toBe(true);
+  }
+  return { ...game, sessions, transports };
+}
+async function unanimousPause(sessions: LanSession[], requester = 0, reason: 'pause' | 'settings' = 'pause') {
+  sessions[requester].requestPause(reason); await flush();
+  const requestId = sessions[0].view.pauseRequest!.requestId;
+  for (let index = 0; index < sessions.length; index++) if (index !== requester) sessions[index].decidePause(true, requestId);
+  await flush(); expect(sessions.every(session => session.view.phase === 'paused')).toBe(true); return requestId;
+}
 
 describe('LAN two-session integration over an asynchronous serialized transport', () => {
   beforeEach(() => {
@@ -139,8 +159,8 @@ describe('LAN two-session integration over an asynchronous serialized transport'
 
   it('resets readiness after a host changes settings and rejects a third player', async () => {
     const game = await lobby(); game.host.ready(); game.guest.ready(); await flush();
-    game.host.setConfig({ difficultyId: 'hard', durationMs: 300000 }); await flush();
-    expect(game.guest.view.config).toEqual({ difficultyId: 'hard', durationMs: 300000 });
+    game.host.setConfig({ difficultyId: 'hard', durationMs: 300000, capacity: 2 }); await flush();
+    expect(game.guest.view.config).toEqual({ difficultyId: 'hard', durationMs: 300000, capacity: 2 });
     expect(game.guest.view.players.every(player => !player.ready)).toBe(true);
     const stranger = new MemoryTransport(game.network); const third = new LanSession(stranger, () => Date.now());
     await third.join('第三人', '127.0.0.1', 42171); await flush();
@@ -168,7 +188,7 @@ describe('LAN two-session integration over an asynchronous serialized transport'
     expect(game.host.view.phase).toBe('playing'); expect(game.host.view.pauseRequester).toBe('guest');
     game.host.decidePause(true); await flush(); expect(game.host.view.phase).toBe('paused');
     const elapsed = game.host.view.snapshot!.elapsedMs;
-    await vi.advanceTimersByTimeAsync(30000);
+    await vi.advanceTimersByTimeAsync(60000);
     expect(game.host.view.phase).toBe('countdown'); expect(game.host.view.snapshot!.elapsedMs).toBe(elapsed);
     await vi.advanceTimersByTimeAsync(3050); game.guest.requestPause(); await flush();
     expect(game.host.view.pauseRequester).toBeUndefined(); expect(game.guest.view.notice).toContain('一次暂停');
@@ -192,11 +212,11 @@ describe('LAN two-session integration over an asynchronous serialized transport'
     expect(game.guest.view.snapshot).toEqual(game.host.view.snapshot);
   });
 
-  it('marks an unrecoverable connection as interrupted without guessing a winner', async () => {
+  it('forfeits a missing guest authoritatively while the disconnected guest keeps an unsynchronized interrupted record', async () => {
     const game = await start(); game.network.online = false; game.network.disconnectAll();
     await vi.advanceTimersByTimeAsync(20500);
-    expect(game.host.view.snapshot!.result?.reason).toBe('interrupted');
-    expect(game.host.view.snapshot!.result?.winnerId).toBeNull();
+    expect(game.host.view.snapshot!.result?.reason).toBe('forfeit');
+    expect(game.host.view.snapshot!.result?.winnerId).toBe('host');
     expect(game.guest.view.snapshot!.result?.winnerId).toBeNull();
     expect(game.host.view.phase).toBe('finished'); expect(game.guest.view.phase).toBe('finished');
   });
@@ -296,11 +316,11 @@ describe('LAN two-session integration over an asynchronous serialized transport'
     expect(game.guest.view.phase).toBe('lobby'); expect(game.guest.view.players).toHaveLength(2);
   });
 
-  it('preserves the host-confirmed forfeit result when the host explicitly leaves', async () => {
+  it('publishes an interrupted result without winners when the host closes the room', async () => {
     const game = await start(); const leaving = game.host.leave(); await vi.advanceTimersByTimeAsync(150); await leaving; await flush();
     expect(game.host.view.phase).toBe('idle'); expect(game.guest.view.phase).toBe('finished');
-    expect(game.guest.view.snapshot?.result?.reason).toBe('forfeit');
-    expect(game.guest.view.snapshot?.result?.winnerId).toBe('guest');
+    expect(game.guest.view.snapshot?.result?.reason).toBe('interrupted');
+    expect(game.guest.view.snapshot?.result?.winnerId).toBeNull();
   });
 
   it('awards a forfeit only for an explicit guest leave', async () => {
@@ -318,8 +338,8 @@ describe('LAN two-session integration over an asynchronous serialized transport'
       expect(game.host.view.phase).toBe('playing');
     }
     game.guest.foregroundChanged(false); await flush();
-    expect(game.host.view.phase).toBe('finished'); expect(game.host.view.snapshot?.result?.reason).toBe('interrupted');
-    expect(game.guest.view.phase).toBe('finished'); expect(game.guest.view.snapshot?.result?.winnerId).toBeNull();
+    expect(game.host.view.phase).toBe('finished'); expect(game.host.view.snapshot?.result?.reason).toBe('forfeit');
+    expect(game.guest.view.phase).toBe('finished'); expect(game.guest.view.snapshot?.result?.winnerId).toBe('host');
   });
 
   it('freezes the host on duplicate native background events and resumes once without charging sleep time', async () => {
@@ -436,5 +456,273 @@ describe('LAN two-session integration over an asynchronous serialized transport'
     expect(game.guest.view.presentationEvents.length).toBeGreaterThan(0);
     expect(game.guest.view.presentationEvents.every(event => event.eventSeq > watermark)).toBe(true);
     expect(game.guest.view.snapshot).toEqual(game.host.view.snapshot);
+  });
+
+  it.each(['score', 'battle'] as const)('starts four independent %s players with stable identities and synchronized boards', async mode => {
+    const game = await group(4, mode), ids = game.sessions.map(session => session.view.selfId);
+    expect(new Set(ids).size).toBe(4); expect(game.host.view.config.capacity).toBe(4);
+    expect(game.host.view.snapshot!.playerIds).toEqual(ids);
+    for (const session of game.sessions) session.shoot(0); await flush(); await vi.advanceTimersByTimeAsync(50);
+    for (const playerId of ids) expect(game.host.view.snapshot!.players[playerId].totalShots).toBe(1);
+    for (const session of game.sessions.slice(1)) {
+      expect(session.view.snapshot!.players).toEqual(game.host.view.snapshot!.players);
+      expect(Math.abs(session.view.snapshot!.elapsedMs - game.host.view.snapshot!.elapsedMs)).toBeLessThanOrEqual(50);
+    }
+    expect(game.network.messages.every(message => new TextEncoder().encode(message.message).length <= LAN_WIRE_TARGET_BYTES)).toBe(true);
+  });
+
+  it('starts three players without waiting for the fourth seat and rejects a fifth lobby member', async () => {
+    const game = await group(4, 'score', false);
+    const fifth = new LanSession(new MemoryTransport(game.network), () => Date.now());
+    await fifth.join('第五人', '127.0.0.1', 42171); await flush(); expect(fifth.view.error).toContain('已满');
+    const fourthId = game.sessions[3].view.selfId; game.host.kick(fourthId); await flush();
+    expect(game.host.view.players).toHaveLength(3);
+    for (const session of game.sessions.slice(0, 3)) session.ready(); await flush(); game.host.start(); await flush();
+    expect(game.sessions.slice(0, 3).every(session => session.view.phase === 'countdown')).toBe(true);
+  });
+
+  it('requires every joined player to load before starting a four-person room', async () => {
+    const game = await group(4, 'score', false); for (const session of game.sessions) session.ready(); await flush();
+    game.network.blockedTypes.add('LOADED'); game.host.start(); await flush();
+    const loaded = game.network.messages.filter(message => message.packet.type === 'LOADED'); expect(loaded).toHaveLength(3);
+    game.network.replay(loaded[0]); game.network.replay(loaded[1]); await flush(); expect(game.host.view.phase).toBe('preparing');
+    game.network.replay(loaded[2]); await flush(); expect(game.host.view.phase).toBe('countdown');
+  });
+
+  it.each([0, 1, 2, 3])('accepts a pause from seat %i only after every remaining vote', async requester => {
+    const game = await group(); game.sessions[requester].requestPause('settings');
+    expect(game.sessions[requester].view.notice).toContain('申请'); await flush();
+    const request = game.host.view.pauseRequest!; expect(request.participantIds).toHaveLength(4);
+    const voters = game.sessions.filter((_, index) => index !== requester);
+    voters[0].decidePause(true); voters[1].decidePause(true); await flush(); expect(game.host.view.phase).toBe('playing');
+    voters[2].decidePause(true); await flush();
+    expect(game.sessions.every(session => session.view.phase === 'paused')).toBe(true);
+    expect(game.sessions[requester].view.autoOpenSettings).toBe(true);
+    expect(game.sessions.filter((_, index) => index !== requester).every(session => !session.view.autoOpenSettings)).toBe(true);
+  });
+
+  it('keeps rejection and cancellation terminal and ignores late or duplicate votes', async () => {
+    const game = await group(); game.guest.requestPause(); await flush(); const requestId = game.host.view.pauseRequest!.requestId;
+    game.sessions[2].decidePause(false); await flush();
+    expect(game.sessions.every(session => session.view.pauseOutcome?.status === 'rejected')).toBe(true);
+    game.sessions[3].decidePause(true, requestId); game.host.decidePause(true, requestId); await flush();
+    expect(game.host.view.phase).toBe('playing'); expect(game.host.view.pauseRequest).toBeUndefined();
+    game.guest.requestPause(); await flush(); expect(game.guest.view.notice).toContain('15 秒');
+    await vi.advanceTimersByTimeAsync(15000); game.guest.requestPause(); await flush(); game.guest.cancelPause(); await flush();
+    expect(game.host.view.pauseOutcome?.status).toBe('cancelled'); expect(game.host.view.phase).toBe('playing');
+  });
+
+  it('expires unvoted requests, gives lost-ack feedback, and does not auto-open stale settings intentions', async () => {
+    const game = await group(); game.host.requestPause(); await flush();
+    await vi.advanceTimersByTimeAsync(10000); expect(game.host.view.pauseOutcome?.status).toBe('expired');
+    game.network.blockedTypes.add('ROOM'); game.network.blockedTypes.add('PAUSE_OUTCOME');
+    game.guest.requestPause('settings'); await vi.advanceTimersByTimeAsync(2100);
+    expect(game.guest.view.notice).toContain('尚未确认');
+    const request = game.host.view.pauseRequest!;
+    game.host.decidePause(true); game.sessions[2].decidePause(true, request.requestId); // Those clients never saw ROOM, so this vote does not count.
+    await vi.advanceTimersByTimeAsync(8000);
+    expect(game.guest.view.pauseOutcome?.status).toBe('failed'); expect(game.guest.view.autoOpenSettings).toBe(false);
+    expect(game.guest.view.pauseRequest).toBeUndefined();
+  });
+
+  it('keeps each client paused while its settings are open and requires a separate resume readiness step', async () => {
+    const game = await group(); await unanimousPause(game.sessions, 2, 'settings');
+    game.sessions[2].settingsChanged(true); await flush();
+    for (const session of game.sessions) session.resume(); await flush(); expect(game.host.view.phase).toBe('paused');
+    game.sessions[2].settingsChanged(false); await flush(); expect(game.host.view.phase).toBe('paused');
+    game.sessions[2].resume(); await flush(); expect(game.sessions.every(session => session.view.phase === 'countdown')).toBe(true);
+    expect(game.sessions.every(session => session.view.settingsOpen.length === 0)).toBe(true);
+    const elapsed = game.host.view.snapshot!.elapsedMs; await vi.advanceTimersByTimeAsync(3050);
+    expect(game.sessions.every(session => session.view.phase === 'playing')).toBe(true);
+    expect(game.host.view.snapshot!.elapsedMs).toBeLessThanOrEqual(elapsed + 100);
+  });
+
+  it('withdraws ready when settings reopen and closes spectator settings during normal resume', async () => {
+    const game = await group(); game.sessions[3].forfeit(); await flush(); await vi.advanceTimersByTimeAsync(50);
+    await unanimousPause(game.sessions.slice(0, 3)); game.sessions[3].settingsChanged(true); await flush();
+    game.guest.resume(); await flush(); game.guest.settingsChanged(true); await flush();
+    expect(game.host.view.resumeReady).not.toContain(game.guest.view.selfId);
+    game.guest.settingsChanged(false); for (const session of game.sessions.slice(0, 3)) session.resume(); await flush();
+    expect(game.host.view.phase).toBe('countdown'); expect(game.sessions[3].view.forceCloseSettings).toBe(true);
+    game.sessions[3].settingsChanged(false); await flush();
+  });
+
+  it('closes settings before a pause timeout and never starts behind a still-open settings panel', async () => {
+    const game = await group(); await unanimousPause(game.sessions, 1, 'settings'); game.guest.settingsChanged(true); await flush();
+    const elapsed = game.host.view.snapshot!.elapsedMs; await vi.advanceTimersByTimeAsync(60000);
+    expect(game.host.view.phase).toBe('paused'); expect(game.guest.view.forceCloseSettings).toBe(true);
+    expect(game.host.view.snapshot!.elapsedMs).toBe(elapsed);
+    game.guest.settingsChanged(false); await flush(); expect(game.host.view.phase).toBe('countdown');
+  });
+
+  it('bounds the shared pause budget at 120 seconds without granting another 60 seconds to later seats', async () => {
+    const game = await group(); await unanimousPause(game.sessions, 0); await vi.advanceTimersByTimeAsync(63050);
+    await unanimousPause(game.sessions, 1); await vi.advanceTimersByTimeAsync(63050);
+    game.sessions[2].requestPause(); await flush(); expect(game.sessions[2].view.notice).toContain('预算已用尽'); expect(game.host.view.phase).toBe('playing');
+  });
+
+  it('reconnects one of three guests to the same identity without replacing or exposing another token', async () => {
+    const game = await group(), playerId = game.sessions[2].view.selfId;
+    const hello = game.network.last('HELLO', game.transports[2]), oldToken = game.network.messages.find(message => message.packet.type === 'WELCOME' && message.packet.data.selfId === playerId)!.packet.data.token;
+    game.network.disconnect(hello.connectionId); await vi.advanceTimersByTimeAsync(1600); await flush();
+    expect(game.sessions[2].view.selfId).toBe(playerId); expect(game.host.view.players).toHaveLength(4);
+    expect(game.network.last('HELLO', game.transports[2]).packet.data.token).toBe(oldToken);
+    for (const session of game.sessions) session.resume(); await flush(); await vi.advanceTimersByTimeAsync(3050);
+    expect(game.sessions.every(session => session.view.phase === 'playing')).toBe(true);
+    expect(game.sessions.every(session => session.view.snapshot?.matchId === game.host.view.snapshot?.matchId)).toBe(true);
+    const welcomes = game.network.messages.filter(message => message.packet.type === 'WELCOME');
+    expect(new Set(welcomes.map(message => message.packet.data.token)).size).toBe(3);
+  });
+
+  it('keeps non-host eliminated spectators from freezing or voting in the ongoing match', async () => {
+    const game = await group(4, 'battle'); game.sessions[3].forfeit(); await flush(); await vi.advanceTimersByTimeAsync(50);
+    const spectatorId = game.sessions[3].view.selfId, player = game.host.view.snapshot!.players[spectatorId]; expect(player.sealed).toBe(true);
+    game.sessions[3].requestPause(); await flush(); expect(game.host.view.pauseRequest).toBeUndefined();
+    game.sessions[3].foregroundChanged(false); await flush(); expect(game.host.view.phase).toBe('playing');
+    game.network.disconnect(game.network.last('HELLO', game.transports[3]).connectionId); await flush();
+    expect(game.host.view.phase).toBe('playing'); expect(game.host.view.snapshot!.players[spectatorId]).toEqual(player);
+    await unanimousPause(game.sessions.slice(0, 3)); expect(game.host.view.phase).toBe('paused');
+  });
+
+  it('lets a forfeiting host continue serving the other three players', async () => {
+    const game = await group(4, 'battle'); game.host.forfeit(); await vi.advanceTimersByTimeAsync(50); await flush();
+    expect(game.host.view.phase).toBe('playing'); expect(game.host.view.snapshot!.players.host.forfeited).toBe(true);
+    game.sessions[2].shoot(0); await flush(); await vi.advanceTimersByTimeAsync(50);
+    expect(game.host.view.snapshot!.players[game.sessions[2].view.selfId].totalShots).toBe(1);
+    expect(game.sessions[1].view.snapshot).toEqual(game.host.view.snapshot);
+  });
+
+  it('keeps an active pause vote intact when a non-host spectator backgrounds and disconnects', async () => {
+    const game = await group(4, 'battle'); game.sessions[3].forfeit(); await flush(); await vi.advanceTimersByTimeAsync(50);
+    game.host.requestPause(); await flush(); const request = game.host.view.pauseRequest!;
+    expect(request.participantIds).toHaveLength(3);
+    game.guest.decidePause(true, request.requestId); await flush();
+    const votes = { ...game.host.view.pauseRequest!.votes };
+    game.sessions[3].foregroundChanged(false); await flush();
+    expect(game.host.view.pauseRequest?.requestId).toBe(request.requestId); expect(game.host.view.pauseRequest?.votes).toEqual(votes);
+    expect(game.host.view.pauseOutcome).toBeUndefined(); expect(game.host.view.phase).toBe('playing');
+    game.network.disconnect(game.network.last('HELLO', game.transports[3]).connectionId); await flush();
+    expect(game.host.view.pauseRequest?.requestId).toBe(request.requestId); expect(game.host.view.pauseRequest?.votes).toEqual(votes);
+    game.sessions[2].decidePause(true, request.requestId); await flush();
+    expect(game.sessions.slice(0, 3).every(session => session.view.phase === 'paused')).toBe(true);
+    expect(game.host.view.pauseOutcome?.status).toBe('approved');
+  });
+
+  it('commits simultaneous forfeits in one control batch without creating a transient winner', async () => {
+    const game = await group(3, 'battle'); for (const session of game.sessions) session.forfeit(); await flush();
+    await vi.advanceTimersByTimeAsync(50); expect(game.host.view.snapshot!.result?.winnerIds).toEqual([]);
+    expect(game.sessions.every(session => session.view.snapshot?.result?.winnerIds.length === 0)).toBe(true);
+  });
+
+  it('forfeits only a timed-out guest and lets remaining players continue', async () => {
+    const game = await group(), missing = game.sessions[3]; missing.foregroundChanged(false); await flush();
+    await vi.advanceTimersByTimeAsync(23500);
+    expect(game.host.view.snapshot!.players[missing.view.selfId].forfeited).toBe(true);
+    expect(game.host.view.phase).toBe('playing'); expect(game.sessions[1].view.phase).toBe('playing');
+    expect(game.host.view.snapshot!.status).toBe('playing');
+  });
+
+  it('serializes oversized UTF-8 control envelopes into bounded frames and reassembles atomically', async () => {
+    const game = await lobby(); game.host.view.roomName = '中文🙂'.repeat(18000); game.host.setConfig({ ...config, capacity: 4 }); await flush();
+    const chunks = game.network.messages.filter(message => message.packet.type === 'CHUNK'); expect(chunks.length).toBeGreaterThan(1);
+    expect(chunks.every(message => new TextEncoder().encode(message.message).length <= LAN_WIRE_TARGET_BYTES)).toBe(true);
+    expect(game.guest.view.roomName).toBe(Array.from(game.host.view.roomName).slice(0, 24).join(''));
+    expect(game.guest.view.phase).toBe('lobby');
+  });
+
+  it('preserves all four large-clear animations and fits every real wire message within 60 KiB', async () => {
+    const game = await group(4, 'battle'), snapshot = game.host.view.snapshot!;
+    for (const playerId of snapshot.playerIds) { const player = snapshot.players[playerId]; player.state = { ...player.state,
+      board: Array.from({ length: 19 }, (_, row) => Array(14).fill(row < 17 ? 0 : null)), currentColor: 0, nextColor: 0 }; }
+    // Publish through the real session resync path before issuing one shot per seat.
+    game.network.replay(game.network.last('HELLO', game.guestTransport), { ...game.network.last('HELLO', game.guestTransport).packet, type: 'RESYNC', matchId: snapshot.matchId, roomId: game.host.view.roomId, data: {} }); await flush();
+    for (const session of game.sessions) session.shoot(0); await flush(); await vi.advanceTimersByTimeAsync(50);
+    for (const session of game.sessions) expect(new Set(session.view.presentationEvents.filter(event => event.type === 'shot-resolved').map(event => event.playerId)).size).toBe(4);
+    expect(game.network.messages.every(message => new TextEncoder().encode(message.message).length <= LAN_WIRE_TARGET_BYTES)).toBe(true);
+    for (const session of game.sessions.slice(1)) expect(session.view.snapshot).toEqual(game.host.view.snapshot);
+  });
+
+  it('will not start a prepared room while any joined player is editing settings', async () => {
+    const game = await group(3, 'score', false); for (const session of game.sessions) session.ready(); await flush();
+    game.guest.settingsChanged(true); await flush(); game.host.start(); await flush();
+    expect(game.host.view.phase).toBe('lobby'); expect(game.host.view.notice).toContain('关闭');
+    game.guest.settingsChanged(false); await flush(); game.host.start(); await flush(); expect(game.host.view.phase).toBe('countdown');
+  });
+
+  it('does not reset the pause deadline when a participant reconnects from settings', async () => {
+    const game = await group(); await unanimousPause(game.sessions); await vi.advanceTimersByTimeAsync(45000);
+    game.guest.foregroundChanged(false); await flush(); await vi.advanceTimersByTimeAsync(5000);
+    game.guest.foregroundChanged(true); await flush();
+    expect(game.host.view.pauseRemainingMs).toBeLessThanOrEqual(10000);
+    await vi.advanceTimersByTimeAsync(10000); expect(game.host.view.phase).toBe('countdown');
+  });
+
+  it('keeps gameplay frozen if settings-close acknowledgements are missing and forfeits only that guest', async () => {
+    const game = await group(); await unanimousPause(game.sessions);
+    const target = game.transports[3], original = target.request.bind(target);
+    vi.spyOn(target, 'request').mockImplementation(async <T>(action: string, payload?: Record<string, unknown>) => {
+      if (action === 'send' && JSON.parse(String(payload?.message)).type === 'SETTINGS') return {} as T;
+      return await original<T>(action, payload);
+    });
+    await vi.advanceTimersByTimeAsync(63050); expect(game.host.view.phase).toBe('reconnecting');
+    const elapsed = game.host.view.snapshot!.elapsedMs; await vi.advanceTimersByTimeAsync(10000);
+    expect(game.host.view.snapshot!.elapsedMs).toBe(elapsed);
+    await vi.advanceTimersByTimeAsync(14000);
+    expect(game.host.view.snapshot!.players[game.sessions[3].view.selfId].forfeited).toBe(true);
+    expect(game.host.view.phase).toBe('playing');
+  });
+
+  it('gives healthy peers the full closing acknowledgement window after another player times out', async () => {
+    const game = await group(); const transport = game.transports[2], original = transport.request.bind(transport);
+    vi.spyOn(transport, 'request').mockImplementation(async <T>(action: string, payload?: Record<string, unknown>) => {
+      if (action === 'send' && JSON.parse(String(payload?.message)).type === 'SETTINGS') await new Promise(resolve => setTimeout(resolve, 180));
+      return await original<T>(action, payload);
+    });
+    game.sessions[3].foregroundChanged(false); await flush(); await vi.advanceTimersByTimeAsync(20100);
+    expect(game.host.view.snapshot!.players[game.sessions[2].view.selfId].forfeited).toBe(false);
+    expect(game.sessions[2].view.snapshot!.status).toBe('playing');
+    await vi.advanceTimersByTimeAsync(3300);
+    expect(game.host.view.phase).toBe('playing'); expect(game.sessions[2].view.phase).toBe('playing');
+    expect(game.host.view.snapshot!.players[game.sessions[2].view.selfId].forfeited).toBe(false);
+    expect(game.host.view.snapshot!.players[game.sessions[3].view.selfId].forfeited).toBe(true);
+  });
+
+  it('deduplicates a repeated HELLO on an authenticated connection without allocating another seat', async () => {
+    const game = await lobby(); const hello = game.network.last('HELLO', game.guestTransport);
+    game.network.replay(hello); game.network.replay(hello); await flush();
+    expect(game.host.view.players).toHaveLength(2); expect(game.guest.view.selfId).toBe('guest');
+  });
+
+  it('resets presentation watermarks for a rematch with the same stable player ids', async () => {
+    const game = await start(); game.host.shoot(0); game.guest.shoot(0); await flush();
+    expect(game.host.view.presentationEvents.length).toBeGreaterThan(0);
+    await finish(game); await rematch(game); game.host.shoot(0); game.guest.shoot(0); await flush();
+    expect(game.host.view.presentationEvents.filter(event => event.type === 'shot-resolved')).toHaveLength(2);
+    expect(game.guest.view.presentationEvents.filter(event => event.type === 'shot-resolved')).toHaveLength(2);
+  });
+
+  it('keeps a terminal result when old same-epoch pause and settings-close packets are replayed', async () => {
+    const game = await start(); await unanimousPause([game.host, game.guest]);
+    const frozen = game.network.last('FREEZE', game.hostTransport);
+    game.network.blockedTypes.add('SETTINGS'); game.host.resume(); game.guest.resume(); await flush();
+    const close = game.network.last('CLOSE_SETTINGS', game.hostTransport);
+    game.host.forfeit(); await vi.advanceTimersByTimeAsync(50); await flush();
+    expect(game.guest.view.phase).toBe('finished'); const result = game.guest.view.snapshot!.result;
+    game.network.replay(frozen); game.network.replay(close); await flush();
+    expect(game.guest.view.phase).toBe('finished'); expect(game.guest.view.snapshot!.result).toEqual(result);
+    expect(game.guest.view.autoOpenSettings).toBe(false);
+  });
+
+  it('does not restart an active countdown from a replayed START after play has begun', async () => {
+    const game = await start(); const started = game.network.last('START', game.hostTransport);
+    await vi.advanceTimersByTimeAsync(1000); game.network.replay(started); await flush(); expect(game.guest.view.phase).toBe('playing');
+  });
+
+  it('cancels uncommitted shots for host and guest forfeits while the other players keep playing', async () => {
+    const game = await group(4, 'battle'); game.host.shoot(0); game.guest.shoot(0); await flush();
+    expect(game.host.view.pendingShot).toBe(true); expect(game.guest.view.pendingShot).toBe(true);
+    game.host.forfeit(); game.guest.forfeit(); await flush(); await vi.advanceTimersByTimeAsync(50);
+    expect(game.host.view.phase).toBe('playing'); expect(game.host.view.pendingShot).toBe(false); expect(game.guest.view.pendingShot).toBe(false);
+    expect(game.host.view.snapshot!.players.host.totalShots).toBe(0); expect(game.host.view.snapshot!.players.guest.totalShots).toBe(0);
   });
 });

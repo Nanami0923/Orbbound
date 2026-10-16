@@ -1,0 +1,19 @@
+{
+  "version": "4.4.0",
+  "title": "四人联机与界面优化（测试版）",
+  "prerelease": true,
+  "artifacts": [
+    {
+      "platform": "Android",
+      "file": "Orbbound-4.4.0-Android.apk",
+      "bytes": 1368863,
+      "sha256": "bc652c3de2ab8b6f4fdbcf1ec9db77047b21765c12aad39edfd70527dde562ca"
+    },
+    {
+      "platform": "Windows",
+      "file": "Orbbound-Windows-4.4.0-x64.zip",
+      "bytes": 714319,
+      "sha256": "738020008bc58b41c5645a5237c7696c1f686bdc2d404286da2507565595831f"
+    }
+  ]
+}

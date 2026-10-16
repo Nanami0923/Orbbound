@@ -1,7 +1,7 @@
 import { CAMPAIGN_LEVELS, getLevel } from './content/campaign';
 import { campaignStars, createCampaign } from './core/campaign';
 import { isUnlocked, loadProgress, recordCampaign } from './storage/campaign';
-import { campaignMarkup, levelMarkup, starRules } from './ui/campaign-panel';
+import { campaignMarkup, campaignPageSize, levelMarkup, starRules } from './ui/campaign-panel';
 import { bindDesktopBridge } from './ui/desktop-bridge';
 import { bindModalFocus } from './ui/modal-focus';
 import { bindAndroidServices, refreshPlatformPerformance, replayDisplayInfo } from './ui/platform-services';
@@ -13,7 +13,7 @@ import { RULES_VERSION } from './core/engine';
 import './ui/android-insets';
 import { shortcutAction, shortcutLabel, type ShortcutAction } from './game/shortcuts';
 import { bindImmersiveControl } from './game/immersive-control';
-import { historyMarkup } from './ui/history-panel';
+import { historyMarkup, historyPageSize, historyTrend } from './ui/history-panel';
 import type Phaser from 'phaser';
 import { Capacitor } from '@capacitor/core';
 import { App } from '@capacitor/app';
@@ -24,7 +24,7 @@ import { createRound, scoreMultiplier, weightedScore, type GameMode } from './co
 import type { GameState } from './core/types';
 import type { PlayScene } from './game/PlayScene';
 import { getOrbTheme } from './content/theme';
-import { clearGame, hasLegacySave, loadGame, loadSettings, saveGame, saveSettings, setHighScore, type Settings } from './storage/storage';
+import { clearGame, hasLegacySave, loadGame, saveGame, setHighScore, type Settings } from './storage/storage';
 import './style.css';
 import { buildHome, updateHome } from './ui/home';
 import { gameAudio } from './game/audio';
@@ -32,6 +32,9 @@ import { bindFireButton } from './game/fire-control';
 import { bindSteeringControl } from './game/steering-control';
 import { directAimDegrees } from './game/rotation';
 import { settingsMarkup, bindSettingsPanel, settingsBack } from './ui/settings-panel';
+import { getSettings, updateSettings, subscribeSettings, reloadSettings } from './storage/settings-store';
+import { bindViewportShell, bindModalPages } from './ui/viewport-shell';
+import { syncGameShell } from './ui/game-shell';
 import { formatHeadings } from './ui/typography';
 import { loadHistory, recordRound, formatDuration, rankingKey, leaderboard, recordRules, roundStanding, type HistoryDifficulty, type HistoryRules } from './storage/history';
 import { installLan } from './ui/lan-panel';
@@ -56,6 +59,7 @@ interface SceneStateDetail {
   elapsedMs: number;
 }
 
+bindViewportShell();
 buildHome(usesButtonControls());
 const lan = installLan(showHome);
 if (!usesButtonControls()) {
@@ -100,7 +104,7 @@ if (versionPill) versionPill.textContent = `${import.meta.env.VITE_APP_VERSION} 
 const sideOrbLabel = document.querySelector('#side-orb-label');
 if (sideOrbLabel && import.meta.env.MODE === 'windows') sideOrbLabel.textContent = '下一球';
 
-let settings: Settings = loadSettings();
+let settings: Settings = getSettings();
 gameAudio.setMix(settings.volume, settings.musicVolume);
 gameAudio.setAdaptiveMusic(settings.adaptiveMusic);
 gameAudio.unlock();
@@ -114,6 +118,10 @@ let game: Phaser.Game | null = null;
 let toastTimer: number | undefined;
 let resumeAfterModal = false;
 let disposeModal: (() => void) | null = null;
+let disposeModalPages: (() => void) | undefined;
+let resizeModal: (() => void) | undefined;
+let modalResizeFrame = 0;
+let settingsOnClosed: (() => void) | undefined;
 let roundRequest = 0;
 let onModalDismiss: (() => void) | undefined;
 let releaseModalFocus:(()=>void)|null=null;
@@ -130,6 +138,7 @@ function syncMobileLayout(): void {
     if (preview && target && preview.parentElement !== target) target.append(preview);
   }
   document.documentElement.classList.toggle('immersive-mode', usesButtonControls() && settings.immersiveMode);
+  if (gameScreen) syncGameShell(gameScreen, { touch: usesButtonControls(), immersive: settings.immersiveMode, mode: previousUiDetail?.mode ?? selectedMode });
   document.querySelectorAll<HTMLElement>('[data-shortcut]').forEach(label => { label.textContent = shortcutLabel(settings.shortcuts[label.dataset.shortcut as ShortcutAction]); });
   document.documentElement.classList.toggle("desktop-ui", !usesButtonControls());
   document.documentElement.classList.toggle('mobile-ui', usesButtonControls());
@@ -141,7 +150,18 @@ function syncMobileLayout(): void {
   document.documentElement.style.setProperty('--control-offset', `${offset}px`);
 }
 syncMobileLayout();
-window.addEventListener('resize', () => { stopRotation(); syncMobileLayout(); });
+window.addEventListener('resize', () => { stopRotation(); syncMobileLayout(); cancelAnimationFrame(modalResizeFrame); modalResizeFrame = requestAnimationFrame(() => resizeModal?.()); });
+const singleBoardWrap = document.querySelector<HTMLElement>('#game-screen .board-wrap')!;
+const singleBoardSize = new ResizeObserver(() => {
+  if (!usesButtonControls() || gameScreen?.hidden) return;
+  const heading = singleBoardWrap.querySelector<HTMLElement>('.board-heading');
+  const available = Math.max(0, singleBoardWrap.clientHeight - (heading?.getBoundingClientRect().height ?? 0));
+  const width = Math.max(1, Math.min(singleBoardWrap.clientWidth, available * 640 / 760));
+  singleBoardWrap.style.setProperty('--single-board-width', `${width}px`);
+  game?.scale.refresh();
+});
+singleBoardSize.observe(singleBoardWrap);
+
 
 function getScene(): PlayScene | null {
   if (!game) return null;
@@ -245,7 +265,7 @@ function formatScore(score: number): string {
 function updateGameState(detail: SceneStateDetail): void {
   const previous=previousUiDetail; previousUiDetail=detail;
   const roundChanged=!previous || previous.mode!==detail.mode || previous.levelId!==detail.levelId || previous.difficultyId!==detail.difficultyId;
-  if (!lan.isActive()) {
+  if (!lan.isActive() && !document.documentElement.classList.contains('settings-open')) {
     gameAudio.setPressure(detail.musicPressure);
     gameAudio.setScene(!gameScreen?.hidden && modalRoot?.hidden && ['READY', 'FLYING', 'RESOLVING'].includes(detail.phase) ? 'play' : 'menu');
   }
@@ -253,6 +273,7 @@ function updateGameState(detail: SceneStateDetail): void {
   const level = detail.mode === 'campaign' ? getLevel(detail.levelId!) : null;
   const timed = detail.mode === 'timed';
   if(roundChanged){
+    if (gameScreen) syncGameShell(gameScreen, { touch: usesButtonControls(), immersive: settings.immersiveMode, mode: detail.mode });
     gameScreen?.classList.toggle('campaign-mode', !!level);
     gameScreen?.classList.toggle('timed-mode', timed);
     if (descentTimeRow) descentTimeRow.hidden = !timed;
@@ -351,7 +372,9 @@ function showToast(message: string): void {
 
 function openModal(content: string, className = '', onDismiss?: () => void): void {
   if (!modalRoot) return;
+  resizeModal = undefined;
   disposeModal?.(); disposeModal = null;
+  disposeModalPages?.(); disposeModalPages = undefined;
   stopRotation(); gameAudio.setScene('menu');
   if (modalRoot.hidden) {
     modalReturnFocus=document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -364,7 +387,8 @@ function openModal(content: string, className = '', onDismiss?: () => void): voi
   modalRoot.hidden = false;
   document.documentElement.classList.add('modal-open');
   formatHeadings(modalRoot);
-  releaseModalFocus=bindModalFocus(modalRoot.querySelector<HTMLElement>('.modal-card')!,[homeScreen,gameScreen].filter((element):element is HTMLElement=>!!element));
+  releaseModalFocus=bindModalFocus(modalRoot.querySelector<HTMLElement>('.modal-card')!,[homeScreen,gameScreen,document.querySelector<HTMLElement>('#lan-screen')].filter((element):element is HTMLElement=>!!element));
+  disposeModalPages = bindModalPages(modalRoot.querySelector<HTMLElement>('.modal-card')!);
   game?.loop.sleep();
   modalRoot.querySelectorAll<HTMLElement>('[data-close-modal]').forEach(button => button.addEventListener('click', dismissModal));
   modalRoot.onclick = handleModalBackdrop;
@@ -381,9 +405,12 @@ function dismissModal(): void {
 }
 
 function closeModal(): void {
-  onModalDismiss = undefined;
+  onModalDismiss = undefined; resizeModal = undefined;
   if (!modalRoot) return;
   disposeModal?.(); disposeModal = null;
+  disposeModalPages?.(); disposeModalPages = undefined;
+  const settingsClosed = settingsOnClosed; settingsOnClosed = undefined;
+  document.documentElement.classList.remove('settings-open');
   releaseModalFocus?.();releaseModalFocus=null;
   modalRoot.hidden = true;
   document.documentElement.classList.remove('modal-open');
@@ -394,17 +421,23 @@ function closeModal(): void {
   if(modalReturnFocus?.isConnected && !modalReturnFocus.closest('[hidden]'))modalReturnFocus.focus({preventScroll:true});
   else document.querySelector<HTMLElement>(homeScreen?.hidden ? '#game-container' : '#campaign-button')?.focus({preventScroll:true});
   modalReturnFocus=null;
+  settingsClosed?.();
 }
 
 function showHistory(top = true, page = 0, board = 'endless', difficulty:HistoryDifficulty='all', rules:HistoryRules=RULES_VERSION): void {
-  const data = loadHistory();
+  const data = loadHistory(), capacity = historyPageSize(usesButtonControls());
   openModal(historyMarkup(data, top, board, page, usesButtonControls(),difficulty,rules), 'history-card');
-  document.querySelectorAll<HTMLElement>('[data-board]').forEach(button => button.addEventListener('click', () => showHistory(top, 0, button.dataset.board,difficulty,rules)));
+  resizeModal = () => showHistory(top,Math.floor(page * capacity / historyPageSize(usesButtonControls())),board,difficulty,rules);
   document.querySelector('#history-toggle')?.addEventListener('click', () => showHistory(!top,0,board,difficulty,rules));
   document.querySelector('#history-prev')?.addEventListener('click', () => showHistory(top,page-1,board,difficulty,rules));
   document.querySelector('#history-next')?.addEventListener('click', () => showHistory(top,page+1,board,difficulty,rules));
-  document.querySelectorAll<HTMLElement>('[data-history-difficulty]').forEach(button=>button.addEventListener('click',()=>showHistory(top,0,board,button.dataset.historyDifficulty as HistoryDifficulty,rules)));
-  document.querySelectorAll<HTMLElement>('[data-history-rules]').forEach(button=>button.addEventListener('click',()=>showHistory(top,0,board,difficulty,button.dataset.historyRules as HistoryRules)));
+  document.querySelector<HTMLSelectElement>('#history-board')?.addEventListener('change', event => showHistory(top,0,(event.target as HTMLSelectElement).value,difficulty,rules));
+  document.querySelector<HTMLSelectElement>('#history-difficulty')?.addEventListener('change', event => showHistory(top,0,board,(event.target as HTMLSelectElement).value as HistoryDifficulty,rules));
+  document.querySelector<HTMLSelectElement>('#history-rules')?.addEventListener('change', event => showHistory(top,0,board,difficulty,(event.target as HTMLSelectElement).value as HistoryRules));
+  document.querySelector('#history-explain')?.addEventListener('click', () => {
+    const back = () => showHistory(top,page,board,difficulty,rules);
+    openModal(`<button class="modal-close" data-close-modal>返回记录</button><h2>排名规则与趋势</h2><p>结算分 = 基础分 × 难度系数。简单 ×1，普通 ×1.5，困难 ×2。</p><p>同分时用时较短者优先，再同分按较早结算排序。重开不入榜，新旧规则分开排名。</p>${historyTrend(data,board,difficulty,rules)}`, '', back);
+  });
 }
 
 function showTutorial(): void {
@@ -430,23 +463,37 @@ function showPractice(onReturn?:()=>void,onCancel:()=>void=showTutorial):void {
   if(modalRoot)disposeModal=bindPracticePanel(modalRoot,{controlMode,shortcuts:settings.shortcuts,sensitivity:settings.sensitivity,onComplete:finish,onSkip:finish,onClose:onCancel});
 }
 
-function showSettings(): void {
-  openModal(settingsMarkup(settings, usesButtonControls()), 'settings-card');
+function showSettings(onClosed?: () => void): void {
+  if (document.documentElement.classList.contains('settings-open')) return;
+  openModal(settingsMarkup(settings, usesButtonControls(), lan.isActive() || !gameScreen?.hidden), 'settings-card');
   if (!modalRoot) return;
-  disposeModal = bindSettingsPanel(modalRoot, settings, commit => {
-    immersiveControl?.reset();
-    if (commit) saveSettings(settings);
-    gameAudio.setMix(settings.volume, settings.musicVolume);
-    gameAudio.setAdaptiveMusic(settings.adaptiveMusic);
-    getScene()?.setSettings(settings);
-    syncMobileLayout();
-    if(commit)void refreshPlatformPerformance(settings);
-  });
+  settingsOnClosed = onClosed;
+  document.documentElement.classList.add('settings-open');
+  disposeModal = bindSettingsPanel(modalRoot, settings, commit => updateSettings(settings, { persist: commit }));
   window.dispatchEvent(new Event('orbbound-settings-open'));
 }
+subscribeSettings(value => {
+  settings = value; immersiveControl?.reset();
+  gameAudio.setMix(settings.volume, settings.musicVolume); gameAudio.setAdaptiveMusic(settings.adaptiveMusic);
+  getScene()?.setSettings(settings); syncMobileLayout(); void refreshPlatformPerformance(settings);
+});
+window.addEventListener('orbbound-open-settings', event => {
+  showSettings((event as CustomEvent<{ onClosed?: () => void }>).detail?.onClosed);
+});
+window.addEventListener('orbbound-close-settings', () => {
+  if (document.documentElement.classList.contains('settings-open')) closeModal();
+});
 
+let campaignPage = 0, campaignChapter = '';
 function showCampaign(): void {
-  openModal(campaignMarkup(loadProgress(), loadGame('campaign')), 'campaign-panel');
+  const capacity = campaignPageSize();
+  openModal(campaignMarkup(loadProgress(), loadGame('campaign'), campaignPage, campaignChapter), 'campaign-panel campaign-picker');
+  resizeModal = () => { campaignPage = Math.floor(campaignPage * capacity / campaignPageSize()); showCampaign(); };
+  const chapterSelect = modalRoot?.querySelector<HTMLSelectElement>('#campaign-chapter');
+  campaignChapter = chapterSelect?.value ?? '';
+  chapterSelect?.addEventListener('change', () => { campaignChapter = chapterSelect.value; campaignPage = 0; showCampaign(); });
+  modalRoot?.querySelector('#campaign-prev')?.addEventListener('click', () => { campaignPage = Math.max(0, campaignPage - 1); showCampaign(); });
+  modalRoot?.querySelector('#campaign-next')?.addEventListener('click', () => { campaignPage++; showCampaign(); });
   modalRoot?.querySelector('#campaign-resume')?.addEventListener('click', () => { resumeAfterModal = false; closeModal(); continueSaved('campaign'); });
   modalRoot?.querySelectorAll<HTMLButtonElement>('[data-level]').forEach(button => button.addEventListener('click', () => {
     const id = Number(button.dataset.level);
@@ -536,8 +583,8 @@ function showModeSetup(mode: GameMode): void {
   requestAnimationFrame(() => requestAnimationFrame(() => { void loadRuntime().catch(() => {}); }));
 }
 document.querySelector('#campaign-button')?.addEventListener('click', showCampaign);
-document.querySelector('#start-button')?.addEventListener('click', () => loadGame('endless') ? continueSaved('endless') : showModeSetup('endless'));
-document.querySelector('#timed-button')?.addEventListener('click', () => loadGame('timed') ? continueSaved('timed') : showModeSetup('timed'));
+document.querySelector('#start-button')?.addEventListener('click', () => showModeSetup('endless'));
+document.querySelector('#timed-button')?.addEventListener('click', () => showModeSetup('timed'));
 document.querySelectorAll<HTMLElement>('[data-new-mode]').forEach(button => button.addEventListener('click', () => showModeSetup(button.dataset.newMode as GameMode)));
 
 function continueSaved(mode: GameMode): void {
@@ -563,8 +610,8 @@ document.querySelectorAll<HTMLButtonElement>('[data-difficulty]').forEach((butto
 });
 
 document.querySelector<HTMLButtonElement>('#tutorial-button')?.addEventListener('click', showTutorial);
-document.querySelector<HTMLButtonElement>('#settings-button')?.addEventListener('click', showSettings);
-document.querySelector<HTMLButtonElement>('#game-settings-button')?.addEventListener('click', showSettings);
+document.querySelector<HTMLButtonElement>('#settings-button')?.addEventListener('click', () => showSettings());
+document.querySelector<HTMLButtonElement>('#game-settings-button')?.addEventListener('click', () => showSettings());
 document.querySelector('#game-help-button')?.addEventListener('click', showTutorial);
 document.querySelector('#fullscreen-button')?.addEventListener('click',()=>window.dispatchEvent(new Event('orbbound-request-fullscreen')));
 document.querySelector('#round-load-cancel')?.addEventListener('click',showHome);
@@ -574,8 +621,8 @@ function saveAndHome(): void {
   showToast('已存档，下次可从首页继续');
 }
 document.querySelector<HTMLButtonElement>('#pause-button')?.addEventListener('click', saveAndHome);
-launchButton?.addEventListener('click', () => getScene()?.launchFromButton());
-bindFireButton(document.querySelector<HTMLButtonElement>('#mobile-fire')!, () => { gameAudio.unlock(); getScene()?.launchFromButton(); });
+launchButton?.addEventListener('click', () => { if (controlActive()) getScene()?.launchFromButton(); });
+bindFireButton(document.querySelector<HTMLButtonElement>('#mobile-fire')!, () => { if (!controlActive()) return; gameAudio.unlock(); getScene()?.launchFromButton(); });
 document.querySelector('#mobile-pause-button')?.addEventListener('click', saveAndHome);
 document.querySelector('#mobile-help-button')?.addEventListener('click', showTutorial);
 document.querySelector('#settle-button')?.addEventListener('click', () => {
@@ -588,7 +635,7 @@ function showGameMenu(): void {
     <p>本局已暂停并存档。</p><p>${campaign ? '完成目标获得星级，可随时重试本关。' : '继续游玩，或结算成绩后入榜。'}</p>
     <div class="mobile-menu-actions"><button id="menu-settings" class="quiet-button">设置</button><button id="menu-history" class="quiet-button">历史与排行</button>${campaign ? '' : '<button id="menu-settle" class="quiet-button">结算并入榜</button>'}<button id="menu-restart" class="quiet-button">放弃本局…</button><button id="menu-home" class="quiet-button">存档并返回首页</button></div>`);
   document.querySelector('#menu-settle')?.addEventListener('click', () => { closeModal(); getScene()?.settleGame(); });
-  document.querySelector('#menu-settings')?.addEventListener('click', showSettings);
+  document.querySelector('#menu-settings')?.addEventListener('click', () => showSettings());
   document.querySelector('#menu-history')?.addEventListener('click', () => showHistory());
   document.querySelector('#menu-restart')?.addEventListener('click', () => {
     openModal(`<button class="modal-close" id="abandon-cancel">返回菜单</button><h2>放弃本局？</h2><p>本局存档将删除，成绩不计入排行榜。请选择重新开始，或退出到首页。</p><div class="mobile-menu-actions"><button id="abandon-restart" class="primary-button">放弃并重开</button><button id="abandon-exit" class="quiet-button">放弃并退出</button></div>`);
@@ -677,9 +724,9 @@ if (Capacitor.isNativePlatform()) {
     if (!isActive && !gameScreen?.hidden) showHome();
   });
   void App.addListener('backButton', () => {
-    if (lan.isActive()) { lan.back(); return; }
     if (modalRoot && !modalRoot.hidden) {
       if (!settingsBack(modalRoot)) dismissModal();
+    } else if (lan.isActive()) { lan.back(); return;
     } else if (gameScreen && !gameScreen.hidden) {
       getScene()?.pauseGame();
       showHome();
@@ -691,7 +738,7 @@ if (Capacitor.isNativePlatform()) {
 
 window.addEventListener('keydown', (event) => {
   if (event.code === 'Escape' && !event.repeat && modalRoot && !modalRoot.hidden) {
-    event.preventDefault();
+    event.preventDefault(); event.stopImmediatePropagation();
     if (!settingsBack(modalRoot)) dismissModal();
     return;
   }
@@ -721,7 +768,7 @@ requestAnimationFrame(() => {
 bindDesktopBridge(() => {
   const previousGame=game;game=null;resumeAfterModal=false;roundRequest++;
   previousGame?.destroy(true);previousGame?.loop.wake();
-  settings=loadSettings();gameAudio.setMix(settings.volume,settings.musicVolume);gameAudio.setAdaptiveMusic(settings.adaptiveMusic);
+  settings=reloadSettings();gameAudio.setMix(settings.volume,settings.musicVolume);gameAudio.setAdaptiveMusic(settings.adaptiveMusic);
   previousUiDetail=undefined;syncMobileLayout();showHome();void refreshPlatformPerformance(settings);
 }, showToast,(text,commit)=>{
   openModal(`<button class="modal-close" data-close-modal>取消</button><h2>导入备份？</h2><p>${escapeText(backupSummary(text))}</p><p>同名数据会替换，导入前会保留恢复副本。</p><div class="modal-footer"><button class="quiet-button" data-autofocus data-close-modal>取消</button><button id="confirm-backup-import" class="primary-button">确认导入</button></div>`);
@@ -729,9 +776,10 @@ bindDesktopBridge(() => {
 });
 bindAndroidServices(()=>settings);
 window.addEventListener('snood-performance',event=>{
-  const detail=(event as CustomEvent<{renderFps:number;targetFps:number;idle:boolean;reason:string}>).detail;
+  const detail=(event as CustomEvent<{source?:string;renderFps:number;targetFps:number;idle:boolean;reason:string}>).detail;
+  if (lan.isActive() !== (detail.source === 'lan')) return;
   const label=`${Math.round(detail.renderFps)} FPS · ${detail.idle ? '静止省电' : `目标 ${detail.targetFps}`}`;
-  const badge=document.querySelector<HTMLElement>('#performance-badge');if(badge){badge.hidden=!settings.showPerformance||!!gameScreen?.hidden;if(settings.showPerformance)setTextIfChanged(badge,label);}
+  const badge=document.querySelector<HTMLElement>('#performance-badge');if(badge){badge.hidden=!settings.showPerformance||(lan.isActive() ? !document.querySelector('#lan-screen.lan-in-game') : !!gameScreen?.hidden);if(settings.showPerformance)setTextIfChanged(badge,label);}
   const status=document.querySelector<HTMLElement>('#settings-performance-status');if(status)setTextIfChanged(status,label);
 });
 window.addEventListener('orbbound-host-background', () => { gameAudio.setForeground(false); if (lan.isActive()) { lan.foreground(false); return; } if (!gameScreen?.hidden) showHome(); });

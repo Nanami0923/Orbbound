@@ -6,6 +6,7 @@ export interface DisplayInfo {
   supportedRefreshRates?: number[];
   powerSave?: boolean;
   thermalStatus?: number | null;
+  supportsHaptics?: boolean;
 }
 interface NativeServices {
   getDisplayInfo(): Promise<DisplayInfo>;
@@ -17,19 +18,25 @@ interface NativeServices {
 const native = registerPlugin<NativeServices>('GameFeedback');
 let lastDisplayInfo:DisplayInfo | undefined;
 export const isAndroid = () => Capacitor.getPlatform() === 'android';
+/** Only native device information can establish whether a vibration motor is available. */
+export function getHapticsCapability(): boolean | undefined {
+  return isAndroid() && typeof lastDisplayInfo?.supportsHaptics === 'boolean' ? lastDisplayInfo.supportsHaptics : undefined;
+}
 export function applyDisplayInfo(info: DisplayInfo): void {
   lastDisplayInfo = info;
+  if (typeof window === 'undefined') return;
   const detail = {
     displayHz:Number.isFinite(info.refreshRate) ? info.refreshRate : undefined,
     supportedRefreshRates:info.supportedRefreshRates,
     powerSave:info.powerSave === true,
     thermalStatus:typeof info.thermalStatus === 'number' ? info.thermalStatus : undefined,
+    supportsHaptics:getHapticsCapability(),
   };
   (window as unknown as {__orbboundPerformanceCapabilities:unknown}).__orbboundPerformanceCapabilities = detail;
   window.dispatchEvent(new CustomEvent('orbbound-performance-capabilities', {detail}));
 }
 export function replayDisplayInfo():void { if (lastDisplayInfo) applyDisplayInfo(lastDisplayInfo); }
-window.addEventListener('orbbound-performance-request', replayDisplayInfo);
+if (typeof window !== 'undefined') window.addEventListener('orbbound-performance-request', replayDisplayInfo);
 export async function refreshPlatformPerformance(settings:Settings): Promise<void> {
   if (!isAndroid()) return;
   try {

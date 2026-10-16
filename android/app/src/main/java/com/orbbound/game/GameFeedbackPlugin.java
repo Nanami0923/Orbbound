@@ -121,6 +121,8 @@ public class GameFeedbackPlugin extends Plugin {
         data.put("supportedRefreshRates", new JSONArray(rates));
         data.put("powerSave", powerManager != null && powerManager.isPowerSaveMode());
         data.put("thermalStatus", Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && powerManager != null ? powerManager.getCurrentThermalStatus() : JSONObject.NULL);
+        Vibrator vibrator = (Vibrator) getContext().getSystemService(Context.VIBRATOR_SERVICE);
+        data.put("supportsHaptics", vibrator != null && vibrator.hasVibrator());
         data.put("supportsRefreshRateRequest", true);
         data.put("requestedRefreshRate", requestedRefreshRate);
         return data;

@@ -140,4 +140,12 @@ describe('LAN discovery session lifecycle and untrusted advertisements', () => {
     await session.leave(); transport.emit(discovered(scanId)); transport.emit(status(scanId, 'failed', { error: 'late' }));
     expect(session.view.phase).toBe('idle'); expect(session.view.rooms).toEqual([]); expect(session.view.error).toBe('');
   });
+
+  it('retains four-player capacity and occupancy but rejects out-of-range advertised values', async () => {
+    const { transport, session } = browser(); await session.browse(); const scanId = session.view.discovery.scanId;
+    const value = room(); Object.assign(value.metadata, { players: 3, capacity: 4 }); transport.emit(discovered(scanId, value));
+    expect(session.view.rooms[0].metadata).toMatchObject({ players: 3, capacity: 4 });
+    const invalid = room(); Object.assign(invalid.metadata, { players: 5, capacity: 8 }); transport.emit(discovered(scanId, invalid));
+    expect(session.view.rooms[0].metadata.players).toBeUndefined(); expect(session.view.rooms[0].metadata.capacity).toBeUndefined();
+  });
 });

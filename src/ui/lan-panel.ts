@@ -1,15 +1,18 @@
 import { LanSession, type RoomConfig } from '../lan/session';
-import { LAN_RULES_HASH, LAN_PROTOCOL_VERSION, LAN_CONTENT_HASH } from '../lan/protocol';
+import { LAN_RULES_HASH, LAN_PROTOCOL_VERSION, LAN_CONTENT_HASH, type MatchResult } from '../lan/protocol';
 import { NativeLanTransport, parseAddress } from '../lan/transport';
 import { MockLanTransport } from '../lan/mock-transport';
-import { loadLanHistory, saveLanRecord, recentLanAddresses } from '../storage/lan-history';
+import { loadLanHistory, saveLanRecord, recentLanAddresses, loadPendingLanHistory, savePendingLanRecord } from '../storage/lan-history';
 import { readStorage, writeStorage } from '../storage/safe-storage';
 import { escapeText } from './progress-feedback';
 import { bindModalFocus } from './modal-focus';
-import { bindLanBoard } from './lan-board';
+import { bindLanBoard, drawLanBoard } from './lan-board';
 import { gameAudio } from '../game/audio';
 import { usesButtonControls } from '../game/input-mode';
+import { shortcutAction } from '../game/shortcuts';
 import { loadSettings } from '../storage/storage';
+import { subscribeSettings } from '../storage/settings-store';
+import { syncGameShell } from './game-shell';
 import './lan.css';
 
 const escape = (value: unknown) => escapeText(String(value ?? ''));
@@ -19,194 +22,356 @@ export function formatLanDuration(ms: number): string {
 }
 const difficultyNames = { easy: '简单', normal: '普通', hard: '困难' };
 const modeName = (mode?: string) => mode === 'battle' ? '连锁对战' : '同图竞分';
+const winners = (result: MatchResult) => result.winnerIds ?? (result.winnerId ? [result.winnerId] : []);
+const resultLabel = (result: MatchResult, self: string) => result.reason === 'interrupted' ? '本局中断' : winners(result).includes(self) ? winners(result).length > 1 ? '并列获胜' : '胜利' : winners(result).length ? '本局结束' : '平局 / 无胜者';
+type Route = 'choose' | 'create-name' | 'create-rules' | 'history' | 'help';
+type BrowseTab = 'nearby' | 'address' | 'recent' | 'diagnostics';
+
 export function installLan(openHome: () => void): { isActive: () => boolean; back: () => void; foreground: (active: boolean) => void } {
-  const entry = document.createElement('div'); entry.className = 'mode-card lan-mode';
-  entry.innerHTML = '<button id="lan-button" class="mode-main" type="button"><b class="mode-symbol">⇄</b><span><strong>局域网联机</strong><small>同图竞分 · 连锁对战</small></span><b class="mode-action">联机 →</b></button>';
-  document.querySelector('.home-actions')?.append(entry);
+  const entry = document.querySelector<HTMLElement>('#lan-entry-slot') ?? document.createElement('div');
+  entry.className = 'mode-card lan-mode';
+  entry.innerHTML = '<button id="lan-button" class="mode-main" type="button"><b class="mode-symbol">⇄</b><span><strong>局域网联机</strong><small>2–4 人 · 竞分 / 对战</small></span><b class="mode-action">联机 →</b></button>';
+  if (!entry.isConnected) document.querySelector('.home-actions')?.append(entry);
   const root = document.createElement('section'); root.id = 'lan-screen'; root.className = 'lan-screen'; root.hidden = true;
   document.querySelector('#app')!.append(root);
-  let session: LanSession | undefined, key = '', page: 'choose' | 'create' | 'history' = 'choose', boardDispose: (() => void) | undefined;
-  let unsubscribe: (() => void) | undefined, busy = false, error = '', focusRelease: (() => void) | undefined;
-  let viewGeneration = 0;
-  let closing: Promise<void> | undefined;
-  let finishResult = '', finishAt = 0, finishTimer: ReturnType<typeof setTimeout> | undefined, recordedResult = '';
-  let roomListMarkup = '';
-  const selectedEndpoints = new Map<string, string>();
+  const q = <T extends HTMLElement = HTMLElement>(selector: string) => root.querySelector<T>(selector)!;
+  const text = (selector: string, value: string) => { const element = q(selector); if (element && element.textContent !== value) element.textContent = value; };
   const entryButton = entry.querySelector<HTMLButtonElement>('button')!;
   const simulated = import.meta.env.DEV && new URLSearchParams(location.search).has('lan-test');
   const nickname = () => readStorage('orbbound-lan-name') ?? '玩家';
-  const q = <T extends HTMLElement = HTMLElement>(selector: string) => root.querySelector<T>(selector)!;
+  let session: LanSession | undefined, key = '', route: Route = 'choose', browseTab: BrowseTab = 'nearby';
+  let lobbyPage: 'players' | 'rules' | 'addresses' = 'players';
+  let page = 0, addressPage = 0, helpPage = 0, generation = 0, busy = false, error = '', closing: Promise<void> | undefined;
+  let boardDispose: (() => void) | undefined, unsubscribe: (() => void) | undefined, focusRelease: (() => void) | undefined;
+  let roomMarkup = '', recordedResult = '', finishResult = '', finishAt = 0, finishTimer: ReturnType<typeof setTimeout> | undefined;
+  let settingsVisible = false, requestKey = '', pauseMarkup = '', detailsId = '', observeId = '', keyboardField: { label: HTMLElement; marker: Comment; overlay: HTMLElement } | undefined;
+  let form = { name: nickname(), room: '', address: readStorage('orbbound-lan-address') ?? '', config: { mode: 'score', difficultyId: 'normal', durationMs: 180000, capacity: 4 } as RoomConfig };
+  const selectedEndpoints = new Map<string, string>();
+  const height = () => window.visualViewport?.height ?? window.innerHeight;
+  const capacity = (reserved: number, itemHeight: number, maximum: number) => Math.max(1, Math.min(maximum, Math.floor((height() - reserved) / itemHeight)));
+  const setRoute = (value: Route) => { captureForm(); route = value; page = 0; key = ''; render(); };
   const run = (action: () => void | Promise<void>) => {
-    if (busy) return; const generation = viewGeneration; busy = true; error = '';
-    void Promise.resolve().then(() => { if (generation === viewGeneration) return action(); }).catch(reason => {
-      if (generation === viewGeneration) error = reason instanceof Error ? reason.message : String(reason);
-    }).finally(() => { if (generation === viewGeneration) { busy = false; render(); } });
+    if (busy) return; const operation = generation; busy = true; error = '';
+    void Promise.resolve().then(() => { if (operation === generation) return action(); }).catch(reason => {
+      if (operation === generation) error = reason instanceof Error ? reason.message : String(reason);
+    }).finally(() => { if (operation === generation) { busy = false; render(); } });
   };
-  const startSession = () => {
-    const transport = simulated ? new MockLanTransport() : new NativeLanTransport(); session = new LanSession(transport);
-    unsubscribe = session.subscribe(render);
-  };
+  function captureForm(): void {
+    if (q<HTMLInputElement>('#lan-name')) form.name = q<HTMLInputElement>('#lan-name').value;
+    if (q<HTMLInputElement>('#lan-room-name')) form.room = q<HTMLInputElement>('#lan-room-name').value;
+    if (q<HTMLInputElement>('#lan-address')) form.address = q<HTMLInputElement>('#lan-address').value;
+  }
+  function closeKeyboard(): void {
+    if (!keyboardField) return;
+    const { label, marker, overlay } = keyboardField; keyboardField = undefined;
+    (document.activeElement as HTMLElement | null)?.blur(); marker.replaceWith(label); overlay.remove(); root.classList.remove('lan-editing');
+  }
+  const closeSettings = () => { if (settingsVisible) window.dispatchEvent(new Event('orbbound-close-settings')); };
+  function openSettings(): void {
+    if (!session || settingsVisible || session.view.forceCloseSettings || !['paused', 'lobby', 'finished'].includes(session.view.phase)) return;
+    settingsVisible = true; session.settingsChanged(true);
+    window.dispatchEvent(new CustomEvent('orbbound-open-settings', { detail: { onClosed: () => {
+      settingsVisible = false; session?.settingsChanged(false); render();
+    } } }));
+  }
+  const startSession = () => { session = new LanSession(simulated ? new MockLanTransport() : new NativeLanTransport()); unsubscribe = session.subscribe(render); };
   const open = () => {
-    if (!root.hidden || closing) return; viewGeneration++; busy = false; selectedEndpoints.clear();
+    if (!root.hidden || closing) return;
+    generation++; busy = false; selectedEndpoints.clear(); form.name = nickname();
     openHome(); document.querySelector<HTMLElement>('#home-screen')!.hidden = true;
-    root.hidden = false; document.documentElement.classList.add('lan-active'); startSession(); page = 'choose'; key = ''; error = ''; render(); q('h1')?.focus();
+    root.hidden = false; document.documentElement.classList.add('lan-active');
+    startSession(); route = 'choose'; browseTab = 'nearby'; lobbyPage = 'players'; page = 0; key = ''; error = ''; render(); q('h1')?.focus();
   };
   const exit = async () => {
-    viewGeneration++; busy = false; clearTimeout(finishTimer); finishResult = ''; finishAt = 0;
+    generation++; busy = false; closeKeyboard(); closeSettings(); clearTimeout(finishTimer); finishResult = ''; finishAt = 0;
     focusRelease?.(); focusRelease = undefined; boardDispose?.(); boardDispose = undefined; unsubscribe?.(); unsubscribe = undefined;
-    const previous = session; session = undefined; root.hidden = true; document.documentElement.classList.remove('lan-active');
-    entryButton.disabled = true; entryButton.setAttribute('aria-busy', 'true');
-    const cleanup = Promise.resolve().then(() => previous?.close()); closing = cleanup;
-    gameAudio.setScene('menu'); openHome(); document.querySelector<HTMLElement>('#lan-button')?.focus();
-    try { await cleanup; } finally {
-      if (closing === cleanup) { closing = undefined; entryButton.disabled = false; entryButton.removeAttribute('aria-busy'); }
+    const previous = session;
+    if (previous?.view.snapshot?.status === 'playing' && !previous.view.isHost) {
+      const snapshot = previous.view.snapshot, self = snapshot.players[previous.view.selfId];
+      if (self) savePendingLanRecord({ matchId: snapshot.matchId, endedAt: Date.now(), selfId: previous.view.selfId,
+        name: previous.view.players.find(p => p.id === previous.view.selfId)?.name ?? '你', score: self.score, completedWaves: self.completedWaves,
+        mode: snapshot.mode, playerCount: snapshot.playerIds.length, protocolVersion: LAN_PROTOCOL_VERSION, reason: self.sealed ? 'left-spectating' : 'left-active' });
     }
+    session = undefined; root.hidden = true; document.documentElement.classList.remove('lan-active');
+    entryButton.disabled = true; entryButton.setAttribute('aria-busy', 'true');
+    let closeResult = '';
+    const captureCloseResult = previous?.subscribe(() => {
+      const snapshot = previous.view.snapshot, result = snapshot?.result;
+      if (!snapshot || !result || closeResult === result.resultId) return;
+      closeResult = result.resultId;
+      saveLanRecord({ resultId: result.resultId, matchId: result.matchId, endedAt: Date.now(), difficultyId: snapshot.difficultyId,
+        durationMs: snapshot.durationMs, rulesHash: snapshot.rulesHash, selfId: previous.view.selfId, names: Object.fromEntries(previous.view.players.map(p => [p.id, p.name])), mode: snapshot.mode, protocolVersion: LAN_PROTOCOL_VERSION, result });
+    });
+    const cleanup = Promise.resolve().then(() => previous?.close()); closing = cleanup;
+    gameAudio.setPressure(0); gameAudio.setScene('menu'); openHome(); entryButton.focus();
+    try { await cleanup; } finally { captureCloseResult?.(); if (closing === cleanup) { closing = undefined; entryButton.disabled = false; entryButton.removeAttribute('aria-busy'); } }
   };
-  const leave = () => { void exit().catch(() => { /* The old session owns cleanup; this screen has already closed. */ }); };
+  const leave = () => { void exit().catch(() => {}); };
   const confirmLeave = () => {
-    if (root.hidden || root.querySelector('.lan-confirm')) return;
-    if (!session?.view.snapshot || session.view.phase === 'finished' || session.view.phase === 'closed') { leave(); return; }
+    if (root.hidden) return;
+    if (root.querySelector('.lan-confirm')) { q<HTMLButtonElement>('#lan-stay')?.click(); return; }
+    if (keyboardField) { closeKeyboard(); return; }
+    if (settingsVisible) { closeSettings(); return; }
+    if (!session?.view.snapshot || ['finished', 'closed'].includes(session.view.phase)) { leave(); return; }
+    const self = session.view.snapshot.players[session.view.selfId];
     const overlay = document.createElement('div'); overlay.className = 'lan-confirm'; overlay.setAttribute('role', 'dialog'); overlay.setAttribute('aria-modal', 'true');
-    overlay.innerHTML = '<div class="lan-card"><h2>离开本局？</h2><p>主动离开会判为认输。房主离开也会关闭房间。</p><div class="lan-actions"><button class="primary-button" data-autofocus id="lan-stay">继续游戏</button><button class="quiet-button" id="lan-confirm-exit">确认离开</button></div></div>';
+    overlay.innerHTML = `<div class="lan-card"><h2>离开本局？</h2><p>${session.view.isHost ? '房主关闭房间将中断所有人的比赛。认输后可留在房间观战。' : self.sealed ? '你的成绩已保留，离开观战后最终排名可能暂未同步。' : '退出比赛将按弃权处理；你也可以认输后留在房间观战。'}</p><div class="lan-actions"><button class="primary-button" data-autofocus id="lan-stay">返回</button>${!self.sealed ? '<button class="quiet-button" id="lan-concede">认输并观战</button>' : ''}<button class="quiet-button" id="lan-confirm-exit">${session.view.isHost ? '关闭房间' : '离开房间'}</button></div></div>`;
     root.append(overlay); focusRelease = bindModalFocus(overlay, [q('.lan-body'), q('.lan-top')]);
     const dismiss = () => { focusRelease?.(); focusRelease = undefined; overlay.remove(); q<HTMLButtonElement>('#lan-exit')?.focus(); };
     q('#lan-stay').onclick = dismiss; q('#lan-confirm-exit').onclick = () => { dismiss(); leave(); };
+    q('#lan-concede')?.addEventListener('click', () => { dismiss(); session?.forfeit(); });
     overlay.onkeydown = event => { if (event.key === 'Escape') { event.stopPropagation(); dismiss(); } };
   };
-  const base = (title: string, body: string, wide = false) => {
-    roomListMarkup = '';
-    focusRelease?.(); focusRelease = undefined;
-    boardDispose?.(); boardDispose = undefined;
-    root.classList.toggle('lan-in-game', wide);
-    root.innerHTML = `<header class="lan-top"><span class="brand-name">ORBBOUND <span class="lan-label">局域网</span></span><button id="lan-exit" class="quiet-button" type="button">${session?.view.snapshot ? '离开房间' : '返回首页'}</button></header><main class="lan-body ${wide ? 'lan-wide' : ''}"><h1 tabindex="-1">${title}</h1>${body}<p id="lan-error" role="alert" class="lan-error"></p></main>`;
+  const base = (title: string, body: string, game = false) => {
+    closeKeyboard(); roomMarkup = ''; requestKey = ''; pauseMarkup = ''; observeId = '';
+    focusRelease?.(); focusRelease = undefined; boardDispose?.(); boardDispose = undefined;
+    root.classList.toggle('lan-in-game', game);
+    const settings = loadSettings(); syncGameShell(root, { touch: usesButtonControls(), immersive: settings.immersiveMode, mode: session?.view.snapshot?.mode ?? 'lan' });
+    root.classList.toggle('lan-swapped', settings.controlsSwapped); root.style.setProperty('--lan-fire-width', `${settings.fireSize}px`);
+    root.innerHTML = `<header class="lan-top"><span class="brand-name">ORBBOUND <span class="lan-label">${game ? modeName(session?.view.snapshot?.mode) : '局域网 · 2–4 人'}</span></span><button id="lan-exit" class="quiet-button" type="button">${session?.view.snapshot ? '离开房间' : '返回首页'}</button></header><main class="lan-body ${game ? 'lan-wide' : ''}"><h1 tabindex="-1">${title}</h1><div class="lan-content">${body}</div><p id="lan-error" role="alert" class="lan-error"></p></main>`;
     q('#lan-exit').onclick = confirmLeave;
   };
-  const nameField = () => `<label class="lan-field">你的昵称<input id="lan-name" maxlength="16" value="${escape(nickname())}" autocomplete="nickname"></label>`;
-  const configFields = (config: RoomConfig) => `<label class="lan-field">玩法<select id="lan-mode"><option value="score" ${config.mode !== 'battle' ? 'selected' : ''}>同图竞分</option><option value="battle" ${config.mode === 'battle' ? 'selected' : ''}>连锁对战</option></select></label><div class="lan-form-row"><label class="lan-field">难度<select id="lan-difficulty">${Object.entries(difficultyNames).map(([id, label]) => `<option value="${id}" ${config.difficultyId === id ? 'selected' : ''}>${label}</option>`).join('')}</select></label><label class="lan-field">时长<select id="lan-duration"><option value="180000" ${config.durationMs === 180000 ? 'selected' : ''}>3 分钟</option><option value="300000" ${config.durationMs === 300000 ? 'selected' : ''}>5 分钟</option></select></label></div><p class="lan-muted">对战：每消除或掉落 12 球产生 1 行攻击，先抵消来袭；预警 2 秒，触底判负。竞分：到时比分，触底保分。</p>`;
-  const readConfig = (): RoomConfig => ({ mode: q<HTMLSelectElement>('#lan-mode').value as RoomConfig['mode'], difficultyId: q<HTMLSelectElement>('#lan-difficulty').value as RoomConfig['difficultyId'], durationMs: Number(q<HTMLSelectElement>('#lan-duration').value) as RoomConfig['durationMs'] });
-  const saveName = () => { const name = q<HTMLInputElement>('#lan-name').value.trim() || '玩家'; writeStorage('orbbound-lan-name', name); return name; };
+  const button = (id: string, title: string, primary = false) => `<button id="${id}" class="${primary ? 'primary-button' : 'quiet-button'}" type="button">${title}</button>`;
+  const nameField = () => `<label class="lan-field">你的昵称<input id="lan-name" maxlength="16" value="${escape(form.name)}" autocomplete="nickname"></label>`;
+  const configFields = (config: RoomConfig) => `<div class="lan-form-row"><label class="lan-field">玩法<select id="lan-mode"><option value="score" ${config.mode !== 'battle' ? 'selected' : ''}>同图竞分</option><option value="battle" ${config.mode === 'battle' ? 'selected' : ''}>连锁对战</option></select></label><label class="lan-field">人数上限<select id="lan-capacity">${[2, 3, 4].map(n => `<option value="${n}" ${(config.capacity ?? 4) === n ? 'selected' : ''}>${n} 人</option>`).join('')}</select></label><label class="lan-field">难度<select id="lan-difficulty">${Object.entries(difficultyNames).map(([id, label]) => `<option value="${id}" ${config.difficultyId === id ? 'selected' : ''}>${label}</option>`).join('')}</select></label><label class="lan-field">时长<select id="lan-duration"><option value="180000" ${config.durationMs === 180000 ? 'selected' : ''}>3 分钟</option><option value="300000" ${config.durationMs === 300000 ? 'selected' : ''}>5 分钟</option></select></label></div>`;
+  const readConfig = (): RoomConfig => ({ mode: q<HTMLSelectElement>('#lan-mode').value as RoomConfig['mode'], difficultyId: q<HTMLSelectElement>('#lan-difficulty').value as RoomConfig['difficultyId'], durationMs: Number(q<HTMLSelectElement>('#lan-duration').value) as RoomConfig['durationMs'], capacity: Number(q<HTMLSelectElement>('#lan-capacity').value) as 2 | 3 | 4 });
+  const saveName = () => { captureForm(); form.name = form.name.trim() || '玩家'; writeStorage('orbbound-lan-name', form.name); return form.name; };
+  const summary = (config: RoomConfig) => `${modeName(config.mode)} · ${difficultyNames[config.difficultyId]} · ${config.durationMs / 60000} 分钟 · 最多 ${config.capacity ?? 4} 人`;
+  const pager = () => '<nav class="lan-pagination" aria-label="分页"><button id="lan-prev" class="quiet-button">上一页</button><span id="lan-page-label"></span><button id="lan-next" class="quiet-button">下一页</button></nav>';
+  const updatePager = (count: number, size: number, refresh: () => void) => {
+    const pages = Math.max(1, Math.ceil(count / size)); page = Math.min(page, pages - 1);
+    const previous = q<HTMLButtonElement>('#lan-prev'), next = q<HTMLButtonElement>('#lan-next');
+    if (!previous || !next) return;
+    text('#lan-page-label', `${page + 1} / ${pages}`); previous.disabled = page === 0; next.disabled = page + 1 >= pages;
+    previous.onclick = () => { page--; refresh(); }; next.onclick = () => { page++; refresh(); };
+  };
+  const joinAddress = () => run(async () => { captureForm(); const address = parseAddress(form.address); if (!address) throw new Error('请输入有效 IPv4 地址和端口'); writeStorage('orbbound-lan-address', form.address.trim()); await session!.join(saveName(), address.address, address.port); });
+
   function render(): void {
     if (!session || root.hidden) return;
     const view = session.view;
-    root.classList.toggle('lan-battle', view.snapshot?.mode === 'battle');
+    if (settingsVisible && view.phase === 'paused') {
+      const context = document.querySelector<HTMLElement>('.settings-context');
+      if (context) context.textContent = `本机设置 · 比赛已暂停 · 剩余 ${Math.ceil(view.pauseRemainingMs / 1000)} 秒，完成后请准备继续`;
+    }
+    if ((view.forceCloseSettings || !['paused', 'lobby', 'finished'].includes(view.phase)) && settingsVisible) closeSettings();
+    if (view.autoOpenSettings && view.phase === 'paused' && !settingsVisible) { openSettings(); return; }
     if (view.phase === 'finished' && view.snapshot?.result) {
       const snapshot = view.snapshot, result = snapshot.result!;
-      if (recordedResult !== result.resultId) { recordedResult = result.resultId; saveLanRecord({ resultId: result.resultId, matchId: result.matchId, endedAt: Date.now(), difficultyId: snapshot.difficultyId, durationMs: snapshot.durationMs, rulesHash: snapshot.rulesHash, selfId: view.selfId, names: Object.fromEntries(view.players.map(p => [p.id, p.name])), mode: snapshot.mode, result }); }
+      if (recordedResult !== result.resultId) { recordedResult = result.resultId; saveLanRecord({ resultId: result.resultId, matchId: result.matchId, endedAt: Date.now(), difficultyId: snapshot.difficultyId, durationMs: snapshot.durationMs, rulesHash: snapshot.rulesHash, selfId: view.selfId, names: Object.fromEntries(view.players.map(p => [p.id, p.name])), mode: snapshot.mode, protocolVersion: LAN_PROTOCOL_VERSION, result }); }
       if (finishResult !== result.resultId) { finishResult = result.resultId; finishAt = performance.now() + (key.startsWith('game:') && view.presentationEvents.length ? 2000 : 0); clearTimeout(finishTimer); finishTimer = setTimeout(render, Math.max(0, finishAt - performance.now())); }
     }
     const gamePhases = ['preparing', 'countdown', 'playing', 'paused', 'reconnecting'];
     const finishing = view.phase === 'finished' && !document.hidden && performance.now() < finishAt;
-    const nextKey = view.phase === 'idle' ? page : (gamePhases.includes(view.phase) || finishing) && view.snapshot ? `game:${view.snapshot.matchId}` : view.phase;
-    if (nextKey !== key) {
+    const nextKey = view.phase === 'idle' ? `${route}:${page}:${helpPage}` : view.phase === 'browsing' ? `browsing:${browseTab}` : view.phase === 'lobby' ? `lobby:${lobbyPage}` : (gamePhases.includes(view.phase) || finishing) && view.snapshot ? `game:${view.snapshot.matchId}` : view.phase;
+    if (key !== nextKey) {
       key = nextKey;
-      if (nextKey === 'choose') {
-        base('一起，打出下一次连锁。', `<p class="lan-intro">连接同一路由器或热点，一人创建房间，另一人加入。无需互联网。</p>${simulated ? '<p class="lan-notice">开发模拟 · 当前连接仅用于同一浏览器中的界面测试，不是真实局域网连接。</p>' : ''}<div class="lan-choice"><button id="lan-create" class="lan-choice-card"><span>01 / HOST</span><strong>创建房间</strong><small>选择规则，邀请身边的朋友 →</small></button><button id="lan-browse" class="lan-choice-card"><span>02 / JOIN</span><strong>加入房间</strong><small>发现附近房间，或输入地址 →</small></button></div><div class="lan-card lan-rules"><h2>同图竞分 / 连锁对战</h2><p>对战：每累计消除或掉落 12 个球产生一行攻击，先抵消来袭，2 秒预警后下压。触底判负。<br>竞分：相同开局，各自拆解。三连消除、切断支撑，清空后进入下一波。到时分数高者胜，同分比较完成波次。触底后保留分数，观看对手继续。</p><small>支持 Windows 与 Android 双向建房。网络隔离或防火墙可能影响连接。</small></div><button class="text-button" id="lan-history">查看联机记录 →</button>${!session.transport.available ? '<p class="lan-notice">当前是网页预览。请使用 Windows 或 Android 4.3.1 安装版进行局域网联机。</p>' : ''}`);
-        q('#lan-create').onclick = () => { page = 'create'; key = ''; render(); };
-        q('#lan-browse').onclick = () => run(() => session!.browse());
-        q('#lan-history').onclick = () => { page = 'history'; key = ''; render(); };
-      } else if (nextKey === 'create') {
-        base('创建房间', `<div class="lan-card">${nameField()}<label class="lan-field">房间名<input id="lan-room-name" maxlength="24" placeholder="朋友的小房间"></label>${configFields(view.config)}<p class="lan-muted">两人同时开始。相同波次的开局一致，后续供球随各自棋盘变化。</p><div class="lan-actions"><button id="lan-host" class="primary-button">创建房间</button><button id="lan-back" class="quiet-button">返回</button></div></div>`);
-        q('#lan-host').onclick = () => run(async () => { const config = readConfig(), name = saveName(), room = q<HTMLInputElement>('#lan-room-name').value; await session!.host(name, room, config); });
-        q('#lan-back').onclick = () => { page = 'choose'; key = ''; render(); };
-      } else if (nextKey === 'browsing') {
-        base('加入房间', `<div class="lan-card">${nameField()}<div class="lan-section-title"><h2>附近的房间</h2><button id="lan-refresh" class="text-button">刷新</button></div><p id="lan-scan-status" role="status"></p><div id="lan-room-list" class="lan-room-list"></div><label class="lan-field">或输入房主地址<input id="lan-address" inputmode="text" placeholder="例如 192.168.1.8:42171" value="${escape(readStorage('orbbound-lan-address') ?? '')}"></label><p id="lan-fill-notice" role="status" class="lan-muted"></p><div class="lan-actions"><button id="lan-probe-address" class="quiet-button">按地址检索</button><button id="lan-connect" class="primary-button">通过地址加入</button></div><details class="lan-help"><summary>连接检查</summary><pre id="lan-diagnostics"></pre></details><div id="lan-recent"></div><details class="lan-help"><summary>找不到房间？</summary><p>先确认两台设备在同一网络。可输入房主页面显示的地址；如仍超时，检查访客网络隔离、Windows 专用网络防火墙和 VPN。手动地址无法绕过网络隔离。</p></details></div>`);
-        q('#lan-refresh').onclick = () => run(() => session!.view.discovery.status === 'scanning' ? session!.stopDiscovery() : session!.refreshDiscovery());
-        q('#lan-probe-address').onclick = () => run(async () => {
-          const address = parseAddress(q<HTMLInputElement>('#lan-address').value); if (!address) throw new Error('先输入房主 IPv4 地址，可不填写端口');
-          q('#lan-fill-notice').textContent = '正在查询这个地址上的房间；发现后可填入实际连接端口。';
-          await session!.refreshDiscovery([address.address]);
-        });
-        q('#lan-connect').onclick = () => run(async () => { const value = q<HTMLInputElement>('#lan-address').value; const address = parseAddress(value); if (!address) throw new Error('请输入有效 IPv4 地址和端口，例如 192.168.1.8:42171'); const name = saveName(); writeStorage('orbbound-lan-address', value.trim()); await session!.join(name, address.address, address.port); });
-      } else if (nextKey === 'lobby') {
-        base('房间已就绪。', `<div class="lan-card"><h2>${escape(view.roomName)}</h2><div id="lan-players" class="lan-players"></div><div id="lan-lobby-config">${view.isHost ? configFields(view.config) : ''}</div><p id="lan-settings-summary" class="lan-muted"></p>${view.isHost ? `<div class="lan-addresses"><small>朋友也可以通过这些地址加入</small>${(view.hostInfo?.addresses ?? []).map(address => `<code>${escape(address)}:${view.hostInfo?.port}</code>`).join('')}${view.hostInfo?.discoveryAvailable === false ? '<p>自动发现暂不可用，请手动输入上方地址。</p>' : ''}</div>` : ''}<div class="lan-actions"><button id="lan-ready" class="primary-button">准备</button>${view.isHost ? '<button id="lan-start" class="primary-button">开始对局</button><button id="lan-kick" class="text-button">移除客人</button>' : ''}</div><p class="lan-muted">双方准备后由房主开始；修改规则需要重新准备。</p></div>`);
-        q('#lan-ready').onclick = () => session!.ready();
-        if (view.isHost) { q('#lan-start').onclick = () => session!.start(); q('#lan-kick').onclick = () => session!.kick(); q('#lan-mode').onchange = q('#lan-difficulty').onchange = q('#lan-duration').onchange = () => session!.setConfig(readConfig()); }
+      if (view.phase === 'idle' && route === 'choose') {
+        base('一起，打出下一次连锁。', `<div class="lan-intro"><p>连接同一路由器或可互通热点，2–4 人同时开局。</p>${simulated ? '<p class="lan-notice">开发模拟 · 不代表真实局域网测试。</p>' : ''}</div><div class="lan-choice">${button('lan-create', '创建房间', true)}${button('lan-browse', '加入房间')}</div><p class="lan-muted">同图竞分看得分；连锁对战累计其他选手的消除量，抵御来袭。</p><div class="lan-actions">${button('lan-help', '玩法说明')}${button('lan-history', '联机记录')}</div>${!session.transport.available ? '<p class="lan-notice">请使用 Android / Windows 4.4.0 安装版联机。</p>' : ''}`);
+        q('#lan-create').onclick = () => setRoute('create-name'); q('#lan-browse').onclick = () => run(() => session!.browse());
+        q('#lan-help').onclick = () => setRoute('help'); q('#lan-history').onclick = () => setRoute('history');
+      } else if (view.phase === 'idle' && route === 'create-name') {
+        base('创建房间 · 1 / 2', `<div class="lan-form-card">${nameField()}<label class="lan-field">房间名<input id="lan-room-name" maxlength="24" value="${escape(form.room)}" placeholder="朋友的小房间"></label><p class="lan-muted">双方均可当房主；至少两人准备后即可开局。</p><div class="lan-actions">${button('lan-back', '返回')}${button('lan-next-step', '选择规则', true)}</div></div>`);
+        q('#lan-next-step').onclick = () => setRoute('create-rules'); q('#lan-back').onclick = () => setRoute('choose');
+      } else if (view.phase === 'idle' && route === 'create-rules') {
+        base('创建房间 · 2 / 2', `<div class="lan-form-card">${configFields(form.config)}<p class="lan-muted">对战每行需其他存活选手合计消除 12 / 24 / 36 球；自己的消除也可抵消来袭。</p><div class="lan-actions">${button('lan-back', '上一步')}${button('lan-host', '创建房间', true)}</div></div>`);
+        q('#lan-back').onclick = () => { form.config = readConfig(); setRoute('create-name'); };
+        q('#lan-host').onclick = () => run(async () => { form.config = readConfig(); await session!.host(saveName(), form.room, form.config); lobbyPage = 'players'; });
+      } else if (view.phase === 'browsing') {
+        base('加入房间', `${nameField()}<nav class="lan-tabs" aria-label="加入方式">${(['nearby', 'address', 'recent', 'diagnostics'] as const).map((tab, i) => `<button class="quiet-button" data-tab="${tab}" aria-pressed="${browseTab === tab}">${['附近', '地址', '最近', '诊断'][i]}</button>`).join('')}</nav><div id="lan-browser-body" class="lan-browser-body"></div>`);
+        root.querySelectorAll<HTMLElement>('[data-tab]').forEach(tab => { tab.onclick = () => { captureForm(); browseTab = tab.dataset.tab as BrowseTab; page = 0; key = ''; render(); }; });
+        if (browseTab === 'nearby') {
+          q('#lan-browser-body').innerHTML = `<div class="lan-section-title"><p id="lan-scan-status" role="status"></p>${button('lan-refresh', '刷新')}</div><div id="lan-room-list" class="lan-room-list"></div>${pager()}`;
+          q('#lan-refresh').onclick = () => run(() => view.discovery.status === 'scanning' ? session!.stopDiscovery() : session!.refreshDiscovery());
+        } else if (browseTab === 'address') {
+          q('#lan-browser-body').innerHTML = `<label class="lan-field">房主地址<input id="lan-address" placeholder="192.168.1.8:42171" value="${escape(form.address)}" inputmode="text"></label><p id="lan-fill-notice" class="lan-muted" role="status">找不到广播房间时，可按地址查询实际端口。</p><div class="lan-actions">${button('lan-probe-address', '按地址检索')}${button('lan-connect', '通过地址加入', true)}</div><p class="lan-muted">手动地址也需要网络允许设备互通。</p>`;
+          q('#lan-connect').onclick = joinAddress;
+          q('#lan-probe-address').onclick = () => run(async () => { captureForm(); const value = parseAddress(form.address); if (!value) throw new Error('先输入房主的有效 IPv4 地址'); await session!.refreshDiscovery([value.address]); browseTab = 'nearby'; key = ''; render(); });
+        } else q('#lan-browser-body').innerHTML = `<div id="lan-room-list" class="lan-room-list"></div>${pager()}${browseTab === 'diagnostics' ? button('lan-copy-log', '复制完整诊断') : ''}`;
+      } else if (view.phase === 'lobby') {
+        if (lobbyPage === 'rules' && view.isHost) {
+          base('调整房间规则', `${configFields(view.config)}<p class="lan-muted">修改规则后，所有选手需要重新准备。</p><div class="lan-actions">${button('lan-lobby-back', '取消')}${button('lan-save-rules', '应用规则', true)}</div>`);
+          q('#lan-lobby-back').onclick = () => { lobbyPage = 'players'; key = ''; render(); };
+          q('#lan-save-rules').onclick = () => { const config = readConfig(); session!.setConfig(config); lobbyPage = 'players'; key = ''; render(); };
+        } else if (lobbyPage === 'addresses') {
+          base('房间地址', '<p class="lan-muted">请朋友输入以下一个地址；使用界面显示的实际端口。</p><div id="lan-address-list" class="lan-room-list"></div><div class="lan-actions">'+button('lan-address-prev', '上一个')+button('lan-address-next', '下一个')+button('lan-lobby-back', '返回大厅')+'</div>');
+          q('#lan-lobby-back').onclick = () => { lobbyPage = 'players'; key = ''; render(); };
+          q('#lan-address-prev').onclick = () => { addressPage--; render(); }; q('#lan-address-next').onclick = () => { addressPage++; render(); };
+        } else {
+          base(escape(view.roomName), `<div id="lan-players" class="lan-players"></div><p id="lan-settings-summary" class="lan-muted"></p><div class="lan-actions">${button('lan-ready', '准备', true)}${view.isHost ? button('lan-start', '开始对局', true) : ''}</div><div class="lan-actions">${view.isHost ? button('lan-edit-rules', '房间规则')+button('lan-addresses', '房间地址') : ''}${button('lan-local-settings', '本机设置')}</div><p class="lan-muted">至少两人，所有已加入选手准备后，由房主开始。</p>`);
+          q('#lan-ready').onclick = () => session!.ready(); q('#lan-start')?.addEventListener('click', () => session!.start());
+          q('#lan-edit-rules')?.addEventListener('click', () => { lobbyPage = 'rules'; key = ''; render(); });
+          q('#lan-addresses')?.addEventListener('click', () => { lobbyPage = 'addresses'; key = ''; render(); }); q('#lan-local-settings').onclick = openSettings;
+        }
       } else if (nextKey.startsWith('game:')) {
-        base(modeName(view.snapshot?.mode), `<div class="lan-scoreboard"><div><span id="lan-self-name"></span><strong id="lan-self-score">0</strong><small id="lan-self-wave"></small></div><div class="lan-clock"><small>剩余时间</small><strong id="lan-clock">3:00</strong><span id="lan-network"></span></div><div><span id="lan-peer-name"></span><strong id="lan-peer-score">0</strong><small id="lan-peer-wave"></small></div></div><p id="lan-attack-bar" class="lan-attack-bar" hidden></p><div class="lan-game-layout"><div class="lan-board-wrap"><canvas id="lan-self-board" width="640" height="760" aria-label="自己的联机棋盘"></canvas><div id="lan-game-overlay" class="lan-game-overlay" hidden></div></div><aside class="lan-opponent"><h2>对方棋盘</h2><canvas id="lan-other-board" width="256" height="304" aria-label="对方棋盘缩略图"></canvas><p class="lan-muted">相同开局，各自寻找连锁。</p><p id="lan-pressure"></p></aside></div><div class="lan-controls"><button id="lan-turn-left" class="quiet-button" aria-label="向左快转30度">↶ 30°</button><div class="lan-sliders"><label>瞄准 <output id="lan-angle-value">0.0°</output><input id="lan-angle" type="range" min="-78" max="78" step="0.1" value="0" aria-label="瞄准角度"></label><label>微调<input id="lan-fine" type="range" min="-100" max="100" step="1" value="0" aria-label="按住微调，松开停止"></label></div><button id="lan-turn-right" class="quiet-button" aria-label="向右快转30度">30° ↷</button><button id="lan-fire" class="primary-button">发射 ↑</button></div><div class="lan-game-footer"><p id="lan-notice" role="status"></p><button id="lan-pause" class="text-button">请求暂停</button></div><div id="lan-pause-request"></div><p class="lan-control-tip">${usesButtonControls() ? loadSettings().immersiveMode ? '按住棋盘瞄准，松手发射；也可用下方滑杆和发射按钮。' : '滑动瞄准与微调控制，点击发射；支持双指操作。' : '鼠标瞄准并单击发射；方向键转向、空格发射，沿用你的快捷键设置。'}</p>`, true);
-        q('#lan-pause').onclick = () => session!.requestPause();
-        boardDispose = bindLanBoard(root, session); gameAudio.setScene('play');
-      } else if (nextKey === 'finished') {
-        const snapshot = view.snapshot!, result = snapshot.result!;
-        const title = result.reason === 'interrupted' ? '本局中断' : result.winnerId === null ? '势均力敌，平局。' : result.winnerId === view.selfId ? '这一局，你赢了。' : '下一局，再来较量。';
-        base(title, `<p class="lan-intro">${result.reason === 'interrupted' ? '未完成的对局不计胜负。' : result.reason === 'forfeit' ? '一方主动退出，按认输结算。' : result.reason === 'knockout' ? '一方触底，另一方获胜。' : result.reason === 'double-knockout' ? '双方同一批次触底，平局。' : result.reason === 'all-sealed' ? '双方均已触底，按累计分数结算。' : '时间到，按累计分数与完成波次结算。'}</p><div class="lan-results">${snapshot.playerIds.map(playerId => { const p = result.players[playerId]; return `<div class="lan-card ${result.winnerId === playerId ? 'lan-winner' : ''}"><small>${escape(view.players.find(x => x.id === playerId)?.name ?? playerId)}${playerId === view.selfId ? ' · 你' : ''}</small><strong>${p.score.toLocaleString('zh-CN')}</strong><p>完成 ${p.completedWaves} 波 · 发射 ${p.totalShots} 次</p>${snapshot.players[playerId].battle ? `<p>发出 ${snapshot.players[playerId].battle!.stats.sentRows} 行 · 抵消 ${snapshot.players[playerId].battle!.stats.cancelledRows} 行 · 实际下压 ${snapshot.players[playerId].battle!.stats.appliedRows} 行</p>` : ''}</div>`; }).join('')}</div><div class="lan-actions"><button id="lan-rematch" class="primary-button">回等待室，再来一局</button><button id="lan-result-home" class="quiet-button">返回首页</button></div><p id="lan-finished-notice" class="lan-muted"></p>`);
-        q('#lan-rematch').onclick = () => session!.rematch(); q('#lan-result-home').onclick = leave; gameAudio.setScene('menu');
-        if (result.reason !== 'interrupted') gameAudio.blip(result.winnerId === view.selfId ? 'win' : 'lose');
-      } else if (nextKey === 'history') {
-        const records = loadLanHistory();
-        base('联机记录', `<p class="lan-intro">仅保存在本机，与单机排行分开。</p><div class="lan-history-list">${records.length ? records.map(r => `<article class="lan-card"><div class="lan-section-title"><strong>${r.result.reason === 'interrupted' ? '中断' : r.result.winnerId === null ? '平局' : r.result.winnerId === r.selfId ? '胜利' : '失利'}</strong><small>${escape(new Date(r.endedAt).toLocaleString('zh-CN'))}</small></div><p>${escape(r.names?.[r.selfId] ?? '你')} · ${r.result.players[r.selfId].score} 分 · ${Math.round(r.durationMs / 60000)} 分钟局 · ${modeName(r.mode)}</p></article>`).join('') : '<p class="lan-card">完成第一场对局后，记录会出现在这里。</p>'}</div><button id="lan-back" class="quiet-button">返回联机</button>`);
-        q('#lan-back').onclick = () => { page = 'choose'; key = ''; render(); };
-      } else if (nextKey === 'closed') {
-        base('连接已结束', '<div class="lan-card"><p id="lan-closed-reason"></p><button id="lan-retry" class="primary-button">重新加入</button></div>');
-        q('#lan-retry').onclick = () => run(() => session!.browse());
-      } else base('正在连接…', '<div class="lan-card"><p>正在连接局域网，请稍候。可以返回取消。</p></div>');
-    }
-    q('#lan-error').textContent = error || view.error;
-    if (view.phase === 'browsing') {
-      const list = q('#lan-room-list');
-      const discovery = view.discovery, scanning = discovery.status === 'scanning';
-      q('#lan-refresh').textContent = scanning ? '停止' : '刷新';
-      q('#lan-scan-status').textContent = scanning ? `正在查找 · 已发现 ${view.rooms.length} 个房间` : discovery.status === 'failed' ? '本轮查找失败，可查看连接检查或输入地址' : discovery.status === 'cancelled' ? '查找已停止' : `本轮查找完成 · ${view.rooms.length ? `发现 ${view.rooms.length} 个房间` : '未收到房间回应，可尝试地址加入'}`;
-      q('#lan-diagnostics').textContent = `网络路径 ${discovery.paths} · 发送 ${discovery.sent} · 收到 ${discovery.received} · 路径错误 ${discovery.errors}\n${discovery.diagnostics.join('\n')}`;
-      const markup = view.rooms.map(room => {
-        const age = session!.roomAgeMs(room), compatible = room.metadata.rulesHash === LAN_RULES_HASH && room.metadata.protocolVersion === LAN_PROTOCOL_VERSION && room.metadata.contentHash === LAN_CONTENT_HASH;
-        const available = compatible && (room.metadata.players ?? 1) < 2 && (!room.metadata.phase || room.metadata.phase === 'lobby');
-        const status = !compatible ? '版本不兼容，请双方更新' : !available ? '房间已满或正在对局' : age >= 12000 ? '暂未响应' : room.seenScanId !== discovery.scanId ? '待本轮确认' : '刚刚发现';
-        return `<article class="lan-room"><strong>${escape(room.name)}</strong><small>${escape(room.metadata.platform ?? '平台未知')} · ${modeName(room.metadata.mode)} · ${room.metadata.players ?? '?'}/2 · ${status}</small><select aria-label="${escape(room.name)}的连接地址" data-endpoints="${escape(room.metadata.roomId)}">${room.endpoints.map(endpoint => `<option value="${escape(endpoint.address)}:${endpoint.port}" ${selectedEndpoints.get(room.metadata.roomId) === `${endpoint.address}:${endpoint.port}` ? 'selected' : ''}>${escape(endpoint.address)}:${endpoint.port}</option>`).join('')}</select><div class="lan-actions"><button class="quiet-button" data-fill="${escape(room.metadata.roomId)}">填入地址</button><button class="primary-button" data-join="${escape(room.metadata.roomId)}" ${!available ? 'disabled' : ''}>加入</button></div></article>`;
-      }).join('') || '<p class="lan-muted">尚未收到房间回应。可输入房主显示的地址，或刷新重试。</p>';
-      // Keep a focused endpoint selector stable while scan counters/time labels change.
-      if (roomListMarkup !== markup && !(document.activeElement?.tagName === 'SELECT' && list.contains(document.activeElement))) {
-        list.innerHTML = markup; roomListMarkup = markup;
-        list.querySelectorAll<HTMLSelectElement>('[data-endpoints]').forEach(select => { select.onchange = () => selectedEndpoints.set(select.dataset.endpoints!, select.value); });
-        const endpointFor = (roomId: string) => {
-          const room = session!.view.rooms.find(item => item.metadata.roomId === roomId);
-          const select = [...list.querySelectorAll<HTMLSelectElement>('[data-endpoints]')].find(item => item.dataset.endpoints === roomId);
-          return room && select ? { room, value: select.value, address: parseAddress(select.value) } : undefined;
-        };
-        list.querySelectorAll<HTMLButtonElement>('[data-fill]').forEach(button => { button.onclick = () => {
-          const endpoint = endpointFor(button.dataset.fill!); if (!endpoint?.address) return;
-          q<HTMLInputElement>('#lan-address').value = endpoint.value; q('#lan-fill-notice').textContent = `已填入「${endpoint.room.name}」，点击加入即可连接。`;
+        const others = view.snapshot!.playerIds.filter(id => id !== view.selfId);
+        base(modeName(view.snapshot!.mode), `<div class="lan-match-hud"><div><span id="lan-self-name"></span><strong id="lan-self-score">0</strong><small id="lan-self-wave"></small></div><div class="lan-clock"><small>剩余时间</small><strong id="lan-clock">3:00</strong><span id="lan-network"></span></div><div class="lan-hud-actions">${button('lan-pause', '暂停')}${button('lan-settings', '设置')}</div></div><div class="lan-status-slot"><p id="lan-attack-bar" class="lan-attack-bar"></p><div id="lan-pause-request" hidden></div></div><div class="lan-game-layout"><div class="lan-own-column"><div class="lan-board-wrap"><canvas id="lan-self-board" width="640" height="760" aria-label="自己的联机棋盘"></canvas><div id="lan-game-overlay" class="lan-game-overlay" hidden></div></div></div><aside class="lan-opponents" aria-label="其他选手">${others.map((id, index) => `<button class="lan-opponent" data-watch="${escape(id)}" aria-label="查看${escape(view.players.find(p => p.id === id)?.name ?? id)}的棋盘"><canvas ${index === 0 ? 'id="lan-other-board"' : ''} data-lan-player-board="${escape(id)}" width="128" height="152" aria-label="对方棋盘缩略图"></canvas><span><strong data-player-name="${escape(id)}"></strong><small data-player-score="${escape(id)}"></small><small data-player-state="${escape(id)}"></small></span></button>`).join('')}</aside></div><div class="lan-controls"><button id="lan-turn-left" class="quiet-button" aria-label="向左快转30度">↶ 30°</button><div class="lan-sliders"><label>瞄准 <output id="lan-angle-value">0.0°</output><input id="lan-angle" type="range" min="-78" max="78" step="0.1" value="0" aria-label="瞄准角度"></label><label>微调<input id="lan-fine" type="range" min="-100" max="100" step="1" value="0" aria-label="按住微调，松开停止"></label></div><button id="lan-turn-right" class="quiet-button" aria-label="向右快转30度">30° ↷</button><button id="lan-fire" class="primary-button">发射 ↑</button></div><p id="lan-notice" class="lan-game-notice" role="status"></p>`, true);
+        q('#lan-pause').onclick = () => session!.requestPause('pause');
+        q('#lan-settings').onclick = () => { if (view.phase === 'paused') openSettings(); else session!.requestPause('settings'); };
+        root.querySelectorAll<HTMLElement>('[data-watch]').forEach(item => { item.onclick = () => {
+          if (!view.snapshot!.players[view.selfId].sealed) { openObservation(item.dataset.watch!); return; }
+          root.dataset.watchPlayer = item.dataset.watch; render();
         }; });
-        list.querySelectorAll<HTMLButtonElement>('[data-join]').forEach(button => { button.onclick = () => run(async () => {
-          const endpoint = endpointFor(button.dataset.join!); if (!endpoint?.address || endpoint.room.metadata.rulesHash !== LAN_RULES_HASH || endpoint.room.metadata.protocolVersion !== LAN_PROTOCOL_VERSION || endpoint.room.metadata.contentHash !== LAN_CONTENT_HASH
-            || (endpoint.room.metadata.players ?? 1) >= 2 || (endpoint.room.metadata.phase && endpoint.room.metadata.phase !== 'lobby')) return;
-          await session!.join(saveName(), endpoint.address.address, endpoint.address.port);
-        }); });
-      }
-      const recent = q('#lan-recent');
-      if (!recent.childElementCount) {
-        recent.innerHTML = recentLanAddresses().length ? `<h2>最近成功连接</h2>${recentLanAddresses().map((item, index) => `<button class="text-button" data-recent="${index}">${escape(item.name)} · ${escape(item.address)}:${item.port} · 填入</button>`).join('')}` : '';
-        const addresses = recentLanAddresses(); recent.querySelectorAll<HTMLButtonElement>('[data-recent]').forEach(button => { button.onclick = () => { const item = addresses[Number(button.dataset.recent)]; if (item) { q<HTMLInputElement>('#lan-address').value = `${item.address}:${item.port}`; q('#lan-fill-notice').textContent = '已填入历史地址；它可能已变化，请确认后加入。'; } }; });
-      }
+        boardDispose = bindLanBoard(root, session); gameAudio.setScene('play');
+      } else if (view.phase === 'finished') {
+        const snapshot = view.snapshot!, result = snapshot.result!;
+        detailsId = detailsId && result.players[detailsId] ? detailsId : view.selfId;
+        const ranking = result.ranking ?? snapshot.playerIds.map((playerId, index) => ({ playerId, rank: result.winnerId === playerId ? 1 : index + 1, status: 'sealed' }));
+        base(resultLabel(result, view.selfId), `<p class="lan-muted">${modeName(snapshot.mode)} · ${snapshot.playerIds.length} 人 · ${result.reason === 'interrupted' ? '连接中断，不计胜负' : '最终排名由房主统一确认'}</p><div class="lan-ranking">${ranking.map(row => `<button class="lan-rank-row ${winners(result).includes(row.playerId) ? 'lan-winner' : ''}" data-result-player="${escape(row.playerId)}"><b>${row.rank ?? '—'}</b><span>${escape(view.players.find(p => p.id === row.playerId)?.name ?? row.playerId)}${row.playerId === view.selfId ? ' · 你' : ''}</span><strong>${result.players[row.playerId].score.toLocaleString('zh-CN')}</strong><small>${row.status === 'forfeit' ? '弃权' : row.rank === 1 ? '获胜' : '完赛'}</small></button>`).join('')}</div><p id="lan-result-detail" class="lan-muted"></p><p id="lan-finished-notice" role="status"></p><div class="lan-actions">${button('lan-rematch', '再来一局', true)}${button('lan-finish-home', '返回首页')}</div>`);
+        root.querySelectorAll<HTMLElement>('[data-result-player]').forEach(item => { item.onclick = () => { detailsId = item.dataset.resultPlayer!; render(); }; });
+        q('#lan-rematch').onclick = () => { lobbyPage = 'players'; session!.rematch(); }; q('#lan-finish-home').onclick = leave;
+        if (result.reason !== 'interrupted') gameAudio.blip(winners(result).includes(view.selfId) ? 'win' : 'lose');
+      } else if (view.phase === 'idle' && route === 'history') {
+        base('联机记录', `<p class="lan-muted">记录保存在本机；旧双人记录继续保留。</p><div id="lan-history-list" class="lan-history-list"></div>${pager()}${button('lan-back', '返回联机')}`);
+        q('#lan-back').onclick = () => setRoute('choose');
+      } else if (view.phase === 'idle' && route === 'help') {
+        const help = [ ['两种玩法', '同图竞分：相同开局，各自拆解。到时比分，再比完成波次；触底保留分数，其余选手继续。'], ['连锁对战', '累计其他存活选手的消除与掉落。2 / 3 / 4 人每 12 / 24 / 36 球形成一行来袭，2 秒预告后安全下压。'], ['攻击与防御', '自己每消除 12 球抵消一行来袭；同次消除也贡献给其他人。队列最多 3 行，两次攻击下压至少间隔 3 秒。'], ['暂停与设置', '进行中先申请暂停，其他在赛选手全部同意后才可设置。完成后准备继续，全员就绪共同倒计时。'], ['连接帮助', '同一网络不一定允许广播。找不到房间时按地址检索；使用房主显示的实际端口，确认网络隔离和防火墙。'] ];
+        helpPage = Math.max(0, Math.min(helpPage, help.length - 1));
+        base(help[helpPage][0], `<div class="lan-help-page"><p>${help[helpPage][1]}</p><p class="lan-muted">${helpPage + 1} / ${help.length}</p></div><div class="lan-actions">${button('lan-help-prev', '上一页')}${button('lan-help-next', '下一页')}${button('lan-back', '返回联机')}</div>`);
+        q<HTMLButtonElement>('#lan-help-prev').disabled = helpPage === 0; q<HTMLButtonElement>('#lan-help-next').disabled = helpPage === help.length - 1;
+        q('#lan-help-prev').onclick = () => { helpPage--; key = ''; render(); }; q('#lan-help-next').onclick = () => { helpPage++; key = ''; render(); }; q('#lan-back').onclick = () => setRoute('choose');
+      } else if (view.phase === 'closed') {
+        base('连接已结束', `<p id="lan-closed-reason" role="status"></p>${button('lan-retry', '重新加入', true)}`); q('#lan-retry').onclick = () => run(() => session!.browse());
+      } else base('正在连接…', '<p>正在连接局域网，可以返回取消。</p>');
     }
-    if (view.phase === 'lobby') {
-      q('#lan-players').innerHTML = ['host', 'guest'].map(playerId => { const p = view.players.find(x => x.id === playerId); return `<div class="lan-player"><span class="lan-player-dot ${playerId}"></span><strong>${p ? escape(p.name) : '等待朋友加入'}</strong><small>${p ? p.ready ? '已准备' : '未准备' : '空位'}</small></div>`; }).join('');
-      q('#lan-settings-summary').textContent = `${modeName(view.config.mode)} · ${difficultyNames[view.config.difficultyId]} · ${view.config.durationMs / 60000} 分钟`;
-      q('#lan-ready').textContent = view.players.find(p => p.id === view.selfId)?.ready ? '取消准备' : '准备';
-      if (view.isHost) { q<HTMLButtonElement>('#lan-start').disabled = view.players.length !== 2 || view.players.some(p => !p.ready || !p.connected); q<HTMLButtonElement>('#lan-kick').hidden = view.players.length < 2; }
+    text('#lan-error', error || view.error);
+    if (view.phase === 'browsing') updateBrowser();
+    if (view.phase === 'lobby') updateLobby();
+    if (key.startsWith('game:') && view.snapshot) updateGame();
+    if (view.phase === 'finished' && key === 'finished') {
+      const result = view.snapshot!.result!, p = result.players[detailsId];
+      text('#lan-result-detail', `${view.players.find(x => x.id === detailsId)?.name ?? '选手'} · 完成 ${p.completedWaves} 波 · 发射 ${p.totalShots} 次${p.battle ? ` · 抵消 ${p.battle.cancelledRows} 行 / 下压 ${p.battle.appliedRows} 行` : ''}`);
+      text('#lan-finished-notice', view.notice); q<HTMLButtonElement>('#lan-rematch').disabled = view.players.filter(p => p.connected).length < 2;
     }
-    if (key.startsWith('game:') && view.snapshot) {
-      const self = view.snapshot.players[view.selfId], otherId = view.selfId === 'host' ? 'guest' : 'host', other = view.snapshot.players[otherId];
-      q('#lan-self-name').textContent = `${view.players.find(p => p.id === view.selfId)?.name ?? '你'} · 你`;
-      q('#lan-peer-name').textContent = view.players.find(p => p.id === otherId)?.name ?? '对方';
-      q('#lan-self-score').textContent = self.score.toLocaleString('zh-CN'); q('#lan-peer-score').textContent = other.score.toLocaleString('zh-CN');
-      q('#lan-self-wave').textContent = self.sealed ? '已触底 · 分数保留' : `第 ${self.waveIndex + 1} 波`; q('#lan-peer-wave').textContent = other.sealed ? '已触底' : `第 ${other.waveIndex + 1} 波`;
-      q('#lan-clock').textContent = formatLanDuration(Math.max(0, view.snapshot.durationMs - session.displayElapsed()));
-      q('#lan-network').textContent = view.rtt ? `${view.rtt} ms` : '局域网';
-      q('#lan-pressure').textContent = view.snapshot.mode === 'battle' ? `自然压力 ${self.state.danger}%` : `压力 ${self.state.danger}% · 距时间下压 ${Math.max(0, Math.ceil((self.nextDescentAtMs - session.displayElapsed()) / 1000))} 秒`;
-      const battle = self.battle, attackBar = q('#lan-attack-bar'); attackBar.hidden = !battle;
-      if (battle) { const next = battle.pendingAttacks[0]; attackBar.textContent = `充能 ${battle.chargeRemainder}/12 · 来袭 ${battle.pendingAttacks.length} 行${next ? ` · ${Math.max(0, Math.ceil((next.notBeforeAtMs - session.displayElapsed()) / 1000))} 秒后等待落地` : ''} · 已抵消 ${battle.stats.cancelledRows} 行`; attackBar.classList.toggle('lan-incoming', battle.pendingAttacks.length > 0); }
-      q('#lan-notice').textContent = view.notice || (self.sealed ? '你的棋盘已结束，等待对方完成。' : '切断支撑，创造更大的掉落。');
-      q<HTMLButtonElement>('#lan-pause').disabled = view.phase !== 'playing' || !!view.pauseRequester;
-      const overlay = q('#lan-game-overlay'); overlay.hidden = view.phase === 'playing' || view.phase === 'finished';
-      const overlayMarkup = view.phase === 'countdown' ? `<strong class="lan-countdown">${view.countdown || '开始'}</strong><span>双方同时开局</span>` : view.phase === 'preparing' ? '<strong>准备棋盘…</strong>' : `<strong>${view.phase === 'reconnecting' ? '等待恢复连接' : '比赛已暂停'}</strong><p>${escape(view.notice)}</p><button id="lan-resume" class="primary-button" ${view.resumeReady.includes(view.selfId) ? 'disabled' : ''}>${view.resumeReady.includes(view.selfId) ? '等待对方就绪' : '我已回来，继续'}</button>`;
-      if (!overlay.hidden && overlay.innerHTML !== overlayMarkup) { overlay.innerHTML = overlayMarkup; overlay.querySelector<HTMLButtonElement>('#lan-resume')?.addEventListener('click', () => session!.resume()); }
-      const request = q('#lan-pause-request'); const requestMarkup = view.pauseRequester ? view.pauseRequester === view.selfId ? '<p class="lan-notice">已请求暂停，等待对方同意。</p>' : '<div class="lan-pause-banner">对方请求暂停 <button id="lan-accept-pause" class="quiet-button">同意</button><button id="lan-reject-pause" class="text-button">继续比赛</button></div>' : '';
-      if (request.innerHTML !== requestMarkup) { request.innerHTML = requestMarkup; request.querySelector('#lan-accept-pause')?.addEventListener('click', () => session!.decidePause(true)); request.querySelector('#lan-reject-pause')?.addEventListener('click', () => session!.decidePause(false)); }
+    if (view.phase === 'idle' && route === 'history') {
+      const records = [
+        ...loadLanHistory().map(r => ({ endedAt: r.endedAt, label: resultLabel(r.result, r.selfId), detail: `${r.names?.[r.selfId] ?? '你'} · ${r.result.players[r.selfId].score} 分 · ${modeName(r.mode)} · ${Object.keys(r.result.players).length} 人 · ${r.protocolVersion === 3 ? '4.4 规则' : '旧版规则'}` })),
+        ...loadPendingLanHistory().map(r => ({ endedAt: r.endedAt, label: '最终结果未同步', detail: `${r.name} · ${r.score} 分 · ${modeName(r.mode)} · ${r.playerCount} 人 · ${r.reason === 'left-active' ? '主动离开' : '离开观战'}` })),
+      ].sort((a, b) => b.endedAt - a.endedAt).slice(0, 100);
+      const size = capacity(250, 78, 6); updatePager(records.length, size, () => { key = ''; render(); });
+      q('#lan-history-list').innerHTML = records.slice(page * size, (page + 1) * size).map(r => `<article class="lan-history-row"><strong>${escape(r.label)}</strong><small>${escape(new Date(r.endedAt).toLocaleString('zh-CN'))}</small><p>${escape(r.detail)}</p></article>`).join('') || '<p>完成对局后，记录会出现在这里。</p>';
     }
-    if (key === 'finished') { q('#lan-finished-notice').textContent = view.notice; q<HTMLButtonElement>('#lan-rematch').disabled = view.players.some(p => !p.connected); }
-    if (view.phase === 'closed') q('#lan-closed-reason').textContent = view.notice || view.error || '连接已关闭。可以重新加入房间。';
+    if (view.phase === 'closed') text('#lan-closed-reason', view.notice || view.error || '连接已关闭。');
   }
-  entry.querySelector('button')!.addEventListener('click', open);
-  window.addEventListener('keydown', event => { if (!root.hidden && event.key === 'Escape' && !root.querySelector('.lan-confirm')) { event.preventDefault(); confirmLeave(); } });
+
+  function updateBrowser(): void {
+    const view = session!.view, discovery = view.discovery, list = q('#lan-room-list');
+    if (browseTab === 'address') return;
+    if (browseTab === 'nearby') {
+      const scanning = discovery.status === 'scanning'; text('#lan-refresh', scanning ? '停止' : '刷新');
+      text('#lan-scan-status', scanning ? `查找中 · ${view.rooms.length} 个房间` : `${discovery.status === 'failed' ? '查找失败' : '本轮结束'} · ${view.rooms.length} 个房间`);
+      const size = capacity(390, 160, 3); updatePager(view.rooms.length, size, updateBrowser);
+      const markup = view.rooms.slice(page * size, (page + 1) * size).map(room => {
+        const compatible = room.metadata.rulesHash === LAN_RULES_HASH && room.metadata.protocolVersion === LAN_PROTOCOL_VERSION && room.metadata.contentHash === LAN_CONTENT_HASH;
+        const available = compatible && (room.metadata.players ?? 1) < (room.metadata.capacity ?? 2) && (!room.metadata.phase || room.metadata.phase === 'lobby');
+        const status = !compatible ? '版本不兼容' : !available ? '满员 / 对局中' : session!.roomAgeMs(room) >= 12000 ? '暂未响应' : '可加入';
+        return `<article class="lan-room"><strong>${escape(room.name)}</strong><small>${escape(room.metadata.platform ?? '未知平台')} · ${modeName(room.metadata.mode)} · ${room.metadata.players ?? '?'}/${room.metadata.capacity ?? '?'} · ${status}</small><select data-endpoints="${escape(room.metadata.roomId)}" aria-label="${escape(room.name)}的连接地址">${room.endpoints.map(endpoint => `<option value="${escape(endpoint.address)}:${endpoint.port}" ${selectedEndpoints.get(room.metadata.roomId) === `${endpoint.address}:${endpoint.port}` ? 'selected' : ''}>${escape(endpoint.address)}:${endpoint.port}</option>`).join('')}</select><div class="lan-actions"><button class="quiet-button" data-fill="${escape(room.metadata.roomId)}">填入地址</button><button class="primary-button" data-join="${escape(room.metadata.roomId)}" ${available ? '' : 'disabled'}>加入</button></div></article>`;
+      }).join('') || '<p class="lan-muted">未收到房间回应。可切换「地址」按 IP 检索。</p>';
+      if (roomMarkup !== markup && !(document.activeElement?.tagName === 'SELECT' && list.contains(document.activeElement))) {
+        list.innerHTML = markup; roomMarkup = markup;
+        list.querySelectorAll<HTMLSelectElement>('[data-endpoints]').forEach(select => { select.onchange = () => selectedEndpoints.set(select.dataset.endpoints!, select.value); });
+        const endpoint = (id: string) => parseAddress([...list.querySelectorAll<HTMLSelectElement>('[data-endpoints]')].find(item => item.dataset.endpoints === id)?.value ?? '');
+        list.querySelectorAll<HTMLButtonElement>('[data-fill]').forEach(item => { item.onclick = () => { const value = endpoint(item.dataset.fill!); if (!value) return; captureForm(); form.address = `${value.address}:${value.port}`; browseTab = 'address'; key = ''; render(); text('#lan-fill-notice', '已填入完整地址，点击加入即可连接。'); }; });
+        list.querySelectorAll<HTMLButtonElement>('[data-join]').forEach(item => { item.onclick = () => { const value = endpoint(item.dataset.join!); if (!value) return; captureForm(); form.address = `${value.address}:${value.port}`; joinAddress(); }; });
+      }
+    } else if (browseTab === 'recent') {
+      const items = recentLanAddresses(), size = capacity(330, 70, 6); updatePager(items.length, size, updateBrowser);
+      const markup = items.slice(page * size, (page + 1) * size).map((item, index) => `<button class="lan-recent-row quiet-button" data-recent="${page * size + index}">${escape(item.name)}<small>${escape(item.address)}:${item.port} · 历史地址</small></button>`).join('') || '<p class="lan-muted">成功加入后会保留最近地址。</p>';
+      if (roomMarkup !== markup) { list.innerHTML = markup; roomMarkup = markup; list.querySelectorAll<HTMLElement>('[data-recent]').forEach(item => { item.onclick = () => { captureForm(); const value = items[Number(item.dataset.recent)]; form.address = `${value.address}:${value.port}`; browseTab = 'address'; key = ''; render(); }; }); }
+    } else {
+      const lines = discovery.diagnostics, size = capacity(380, 38, 6); updatePager(lines.length, size, updateBrowser);
+      const markup = `<p class="lan-muted">路径 ${discovery.paths} · 发送 ${discovery.sent} · 回应 ${discovery.received} · 错误 ${discovery.errors}</p><div class="lan-log-page">${lines.slice(page * size, (page + 1) * size).map(line => `<p>${escape(line)}</p>`).join('') || '<p>暂无诊断。没有回应不代表已确定故障原因。</p>'}</div>`;
+      if (roomMarkup !== markup) { list.innerHTML = markup; roomMarkup = markup; }
+      q('#lan-copy-log').onclick = () => run(async () => { await navigator.clipboard.writeText(lines.join('\n')); text('#lan-error', '诊断已复制'); });
+    }
+  }
+  function openObservation(playerId: string): void {
+    if (!session?.view.snapshot || root.querySelector('.lan-confirm')) return;
+    observeId = playerId;
+    const overlay = document.createElement('div'); overlay.className = 'lan-confirm'; overlay.setAttribute('role', 'dialog'); overlay.setAttribute('aria-label', '观察对手棋盘'); overlay.setAttribute('aria-modal', 'true');
+    overlay.innerHTML = '<div class="lan-card"><h2 id="lan-observe-name"></h2><p>比赛仍在继续；此处不会触发你的发射。</p><canvas id="lan-observe-board" class="lan-observe-canvas" width="640" height="760" aria-label="观察的选手棋盘"></canvas><div class="lan-actions">'+button('lan-observe-prev', '上一位')+button('lan-observe-next', '下一位')+button('lan-stay', '返回自己', true)+'</div></div>';
+    root.append(overlay); focusRelease = bindModalFocus(overlay, [q('.lan-body'), q('.lan-top')]);
+    const dismiss = () => { observeId = ''; focusRelease?.(); focusRelease = undefined; overlay.remove(); };
+    q('#lan-stay').onclick = dismiss;
+    const turn = (delta: number) => { const ids = session!.view.snapshot!.playerIds.filter(id => id !== session!.view.selfId); observeId = ids[(ids.indexOf(observeId) + delta + ids.length) % ids.length]; render(); };
+    q('#lan-observe-prev').onclick = () => turn(-1); q('#lan-observe-next').onclick = () => turn(1);
+    overlay.onkeydown = event => { if (event.key === 'Escape') { event.stopPropagation(); dismiss(); } }; render();
+  }
+  function updateLobby(): void {
+    const view = session!.view;
+    if (lobbyPage === 'addresses') {
+      const addresses = view.hostInfo?.addresses ?? []; addressPage = Math.max(0, Math.min(addressPage, addresses.length - 1));
+      q('#lan-address-list').innerHTML = `<code>${escape(addresses[addressPage] ?? '暂无可用地址')}${addresses.length ? `:${view.hostInfo!.port}` : ''}</code><p>${addressPage + 1} / ${Math.max(1, addresses.length)}</p>${view.hostInfo?.discoveryAvailable === false ? '<p>广播不可用，可使用此地址直接加入。</p>' : ''}`;
+      q<HTMLButtonElement>('#lan-address-prev').disabled = addressPage === 0; q<HTMLButtonElement>('#lan-address-next').disabled = addressPage + 1 >= addresses.length; return;
+    }
+    if (lobbyPage !== 'players') return;
+    const markup = Array.from({ length: 4 }, (_, index) => {
+      const player = view.players[index]; return `<div class="lan-player"><strong>${player ? escape(player.name) : index < (view.config.capacity ?? 4) ? '等待朋友' : '未开放'}</strong><small>${player ? `${player.isHost || index === 0 ? '房主 · ' : ''}${player.connected ? player.ready ? '已准备' : '未准备' : '离线'}` : '空位'}</small>${player && view.isHost && player.id !== view.selfId ? `<button class="text-button" data-kick="${escape(player.id)}" aria-label="移除${escape(player.name)}">移除</button>` : ''}</div>`;
+    }).join('');
+    if (q('#lan-players').innerHTML !== markup) { q('#lan-players').innerHTML = markup; root.querySelectorAll<HTMLElement>('[data-kick]').forEach(item => { item.onclick = () => session!.kick(item.dataset.kick); }); }
+    text('#lan-settings-summary', summary(view.config)); text('#lan-ready', view.players.find(p => p.id === view.selfId)?.ready ? '取消准备' : '准备');
+    const start = q<HTMLButtonElement>('#lan-start'); if (start) start.disabled = view.players.length < 2 || view.players.some(p => !p.connected || !p.ready);
+  }
+  function updateGame(): void {
+    const view = session!.view, snapshot = view.snapshot!, self = snapshot.players[view.selfId];
+    if (!self) return;
+    root.classList.toggle('lan-watching', self.sealed); root.classList.toggle('lan-battle', snapshot.mode === 'battle');
+    text('#lan-self-name', `${view.players.find(p => p.id === view.selfId)?.name ?? '你'} · ${self.sealed ? '观战' : '你'}`);
+    text('#lan-self-score', self.score.toLocaleString('zh-CN')); text('#lan-self-wave', self.sealed ? '已结束操作' : `第 ${self.waveIndex + 1} 波`);
+    text('#lan-clock', formatLanDuration(Math.max(0, snapshot.durationMs - session!.displayElapsed()))); text('#lan-network', view.rtt ? `${view.rtt} ms` : '局域网');
+    for (const id of snapshot.playerIds.filter(id => id !== view.selfId)) {
+      const p = snapshot.players[id]; text(`[data-player-name="${id}"]`, view.players.find(item => item.id === id)?.name ?? '选手'); text(`[data-player-score="${id}"]`, `${p.score} 分`); text(`[data-player-state="${id}"]`, p.forfeited ? '弃权' : p.sealed ? snapshot.mode === 'score' ? '已封盘' : '已淘汰' : `第 ${p.waveIndex + 1} 波`);
+    }
+    const battle = self.battle;
+    text('#lan-attack-bar', battle ? `来袭 ${battle.incomingBalls}/${battle.threshold} 球 · 排队 ${battle.pendingAttacks.length} 行 · 防御 ${battle.defenseRemainder}/12${battle.pendingAttacks[0] ? ` · ${Math.max(0, Math.ceil((battle.pendingAttacks[0].notBeforeAtMs - snapshot.startedAtMs - session!.displayElapsed()) / 1000))} 秒预告` : ''}` : `自然压力 ${self.state.danger}% · ${snapshot.playerIds.length} 人同图竞分`);
+    const outcome = view.pauseOutcome && (view.pauseOutcome.status !== 'approved' || view.phase === 'paused') ? view.pauseOutcome.message : '';
+    text('#lan-notice', view.notice || outcome || (self.sealed ? '点击其他选手切换观战。' : usesButtonControls() ? loadSettings().immersiveMode ? '按住瞄准，松手发射。' : '方向与微调；支持双指操作。' : '鼠标左右键松开发射 · 沿用自定义快捷键'));
+    if (observeId && q<HTMLCanvasElement>('#lan-observe-board')) {
+      text('#lan-observe-name', `${view.players.find(p => p.id === observeId)?.name ?? '选手'} · ${snapshot.players[observeId].score} 分`);
+      drawLanBoard(q<HTMLCanvasElement>('#lan-observe-board'), snapshot.players[observeId].state, 0);
+    }
+    q<HTMLButtonElement>('#lan-pause').disabled = view.phase !== 'playing' || !!view.pauseRequest || self.sealed;
+    q<HTMLButtonElement>('#lan-settings').disabled = view.forceCloseSettings || !['paused', 'playing'].includes(view.phase) || view.phase === 'playing' && (!!view.pauseRequest || self.sealed);
+    const request = view.pauseRequest, requestBox = q('#lan-pause-request'); requestBox.hidden = !request; q('#lan-attack-bar').hidden = !!request;
+    if (request) {
+      if (requestKey !== request.requestId) {
+        requestKey = request.requestId;
+        requestBox.innerHTML = `<span id="lan-request-message" role="status"></span><div class="lan-actions">${request.requesterId === view.selfId ? button('lan-cancel-pause', '取消申请') : button('lan-accept-pause', '同意暂停')+button('lan-reject-pause', '继续比赛')}</div>`;
+        q('#lan-cancel-pause')?.addEventListener('click', () => session!.cancelPause()); q('#lan-accept-pause')?.addEventListener('click', () => session!.decidePause(true, request.requestId)); q('#lan-reject-pause')?.addEventListener('click', () => session!.decidePause(false, request.requestId));
+      }
+      const votes = request.participantIds.filter(id => request.votes[id] === true).length;
+      text('#lan-request-message', `${view.players.find(p => p.id === request.requesterId)?.name ?? '选手'}申请${request.reason === 'settings' ? '设置' : ''}暂停 · ${votes}/${request.participantIds.length} 同意 · ${Math.ceil(view.pauseVoteRemainingMs / 1000)}秒`);
+      const accepted = request.votes[view.selfId] === true; if (q<HTMLButtonElement>('#lan-accept-pause')) q<HTMLButtonElement>('#lan-accept-pause').disabled = accepted || !request.participantIds.includes(view.selfId);
+      if (q<HTMLButtonElement>('#lan-reject-pause')) q<HTMLButtonElement>('#lan-reject-pause').disabled = accepted || !request.participantIds.includes(view.selfId);
+    } else requestKey = '';
+    const overlay = q('#lan-game-overlay'); overlay.hidden = ['playing', 'finished'].includes(view.phase);
+    const markup = view.phase === 'countdown' ? '<strong id="lan-overlay-countdown"></strong><p>所有选手同时开局</p>' : view.phase === 'preparing' ? '<strong>装载棋盘…</strong><p>等待全部选手完成准备。</p>' : `<strong>${view.phase === 'reconnecting' ? '等待恢复连接' : '比赛已暂停'}</strong><p id="lan-overlay-notice"></p><small id="lan-pause-time"></small><div class="lan-actions">${view.phase === 'paused' ? button('lan-overlay-settings', '本机设置') : ''}${button('lan-resume', '准备继续', true)}</div><small id="lan-ready-count"></small>`;
+    if (!overlay.hidden && pauseMarkup !== markup) {
+      overlay.innerHTML = markup; pauseMarkup = markup; q('#lan-overlay-settings')?.addEventListener('click', openSettings); q('#lan-resume')?.addEventListener('click', () => session!.resume());
+    }
+    text('#lan-overlay-countdown', String(view.countdown || '开始')); text('#lan-overlay-notice', view.notice);
+    text('#lan-pause-time', view.phase === 'paused' ? `本次剩余 ${Math.ceil(view.pauseRemainingMs / 1000)} 秒` : '网络恢复后统一装载并继续');
+    text('#lan-ready-count', `${view.resumeReady.length} 人已准备`);
+    const resume = q<HTMLButtonElement>('#lan-resume'); if (resume) { resume.disabled = view.resumeReady.includes(view.selfId) || settingsVisible || self.sealed && !view.isHost; resume.textContent = view.resumeReady.includes(view.selfId) ? '等待其余选手' : '准备继续'; }
+    const settingsButton = q<HTMLButtonElement>('#lan-overlay-settings'); if (settingsButton) settingsButton.disabled = view.forceCloseSettings;
+  }
+  const resize = () => {
+    if (root.hidden) return;
+    const focused = document.activeElement as HTMLInputElement | null;
+    if (window.visualViewport && window.innerHeight - window.visualViewport.height > 120 && focused?.tagName === 'INPUT' && !focused.closest('#modal-root') && focused.closest('#lan-screen') && !keyboardField) {
+      const label = focused.closest<HTMLElement>('.lan-field');
+      if (label) { const marker = document.createComment('field'); label.replaceWith(marker); const overlay = document.createElement('div'); overlay.className = 'lan-field-editor'; overlay.append(label); const done = document.createElement('button'); done.className = 'primary-button'; done.textContent = '完成输入'; done.onclick = closeKeyboard; overlay.append(done); root.append(overlay); root.classList.add('lan-editing'); keyboardField = { label, marker, overlay }; focused.focus(); }
+    } else if (keyboardField && (!window.visualViewport || window.innerHeight - window.visualViewport.height < 120)) closeKeyboard();
+    if (!keyboardField) render();
+  };
+  entryButton.addEventListener('click', open);
+  window.addEventListener('resize', resize); window.visualViewport?.addEventListener('resize', resize);
+  subscribeSettings(settings => { if (!root.hidden) syncGameShell(root, { touch: usesButtonControls(), immersive: settings.immersiveMode, mode: session?.view.snapshot?.mode ?? 'lan' }); });
+  window.addEventListener('keydown', event => {
+    if (root.hidden || event.defaultPrevented || event.repeat || settingsVisible || root.querySelector('.lan-confirm')) return;
+    if (event.key === 'Escape') { event.preventDefault(); confirmLeave(); return; }
+    if ((event.target as HTMLElement | null)?.closest?.('input,select,textarea,button')) return;
+    if (shortcutAction(event, loadSettings().shortcuts) === 'settings' && session?.view.snapshot) { event.preventDefault(); if (session.view.phase === 'paused') openSettings(); else session.requestPause('settings'); }
+  });
   return { isActive: () => !root.hidden, back: confirmLeave, foreground: active => session?.foregroundChanged(active) };
 }

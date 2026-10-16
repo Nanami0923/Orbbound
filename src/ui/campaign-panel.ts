@@ -3,6 +3,7 @@ import { isUnlocked, loadLegacyProgress, type CampaignProgress } from '../storag
 import { formatDuration } from '../storage/history';
 import type { GameState } from '../core/types';
 import { getOrbTheme } from '../content/theme';
+import { pageCapacity, viewportHeight } from './viewport-shell';
 
 export function levelRules(level: CampaignLevel): string {
   return `${level.targets ? `清除 ${level.targets.length} 个白圈目标` : '清空棋盘'} · ${level.timeLimitMs ? `${level.timeLimitMs / 1000} 秒` : `${level.maxShots} 发以内`} · ${level.descentEvery ? `每 ${level.descentEvery} 发下移` : '不下压'}`;
@@ -11,15 +12,19 @@ export function starRules(level: CampaignLevel): string {
   return level.timeLimitMs ? `一星：通关 · 二星：${level.silver / 1000} 秒内 · 三星：${level.gold / 1000} 秒内`
     : `一星：通关 · 二星：${level.silver} 发内 · 三星：${level.gold} 发内`;
 }
-export function campaignMarkup(progress: CampaignProgress, saved: GameState | null): string {
+export function campaignPageSize(): number { return pageCapacity(viewportHeight(), 250, 96, 8, 2); }
+export function campaignMarkup(progress: CampaignProgress, saved: GameState | null, page = 0, chapter = ''): string {
+  const chapters = [...new Set(CAMPAIGN_LEVELS.map(level => level.chapter))];
+  const selected = chapters.includes(chapter) ? chapter : chapters[0];
+  const levels = CAMPAIGN_LEVELS.filter(level => level.chapter === selected), size = campaignPageSize();
+  const current = Math.max(0, Math.min(page, Math.ceil(levels.length / size) - 1));
   const legacy = loadLegacyProgress();
-  return `<button class="modal-close" data-close-modal type="button">关闭</button><p class="eyebrow">CAMPAIGN / 01—${CAMPAIGN_LEVELS.length}</p><h2>三十道关，步步为营</h2><p>通关即可解锁下一关。重试不消耗体力；同一关保留相同的布局和供球规则。</p>
-    ${Object.keys(legacy).length ? `<p class="campaign-star-rules">旧版记录：${Object.keys(legacy).length} / 12 关，${Object.values(legacy).reduce((sum, record) => sum + record.stars, 0)} / 36 星。已解锁关卡继承；30 关已重做，新版重新评星。</p>` : ''}
-    ${saved ? `<button id="campaign-resume" class="primary-button">继续第 ${saved.levelId} 关 · 已用 ${saved.step} 发</button>` : ''}
-    ${[...new Set(CAMPAIGN_LEVELS.map(level => level.chapter))].map((chapter, index) => `<section class="campaign-chapter"><h3>0${index + 1} / ${chapter}</h3><div class="campaign-grid">${CAMPAIGN_LEVELS.filter(level => level.chapter === chapter).map(level => {
+  return `<button class="modal-close" data-close-modal type="button">关闭</button><h2>选择关卡</h2><div class="campaign-picker-toolbar"><label>章节<select id="campaign-chapter" aria-label="选择章节">${chapters.map((value,index) => `<option value="${value}" ${value === selected ? 'selected' : ''}>${index + 1} · ${value}</option>`).join('')}</select></label>${saved ? `<button id="campaign-resume" class="quiet-button">继续第 ${saved.levelId} 关</button>` : ''}</div>
+    <p class="mode-note">通关解锁下一关 · ${Object.keys(progress).length} / 30 关${Object.keys(legacy).length ? ' · 旧版解锁已继承' : ''}</p>
+    <div class="campaign-grid">${levels.slice(current * size,(current + 1) * size).map(level => {
       const unlocked = isUnlocked(level.id, progress), record = progress[String(level.id)];
-      return `<button class="level-tile" data-level="${level.id}" ${unlocked ? '' : 'disabled'} aria-label="第 ${level.id} 关 ${level.name}，${unlocked ? `${record?.stars ?? 0} 星` : '未解锁'}"><span class="level-number">${String(level.id).padStart(2, '0')}</span><strong>${level.name}</strong><small>${level.timeLimitMs ? '限时清空' : level.targets ? '目标球' : level.descentEvery ? '空间挑战' : '限发清空'}</small><span class="level-stars">${unlocked ? '★'.repeat(record?.stars ?? 0) + '☆'.repeat(3 - (record?.stars ?? 0)) : '待解锁'}</span></button>`;
-    }).join('')}</div></section>`).join('')}`;
+      return `<button class="level-tile" data-level="${level.id}" ${unlocked ? '' : 'disabled'} aria-label="第 ${level.id} 关 ${level.name}，${unlocked ? `${record?.stars ?? 0} 星` : '未解锁'}"><span class="level-number">${String(level.id).padStart(2,'0')}</span><strong>${level.name}</strong><span class="level-stars">${unlocked ? '★'.repeat(record?.stars ?? 0) + '☆'.repeat(3 - (record?.stars ?? 0)) : '待解锁'}</span></button>`;
+    }).join('')}</div><nav class="page-navigation"><button id="campaign-prev" class="quiet-button" aria-label="上一页" ${current === 0 ? 'disabled' : ''}>‹</button><span>${current + 1} / ${Math.ceil(levels.length / size)}</span><button id="campaign-next" class="quiet-button" aria-label="下一页" ${(current + 1) * size >= levels.length ? 'disabled' : ''}>›</button></nav>`;
 }
 export function levelMarkup(level: CampaignLevel, progress: CampaignProgress, saved: GameState | null): string {
   const record = progress[String(level.id)];

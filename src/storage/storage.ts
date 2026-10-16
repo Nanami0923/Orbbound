@@ -58,10 +58,10 @@ function storageAvailable(): boolean {
 }
 
 export function loadSettings(): Settings {
-  if (!storageAvailable()) return { ...DEFAULT_SETTINGS };
+  if (!storageAvailable()) return { ...DEFAULT_SETTINGS, shortcuts: { ...DEFAULT_SHORTCUTS } };
   try {
     const value: unknown = JSON.parse(readStorage(SETTINGS_KEY) ?? 'null');
-    if (!value || typeof value !== 'object') return { ...DEFAULT_SETTINGS };
+    if (!value || typeof value !== 'object') return { ...DEFAULT_SETTINGS, shortcuts: { ...DEFAULT_SHORTCUTS } };
     const record = value as Partial<Settings> & { sound?: boolean };
     const number = (value: unknown, fallback: number, min: number, max: number) => typeof value === 'number' && Number.isFinite(value) ? Math.max(min, Math.min(max, value)) : fallback;
     const oldVolume = number(record.volume, record.sound === false ? 0 : 50, 0, 100);
@@ -85,7 +85,7 @@ export function loadSettings(): Settings {
       showPerformance: record.showPerformance === true,
     };
   } catch {
-    return { ...DEFAULT_SETTINGS };
+    return { ...DEFAULT_SETTINGS, shortcuts: { ...DEFAULT_SHORTCUTS } };
   }
 }
 

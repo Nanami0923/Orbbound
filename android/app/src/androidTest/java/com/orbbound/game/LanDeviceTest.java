@@ -48,7 +48,7 @@ public class LanDeviceTest {
     }
     private static String[] payloads() {
         char[] chars = new char[65536]; Arrays.fill(chars, 'a');
-        return new String[] { "设备互通✓🎮", new String(chars), "{\"v\":2,\"mode\":\"battle\",\"eventSeq\":7}" };
+        return new String[] { "设备互通✓🎮", new String(chars), "{\"v\":3,\"mode\":\"battle\",\"eventSeq\":7}" };
     }
     @Test(timeout = 180000) public void androidWindowsDiscoveryAndFrames() throws Exception {
         String applicationId = InstrumentationRegistry.getInstrumentation().getTargetContext().getPackageName();
@@ -57,7 +57,7 @@ public class LanDeviceTest {
         Events events = new Events();
         try (LanService service = new LanService(InstrumentationRegistry.getInstrumentation().getTargetContext(), events)) {
             if ("host".equals(role)) {
-                JSONObject metadata = new JSONObject().put("roomId", "device-test-android").put("protocolVersion", 2)
+                JSONObject metadata = new JSONObject().put("roomId", "device-test-android").put("protocolVersion", 3)
                     .put("rulesHash", "device-check").put("mode", "battle").put("platform", "Android").put("players", 1).put("phase", "lobby");
                 LanService.HostInfo info = service.startHost("Android设备网络验证", metadata, 42179);
                 report("READY Android addresses=" + Arrays.toString(info.addresses) + " port=" + info.port + " discovery=" + info.discoveryAvailable);

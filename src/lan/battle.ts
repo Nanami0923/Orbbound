@@ -4,11 +4,11 @@ import { SeededRandom } from '../core/rng';
 import type { GameEvent, GameState } from '../core/types';
 import { checkedTime, deriveWaveSeed, endMatch, eventBase, finalizeOutcome, resolvePlayerShot } from './match-helpers';
 import type { PresentationDraft } from './presentation';
-import { BATTLE_RULES, isShotCommand } from './protocol';
+import { BATTLE_RULES, battleThreshold, isShotCommand } from './protocol';
 import type { AttackRow, BattleBatchOutcome, BattlePlayerState, BattleShotOutcome, MatchSnapshot, ShotCommand } from './protocol';
 
-export function createBattleState(startedAtMs: number): BattlePlayerState {
-  return { chargeRemainder: 0, pendingAttacks: [], lastAttackAtMs: null, naturalGuardUntilMs: startedAtMs, appliedRows: 0,
+export function createBattleState(startedAtMs: number, playerCount = 2): BattlePlayerState {
+  return { chargeRemainder: 0, defenseRemainder: 0, incomingBalls: 0, incomingContributions: {}, threshold: battleThreshold(playerCount), pendingAttacks: [], lastAttackAtMs: null, naturalGuardUntilMs: startedAtMs, appliedRows: 0,
     stats: { generatedRows: 0, cancelledRows: 0, sentRows: 0, receivedRows: 0, appliedRows: 0, discardedRows: 0 } };
 }
 
@@ -35,7 +35,37 @@ export function applyAttackDescent(input: GameState, matchSeed: number, appliedR
   return { ...input, board, rowOffset: 1 - (input.rowOffset ?? 0), status: hasOccupiedAtOrBelow(board, LOSE_ROW) ? 'LOST' : 'READY' };
 }
 
-/** One host 50ms decision boundary. Caller queues BOTH sides before invoking. */
+/** Preserve fractional incoming progress; largest remainders use fixed seats to break ties. */
+export function rescaleIncoming(battle: BattlePlayerState, threshold: number, playerIds: readonly string[]): void {
+  if (battle.threshold === threshold) return;
+  const oldThreshold = battle.threshold;
+  const total = Math.floor(battle.incomingBalls * threshold / oldThreshold);
+  const shares = playerIds.filter(id => battle.incomingContributions[id] > 0).map(id => {
+    const scaled = battle.incomingContributions[id] * threshold;
+    return { id, amount: Math.floor(scaled / oldThreshold), fraction: scaled % oldThreshold };
+  });
+  let extra = total - shares.reduce((sum, share) => sum + share.amount, 0);
+  for (const share of [...shares].sort((a, b) => b.fraction - a.fraction || playerIds.indexOf(a.id) - playerIds.indexOf(b.id))) {
+    if (extra-- > 0) share.amount++;
+  }
+  battle.incomingBalls = total;
+  battle.incomingContributions = Object.fromEntries(shares.filter(share => share.amount).map(share => [share.id, share.amount]));
+  battle.threshold = threshold;
+}
+
+function consumeContribution(battle: BattlePlayerState, amount: number, playerIds: readonly string[]): string[] {
+  const sources: string[] = [];
+  for (const id of playerIds) {
+    const take = Math.min(amount, battle.incomingContributions[id] ?? 0);
+    if (!take) continue;
+    sources.push(id); amount -= take; battle.incomingContributions[id] -= take;
+    if (!battle.incomingContributions[id]) delete battle.incomingContributions[id];
+    if (!amount) break;
+  }
+  return sources;
+}
+
+/** One atomic host boundary: collect every player's shot before target-based pressure. */
 export function applyBattleBatch(input: MatchSnapshot, commands: readonly ShotCommand[], nowMs: number): BattleBatchOutcome {
   checkedTime(nowMs);
   if (input.mode !== 'battle') throw new Error('连锁对战批次不能用于竞分模式');
@@ -44,26 +74,24 @@ export function applyBattleBatch(input: MatchSnapshot, commands: readonly ShotCo
   const outcomes: BattleShotOutcome[] = commands.map(command => ({ playerId: typeof command?.playerId === 'string' ? command.playerId : '', seq: command?.seq ?? 0, accepted: false }));
   if (input.status === 'finished') return { snapshot: input, presentationEvents: [], outcomes: outcomes.map(item => ({ ...item, reason: 'MATCH_FINISHED' })) };
   let snapshot: MatchSnapshot = { ...input, elapsedMs: Math.min(input.durationMs, now - input.startedAtMs), players: { ...input.players } };
-  // Deadline wins over every shot and attack in this batch, without catch-up.
   if (now >= input.startedAtMs + input.durationMs) return { ...finalizeOutcome(input, endMatch(snapshot, 'timeout', input.startedAtMs + input.durationMs), []),
     outcomes: outcomes.map(item => ({ ...item, reason: 'MATCH_FINISHED' })) };
-
+  const alive = input.playerIds.filter(id => !input.players[id].sealed && !input.players[id].forfeited);
   const drafts: PresentationDraft[] = [];
-  const outgoing: Record<string, number> = {};
-  const sourceEvents: Record<string, number> = {};
-  const naturalDescent = new Set<string>();
-  const acceptedPlayers = new Set<string>();
+  const removed: Record<string, number> = {}, defense: Record<string, number> = {};
+  const newRows: Record<string, AttackRow[]> = {};
+  const naturalDescent = new Set<string>(), acceptedPlayers = new Set<string>();
   for (const id of input.playerIds) {
-    const original = input.players[id];
-    const battle = original.battle!;
-    snapshot.players[id] = { ...original, battle: { ...battle, pendingAttacks: [...battle.pendingAttacks], stats: { ...battle.stats } } };
-    outgoing[id] = 0;
+    const original = input.players[id], battle = original.battle!;
+    snapshot.players[id] = { ...original, battle: { ...battle, incomingContributions: { ...battle.incomingContributions }, pendingAttacks: [...battle.pendingAttacks], stats: { ...battle.stats } } };
+    if (alive.includes(id) && alive.length >= 2) rescaleIncoming(snapshot.players[id].battle!, battleThreshold(alive.length), input.playerIds);
+    removed[id] = defense[id] = 0; newRows[id] = [];
   }
   for (let index = 0; index < commands.length; index++) {
     if (!isShotCommand(commands[index])) outcomes[index].reason = 'INVALID_COMMAND';
     else if (!input.playerIds.includes(commands[index].playerId)) outcomes[index].reason = 'UNKNOWN_PLAYER';
   }
-  // Fixed player and sequence order removes input-array/host processing bias.
+  // Fixed seats and sequence ordering make arrival order irrelevant.
   for (const id of input.playerIds) {
     const indices = commands.map((_, index) => index).filter(index => !outcomes[index].reason && commands[index].playerId === id)
       .sort((a, b) => commands[a].seq - commands[b].seq || a - b);
@@ -71,60 +99,55 @@ export function applyBattleBatch(input: MatchSnapshot, commands: readonly ShotCo
       if (acceptedPlayers.has(id)) { outcomes[index].reason = commands[index].seq <= snapshot.players[id].lastSeq ? 'DUPLICATE_SEQUENCE' : 'COOLDOWN'; continue; }
       const resolved = resolvePlayerShot(snapshot, snapshot.players[id], commands[index], now);
       if (typeof resolved === 'string') { outcomes[index].reason = resolved; continue; }
-      outcomes[index].accepted = true;
-      acceptedPlayers.add(id);
-      sourceEvents[id] = input.eventSeq + drafts.length + 1;
-      drafts.push(...resolved.drafts);
+      outcomes[index].accepted = true; acceptedPlayers.add(id); drafts.push(...resolved.drafts);
       snapshot.players[id] = resolved.player;
+      removed[id] = countRemovedBalls(resolved.events);
       const battle = resolved.player.battle!;
-      const charge = calculateAttackCharge(battle.chargeRemainder, countRemovedBalls(resolved.events));
-      battle.chargeRemainder = charge.chargeRemainder;
-      battle.stats.generatedRows += charge.generatedRows;
-      battle.stats.discardedRows += charge.discardedRows;
-      outgoing[id] = charge.generatedRows;
-      if (resolved.naturalDescent) {
-        naturalDescent.add(id);
-        battle.naturalGuardUntilMs = resolved.player.readyAtMs + BATTLE_RULES.naturalGuardMs;
-      }
+      const charge = calculateAttackCharge(battle.defenseRemainder, removed[id]);
+      battle.chargeRemainder = battle.defenseRemainder = charge.chargeRemainder;
+      defense[id] = charge.generatedRows;
+      if (resolved.naturalDescent) { naturalDescent.add(id); battle.naturalGuardUntilMs = resolved.player.readyAtMs + BATTLE_RULES.naturalGuardMs; }
     }
   }
-
-  // Cap is already applied. Each side first spends its generated rows on its
-  // own OLD queue, even rows that have not finished their warning period.
-  for (const id of input.playerIds) {
+  // Each target receives the actual removed balls from ALL other batch-start survivors.
+  for (const id of alive) {
+    const battle = snapshot.players[id].battle!;
+    for (const source of alive) if (source !== id && removed[source]) {
+      battle.incomingBalls += removed[source];
+      battle.incomingContributions[source] = (battle.incomingContributions[source] ?? 0) + removed[source];
+    }
+    const wholeRows = Math.floor(battle.incomingBalls / battle.threshold);
+    battle.incomingBalls %= battle.threshold;
+    battle.stats.generatedRows += Math.min(BATTLE_RULES.generatedCap, wholeRows);
+    battle.stats.discardedRows += Math.max(0, wholeRows - BATTLE_RULES.generatedCap);
+    for (let ordinal = 0; ordinal < wholeRows; ordinal++) {
+      const sources = consumeContribution(battle, battle.threshold, input.playerIds);
+      // Discarded complete rows consume their contribution too; never create hidden debt.
+      if (ordinal >= BATTLE_RULES.generatedCap) continue;
+      newRows[id].push({ attackId: `attack-${input.eventSeq}-${input.playerIds.indexOf(id)}-${ordinal}`, sourcePlayerId: sources[0], sourcePlayerIds: sources,
+        targetPlayerId: id, createdAtMs: now, notBeforeAtMs: now + BATTLE_RULES.warningMs, sourceEventSeq: input.eventSeq + drafts.length + 1 });
+    }
+  }
+  // Defense is independent of outgoing contribution: old queue first, then new rows.
+  for (const id of alive) {
     const player = snapshot.players[id], battle = player.battle!;
-    const count = Math.min(outgoing[id], battle.pendingAttacks.length);
-    if (count) {
-      const cancelled = battle.pendingAttacks.splice(0, count);
-      outgoing[id] -= count;
-      battle.stats.cancelledRows += count;
-      drafts.push({ ...eventBase(player, now), type: 'attack-cancelled', rows: count, reason: 'defense', attackIds: cancelled.map(row => row.attackId) });
+    const cancelled = battle.pendingAttacks.splice(0, defense[id]);
+    const remainingDefense = defense[id] - cancelled.length;
+    cancelled.push(...newRows[id].splice(0, remainingDefense));
+    if (cancelled.length) {
+      battle.stats.cancelledRows += cancelled.length;
+      drafts.push({ ...eventBase(player, now), type: 'attack-cancelled', rows: cancelled.length, reason: 'defense', attackIds: cancelled.map(row => row.attackId) });
+    }
+    for (const attack of newRows[id]) {
+      if (battle.pendingAttacks.length >= BATTLE_RULES.queueCap) { battle.stats.discardedRows++; continue; }
+      // Use this queued event as the authoritative creation watermark, including carried sources.
+      attack.sourceEventSeq = input.eventSeq + drafts.length + 1;
+      battle.pendingAttacks.push(attack); battle.stats.receivedRows++;
+      for (const source of attack.sourcePlayerIds) snapshot.players[source].battle!.stats.sentRows++;
+      drafts.push({ ...eventBase(player, now), type: 'attack-queued', attack });
     }
   }
-  const mutual = Math.min(...input.playerIds.map(id => outgoing[id]));
-  if (mutual) for (const id of input.playerIds) {
-    const player = snapshot.players[id];
-    outgoing[id] -= mutual;
-    player.battle!.stats.cancelledRows += mutual;
-    drafts.push({ ...eventBase(player, now), type: 'attack-cancelled', rows: mutual, reason: 'mutual', attackIds: [] });
-  }
-  for (const id of input.playerIds) {
-    const source = snapshot.players[id];
-    const targetId = input.playerIds.find(other => other !== id)!;
-    const target = snapshot.players[targetId], targetBattle = target.battle!;
-    const admitted = Math.min(outgoing[id], BATTLE_RULES.queueCap - targetBattle.pendingAttacks.length);
-    source.battle!.stats.sentRows += admitted;
-    source.battle!.stats.discardedRows += outgoing[id] - admitted;
-    targetBattle.stats.receivedRows += admitted;
-    for (let rowIndex = 0; rowIndex < admitted; rowIndex++) {
-      const attack: AttackRow = { attackId: `attack-${sourceEvents[id]}-${rowIndex}`, sourcePlayerId: id, targetPlayerId: targetId,
-        createdAtMs: now, notBeforeAtMs: now + BATTLE_RULES.warningMs, sourceEventSeq: sourceEvents[id] };
-      targetBattle.pendingAttacks.push(attack);
-      drafts.push({ ...eventBase(target, now), type: 'attack-queued', attack });
-    }
-  }
-
-  for (const id of input.playerIds) {
+  for (const id of alive) {
     const original = input.players[id];
     const player = snapshot.players[id], battle = player.battle!;
     const attack = battle.pendingAttacks[0];
@@ -133,22 +156,18 @@ export function applyBattleBatch(input: MatchSnapshot, commands: readonly ShotCo
       || battle.lastAttackAtMs !== null && now < battle.lastAttackAtMs + BATTLE_RULES.attackIntervalMs) continue;
     battle.pendingAttacks.shift();
     const state = applyAttackDescent(player.state, input.seed, battle.appliedRows);
-    battle.appliedRows++;
-    battle.stats.appliedRows++;
-    battle.lastAttackAtMs = now;
-    // Eligibility is locked BEFORE this batch's shot. Its new cooldown cannot
-    // defer the attack; display it after the already resolved shot stages.
+    battle.appliedRows++; battle.stats.appliedRows++; battle.lastAttackAtMs = now;
     const displayAtMs = acceptedPlayers.has(id) ? player.readyAtMs : now;
     const next = { ...player, state, boardRevision: player.boardRevision + 1, readyAtMs: displayAtMs + BATTLE_RULES.descentMs,
       sealed: state.status === 'LOST', sealedAtMs: state.status === 'LOST' ? now : null };
     snapshot.players[id] = next;
-    const base = { ...eventBase(player, displayAtMs), afterRevision: next.boardRevision };
-    drafts.push({ ...base, type: 'board-descended', reason: 'attack', durationMs: 360, beforeState: player.state, afterState: state,
+    drafts.push({ ...eventBase(player, displayAtMs), afterRevision: next.boardRevision, type: 'board-descended', reason: 'attack', durationMs: 360, beforeState: player.state, afterState: state,
       ...(acceptedPlayers.has(id) ? { commandSeq: player.lastSeq } : {}) });
     drafts.push({ ...eventBase(next, displayAtMs), type: 'attack-applied', attack });
   }
-  const sealed = input.playerIds.filter(id => snapshot.players[id].sealed);
-  if (sealed.length === 2) snapshot = endMatch(snapshot, 'double-knockout', now, null);
-  else if (sealed.length === 1) snapshot = endMatch(snapshot, 'knockout', now, input.playerIds.find(id => id !== sealed[0])!);
+  const surviving = alive.filter(id => !snapshot.players[id].sealed);
+  for (const id of alive) if (snapshot.players[id].sealed) snapshot.players[id].eliminationRank = surviving.length + 1;
+  if (surviving.length === 0) snapshot = endMatch(snapshot, 'double-knockout', now);
+  else if (surviving.length === 1) snapshot = endMatch(snapshot, 'knockout', now);
   return { ...finalizeOutcome(input, snapshot, drafts), outcomes };
 }

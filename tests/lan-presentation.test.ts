@@ -107,6 +107,63 @@ describe('LAN committed canvas presentation', () => {
     p.presentation.draw(p.canvas, 'host', next.afterState, 600, false, true); expect(p.feedback).toHaveBeenCalledOnce();
   });
 
+  it('keeps all four players animated when STATE arrives before one presentation packet per frame', () => {
+    const p = painter(), events = ['host', 'guest', 'guest2', 'guest3'].map((id, index) => shot(index * 2 + 1, id));
+    // The snapshot includes omitted decorative events and reaches the renderer first.
+    p.presentation.ingest([], 8, 100);
+    for (const [index, event] of events.entries()) {
+      p.presentation.ingest([event], 8, 120 + index * 20);
+      p.presentation.draw(p.canvas, event.playerId, event.afterState, 200, false, event.playerId === 'guest3');
+      expect(p.paint.mock.calls.at(-1)?.[1]).toBe(event.beforeState);
+    }
+    // A newer state-only packet must not clear an animation already in progress.
+    p.presentation.ingest([], 12, 210);
+    for (const event of events) {
+      p.presentation.draw(p.canvas, event.playerId, event.afterState, 220, false, event.playerId === 'guest3');
+      expect(p.paint.mock.calls.at(-1)?.[1]).toBe(event.beforeState);
+    }
+    p.presentation.ingest(events, 12, 600);
+    for (const event of events) p.presentation.draw(p.canvas, event.playerId, event.afterState, 600, false, event.playerId === 'guest3');
+    expect(p.feedback).toHaveBeenCalledExactlyOnceWith('drop');
+    for (const event of events) p.presentation.draw(p.canvas, event.playerId, event.afterState, 976, false, event.playerId === 'guest3');
+    expect(p.presentation.busy).toBe(false);
+    expect(p.feedback).toHaveBeenCalledOnce();
+  });
+
+  it('does not let a later global sequence from one player discard another player packet', () => {
+    const p = painter(), events = [shot(8, 'host'), shot(2, 'guest'), shot(5, 'guest2'), shot(3, 'guest3')];
+    for (const event of events) p.presentation.ingest([event], 8, 100);
+    for (const event of events) {
+      p.presentation.draw(p.canvas, event.playerId, event.afterState, 200, false, false);
+      expect(p.paint.mock.calls.at(-1)?.[1]).toBe(event.beforeState);
+    }
+    expect(p.feedback).not.toHaveBeenCalled();
+  });
+
+  it('applies an explicit recovery baseline to delayed packets from every player', () => {
+    const p = painter(), before = shot(3, 'host'), delayed = shot(4, 'guest3');
+    p.presentation.ingest([before], 8, 100); p.presentation.reset(8);
+    p.presentation.ingest([delayed, before, shot(8, 'guest2')], 12, 120);
+    expect(p.presentation.busy).toBe(false);
+    for (const event of [shot(12, 'host'), shot(9, 'guest3')]) {
+      p.presentation.ingest([event], 12, 140);
+      p.presentation.draw(p.canvas, event.playerId, event.afterState, 200, false, false);
+      expect(p.paint.mock.calls.at(-1)?.[1]).toBe(event.beforeState);
+    }
+  });
+
+  it('converges a packet more than two seconds late without starving a fresh different player', () => {
+    const p = painter(), late = shot(8, 'host'), fresh = { ...shot(3, 'guest'), atMs: 2200 };
+    p.presentation.ingest([], 8, 2201);
+    p.presentation.ingest([late], 8, 2201);
+    p.presentation.ingest([fresh], 8, 2201);
+    p.presentation.draw(p.canvas, late.playerId, late.afterState, 2300, false, true);
+    expect(p.paint.mock.calls.at(-1)?.[1]).toBe(late.afterState);
+    p.presentation.draw(p.canvas, fresh.playerId, fresh.afterState, 2300, false, false);
+    expect(p.paint.mock.calls.at(-1)?.[1]).toBe(fresh.beforeState);
+    expect(p.feedback).not.toHaveBeenCalled();
+  });
+
   it('finishes pressure and next-wave stages after removal without advancing gameplay state', () => {
     const p = painter(), pressure = shot(); pressure.stages = { flightMs: 220, resolutionMs: 60, descentMs: 360, waveMs: 0 }; pressure.rulesEvents = [];
     p.presentation.ingest([pressure], 1, 100); p.presentation.draw(p.canvas, 'host', pressure.afterState, 400, false, true);
@@ -131,12 +188,12 @@ class BoardElement extends EventTarget {
   querySelector(selector: string) { return this.children.get(selector) ?? null; }
 }
 const disposals: Array<() => void> = [];
-function boundBoard() {
+function boundBoard(playerIds = ['host', 'guest'], selfId = 'host') {
   const root = new BoardElement();
   for (const key of ['lan-self-board', 'lan-other-board', 'lan-angle', 'lan-fine', 'lan-fire', 'lan-turn-left', 'lan-turn-right', 'lan-angle-value']) root.children.set(`#${key}`, new BoardElement());
   const listeners = new Set<() => void>(); let activeMs = 0, frameMs = 0, nextFrame: FrameRequestCallback | undefined;
-  const session = { view: { selfId: 'host', phase: 'playing' as SessionPhase, pendingShot: false, presentationEvents: [] as PresentationEvent[],
-    snapshot: createMatch({ matchId: 'audio-binding', difficultyId: 'normal', durationMs: 180000, seed: 42, playerIds: ['host', 'guest'] }) },
+  const session = { view: { selfId, phase: 'playing' as SessionPhase, pendingShot: false, presentationEvents: [] as PresentationEvent[],
+    snapshot: createMatch({ matchId: 'audio-binding', difficultyId: 'normal', durationMs: 180000, seed: 42, playerIds }) },
     displayElapsed: () => activeMs, shoot: vi.fn(), subscribe: (listener: () => void) => { listeners.add(listener); return () => listeners.delete(listener); } };
   const document = Object.assign(new EventTarget(), { hidden: false });
   vi.stubGlobal('window', new EventTarget()); vi.stubGlobal('document', document); vi.stubGlobal('performance', { now: () => frameMs });
@@ -149,6 +206,26 @@ beforeEach(() => { vi.clearAllMocks(); });
 afterEach(() => { disposals.splice(0).forEach(dispose => dispose()); vi.unstubAllGlobals(); });
 
 describe('LAN board sound and background music binding', () => {
+  it('plays the last seat removal when a four-player STATE and routed packets span separate RAFs', () => {
+    const ids = ['host', 'guest', 'guest2', 'guest3'], game = boundBoard(ids, 'guest3');
+    game.session.view.snapshot.eventSeq = 8;
+    game.notify(); game.frame(100);
+    for (const [index, playerId] of ids.entries()) {
+      const event = shot(index * 2 + 1, playerId);
+      game.session.view.snapshot.players[playerId].state = event.afterState;
+      game.session.view.presentationEvents.push(event);
+      game.notify(); game.frame(140 + index * 20);
+    }
+    expect(gameAudio.blip).not.toHaveBeenCalled();
+    game.frame(600); game.frame(620); game.notify(); game.frame(640);
+    expect(gameAudio.blip).toHaveBeenCalledExactlyOnceWith('drop');
+    expect(haptic).toHaveBeenCalledExactlyOnceWith('match', expect.any(Object));
+    game.session.view.phase = 'reconnecting'; game.notify(); game.frame(660);
+    game.session.view.phase = 'countdown'; game.notify(); game.frame(680);
+    game.session.view.phase = 'playing'; game.notify(); game.frame(700);
+    expect(gameAudio.blip).toHaveBeenCalledOnce();
+  });
+
   it('plays committed local removal feedback once and keeps rival events silent', () => {
     const game = boundBoard(), local = shot(), rival = shot(2, 'guest');
     game.session.view.snapshot.eventSeq = 2; game.session.view.presentationEvents = [local, rival];

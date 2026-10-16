@@ -12,23 +12,22 @@ const duration = (event: VisualEvent) => event.type === 'shot-resolved'
 /** Short-lived visual history. It never advances rules or grants permission to fire. */
 export class LanPresentation {
   private queues = new Map<string, VisualEvent[]>();
-  private watermark = 0;
+  private baseline = 0;
+  private watermarks = new Map<string, number>();
   private sounds = new Set<string>();
   constructor(private paint: BoardPainter, private paintOrb: OrbPainter, private feedback: (kind: 'match' | 'drop' | 'danger') => void) {}
-  reset(watermark = 0): void { this.queues.clear(); this.sounds.clear(); this.watermark = watermark; }
+  reset(watermark = 0): void { this.queues.clear(); this.sounds.clear(); this.watermarks.clear(); this.baseline = watermark; }
   ingest(events: PresentationEvent[], latestSeq: number, atMs: number): void {
-    const fresh = events.filter(event => event.eventSeq > this.watermark);
-    if (!fresh.length) { if (latestSeq > this.watermark) this.reset(latestSeq); return; }
-    if (fresh[0].eventSeq > this.watermark + 1) this.reset(fresh[0].eventSeq - 1);
-    for (const event of fresh) {
-      this.watermark = event.eventSeq;
+    // A snapshot can precede several per-player presentation packets. Its global
+    // sequence bounds valid events, but only an explicit reset skips old events.
+    for (const event of events) {
+      if (event.eventSeq > latestSeq || event.eventSeq <= (this.watermarks.get(event.playerId) ?? this.baseline)) continue;
+      this.watermarks.set(event.playerId, event.eventSeq);
       if (event.type !== 'shot-resolved' && event.type !== 'board-descended') continue;
       if (!event.beforeState || !event.afterState || atMs - event.atMs > 2000) continue;
       const queue = this.queues.get(event.playerId) ?? [];
       queue.push(event); this.queues.set(event.playerId, queue.slice(-32));
     }
-    // A bounded wire event list may omit decorative events at the tail.
-    this.watermark = Math.max(this.watermark, latestSeq);
   }
   get busy(): boolean { return [...this.queues.values()].some(queue => queue.length > 0); }
   private sound(event: VisualEvent, kind: 'match' | 'drop' | 'danger', self: boolean): void {

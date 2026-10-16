@@ -1,7 +1,7 @@
 import { loadProgress } from '../storage/campaign';
 import { CAMPAIGN_LEVELS } from '../content/campaign';
 import { loadGame } from '../storage/storage';
-import { loadHistory, leaderboard, formatDuration, rulesLabel } from '../storage/history';
+import { loadHistory, leaderboard, formatDuration } from '../storage/history';
 
 export function buildHome(touch: boolean): void {
   document.querySelector('.hero-copy .eyebrow')?.remove();
@@ -26,11 +26,13 @@ export function buildHome(touch: boolean): void {
       ${(['endless', 'timed'] as const).map(mode => `<div class="mode-card ${mode}">
         <button id="${mode === 'endless' ? 'start' : 'timed'}-button" class="mode-main" type="button">
           <b class="mode-symbol">${mode === 'endless' ? '∞' : '◷'}</b><span><strong>${mode === 'endless' ? '无尽模式' : '限时模式'}</strong><small data-mode-description="${mode}"></small><small class="mode-best" data-mode-best="${mode}"></small></span><b class="mode-action" data-mode-action="${mode}">开始 →</b>
-        </button><button class="mode-new text-button" data-new-mode="${mode}" type="button" hidden>新游戏</button>
+        </button>
       </div>`).join('')}
+      <div id="lan-entry-slot" class="mode-card lan-mode"></div>
     </div><p id="save-note" hidden></p>`;
   document.querySelector('.home-footer')!.innerHTML = `<div><button id="tutorial-button" class="text-button" type="button">? 玩法</button><button id="settings-button" class="text-button" type="button">⚙ 设置</button><button data-history class="text-button" type="button">◉ 记录</button></div>`;
   const demo = document.querySelector<HTMLElement>('.mechanism-demo')!;
+  document.querySelector('.hero-copy')?.append(demo);
   demo.addEventListener('click', () => {
     for (const animation of demo.getAnimations({ subtree: true })) { animation.currentTime = 0; animation.play(); }
   });
@@ -45,11 +47,10 @@ export function updateHome(): void {
     const saved = loadGame(mode);
     const description = document.querySelector(`[data-mode-description="${mode}"]`);
     if (!description) continue;
-    description.textContent = saved ? (mode === 'endless' ? `${rulesLabel(saved.rulesVersion)}存档 · 基础分 ${saved.score.toLocaleString('zh-CN')}` : `${rulesLabel(saved.rulesVersion)}存档 · 剩余 ${formatDuration(Math.max(0, (saved.durationMs ?? 300000) - (saved.elapsedMs ?? 0)) + 999)}`) : mode === 'endless' ? '自由节奏 · 自动存档' : '5 / 10 分钟 · 争分夺秒';
-    document.querySelector(`[data-mode-action="${mode}"]`)!.textContent = saved ? '继续 →' : '开始 →';
-    const newButton = document.querySelector<HTMLButtonElement>(`[data-new-mode="${mode}"]`)!;
-    newButton.hidden = !saved;
+    description.textContent = saved ? (mode === 'endless' ? `有存档 · ${saved.score.toLocaleString('zh-CN')} 分` : `有存档 · 剩余 ${formatDuration(Math.max(0, (saved.durationMs ?? 300000) - (saved.elapsedMs ?? 0)) + 999)}`) : mode === 'endless' ? '自由节奏 · 自动存档' : '5 / 10 分钟挑战';
+    document.querySelector(`[data-mode-action="${mode}"]`)!.textContent = '选择 →';
+
     const best = document.querySelector<HTMLElement>(`[data-mode-best="${mode}"]`)!;
-    best.textContent = mode === 'endless' ? `新规则最高结算分 ${(leaderboard(history, 'endless')[0]?.score ?? 0).toLocaleString('zh-CN')}` : [300000, 600000].map(duration => `${duration / 60000} 分钟最高结算分 ${(leaderboard(history, `timed-${duration}`)[0]?.score ?? 0).toLocaleString('zh-CN')}`).join(' · ');
+    best.textContent = mode === 'endless' ? `最高 ${(leaderboard(history, 'endless')[0]?.score ?? 0).toLocaleString('zh-CN')} 分` : '争分夺秒';
   }
 }

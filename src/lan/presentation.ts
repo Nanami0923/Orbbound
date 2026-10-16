@@ -67,11 +67,34 @@ export function pointOnTrace(trace: Pick<ShotTrace, 'points'>, progress: number)
 
 export const PRESENTATION_MAX_EVENTS = 32;
 export const PRESENTATION_MAX_BYTES = 48000;
-/** Latest events survive a long catch-up; sequence gaps tell clients to resync. */
+export const LAN_MESSAGE_TARGET_BYTES = 60 * 1024;
+export const utf8JsonBytes = (value: unknown): number => new TextEncoder().encode(JSON.stringify(value)).byteLength;
+/** Latest events survive catch-up; each recipient uses per-player watermarks. */
 export function boundPresentationEvents(events: PresentationEvent[]): PresentationEvent[] {
   const bounded = events.slice(-PRESENTATION_MAX_EVENTS);
-  while (JSON.stringify(bounded).length > PRESENTATION_MAX_BYTES) bounded.shift();
+  while (utf8JsonBytes(bounded) > PRESENTATION_MAX_BYTES) {
+    // Retain the newest complete event of each player before pruning their older ones.
+    const removable = bounded.findIndex((event, index) => bounded.slice(index + 1).some(later => later.playerId === event.playerId));
+    bounded.splice(removable < 0 ? 0 : removable, 1);
+  }
   return bounded;
+}
+
+/** Split a full batch for transport without dropping the later seats' events. */
+export function partitionPresentationEvents(events: readonly PresentationEvent[], envelope: (events: PresentationEvent[]) => unknown,
+  maxBytes = LAN_MESSAGE_TARGET_BYTES): PresentationEvent[][] {
+  const batches: PresentationEvent[][] = [];
+  let batch: PresentationEvent[] = [];
+  for (const event of events) {
+    const next = [...batch, event];
+    if (next.length > PRESENTATION_MAX_EVENTS || utf8JsonBytes(next) > PRESENTATION_MAX_BYTES || utf8JsonBytes(envelope(next)) > maxBytes) {
+      if (batch.length) batches.push(batch);
+      batch = [event];
+      if (utf8JsonBytes(envelope(batch)) > maxBytes || utf8JsonBytes(batch) > PRESENTATION_MAX_BYTES) throw new Error('单个联机表现事件超过消息预算');
+    } else batch = next;
+  }
+  if (batch.length) batches.push(batch);
+  return batches;
 }
 
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
@@ -134,6 +157,6 @@ export function isPresentationEvent(value: unknown): value is PresentationEvent 
 
 export function isPresentationEvents(value: unknown): value is PresentationEvent[] {
   return Array.isArray(value) && value.length <= PRESENTATION_MAX_EVENTS && value.every(isPresentationEvent)
-    && value.every((event, index) => !index || event.eventSeq === value[index - 1].eventSeq + 1)
-    && JSON.stringify(value).length <= PRESENTATION_MAX_BYTES;
+    && value.every((event, index) => !index || event.eventSeq > value[index - 1].eventSeq)
+    && utf8JsonBytes(value) <= PRESENTATION_MAX_BYTES;
 }

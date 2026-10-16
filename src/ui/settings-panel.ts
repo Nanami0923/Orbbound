@@ -4,49 +4,69 @@ import { haptic } from '../game/feedback';
 import { fineRotationSpeed } from '../game/rotation';
 import { bindSteeringControl } from '../game/steering-control';
 import { DEFAULT_SHORTCUTS, SHORTCUT_LABELS, shortcutLabel, validShortcutCode, type ShortcutAction } from '../game/shortcuts';
+import { getHapticsCapability } from './platform-services';
+import { readStorage } from '../storage/safe-storage';
 
-export function settingsMarkup(settings: Settings, mobile: boolean): string {
+export const SETTINGS_CATEGORIES = {
+  sound: ['volume', 'musicVolume', 'adaptiveMusic'],
+  control: ['aimAssist', 'immersiveMode', 'sensitivity', 'hapticShoot', 'hapticMatch', 'controlsSwapped', 'fireSize', 'controlOffset', 'shortcuts'],
+  display: ['frameRate', 'quality', 'reducedMotion', 'showPerformance'],
+} satisfies Record<string, (keyof Settings)[]>;
+
+export function settingsMarkup(settings: Settings, mobile: boolean, inGame = false): string {
+  const supportsHaptics = getHapticsCapability();
+  const restoreBackup = readStorage('orbbound-backup-before-import')
+    ? '<button class="quiet-button" data-backup="restore">恢复导入前备份</button>'
+    : '<button class="quiet-button" data-backup="restore" disabled aria-describedby="backup-restore-hint">恢复导入前备份</button><p id="backup-restore-hint">暂无导入前备份</p>';
   const range = (key: keyof Settings, title: string, min: number, max: number, unit: string, hint: string) => `<label class="setting-row range-setting" for="setting-${key}"><span><strong>${title}</strong><small>${hint}</small></span><output id="value-${key}">${settings[key]}${unit}</output><input id="setting-${key}" data-setting="${key}" data-unit="${unit}" type="range" min="${min}" max="${max}" value="${settings[key]}" aria-label="${title}"></label>`;
-  const toggle = (key: keyof Settings, title: string, hint: string) => `<div class="setting-row"><div><strong>${title}</strong><small>${hint}</small></div><label class="switch"><input data-setting="${key}" type="checkbox" aria-label="${title}" ${settings[key] ? 'checked' : ''}><span></span></label></div>`;
+  const toggle = (key: keyof Settings, title: string, hint: string, disabled = false) => `<div class="setting-row"><div><strong>${title}</strong><small>${hint}</small></div><label class="switch"><input data-setting="${key}" type="checkbox" aria-label="${title}" ${settings[key] ? 'checked' : ''} ${disabled ? 'disabled' : ''}><span></span></label></div>`;
   const select = (key: keyof Settings, title: string, options: [string,string][], hint:string) => `<label class="setting-row" for="setting-${key}"><span><strong>${title}</strong><small>${hint}</small></span><select id="setting-${key}" data-setting="${key}" aria-label="${title}">${options.map(([value,label])=>`<option value="${value}" ${String(settings[key]) === value ? 'selected' : ''}>${label}</option>`).join('')}</select></label>`;
-  const shortcuts = `<section data-settings-page="shortcuts" hidden><h3 tabindex="-1">键盘快捷键</h3><p>点击按键后按下新键。支持字母、数字、方向键、空格、Enter 和 Esc；每个动作使用不同按键。F11 固定切换全屏。</p><div class="shortcut-settings">${(Object.keys(SHORTCUT_LABELS) as ShortcutAction[]).map(action => `<div class="setting-row"><strong>${SHORTCUT_LABELS[action]}</strong><button type="button" class="quiet-button" data-shortcut-edit="${action}" aria-label="修改${SHORTCUT_LABELS[action]}快捷键">${shortcutLabel(settings.shortcuts[action])}</button></div>`).join('')}</div><p id="shortcut-status" role="status">鼠标左右键始终可以发射。</p></section>`;
-  return `<button class="modal-close" data-close-modal>完成</button><p class="eyebrow">声音与操作</p><h2>调整手感，找到节奏</h2><p>设置自动保存，随时可以再调整。</p>
-    <nav class="settings-categories" data-settings-page="root" aria-label="设置分类"><button class="quiet-button" data-settings-open="sound">声音与音乐 ›</button><button class="quiet-button" data-settings-open="aim">瞄准辅助 ›</button><button class="quiet-button" data-settings-open="display">画面与帧率 ›</button>${mobile ? '<button class="quiet-button" data-settings-open="control">操作与反馈 ›</button><button class="quiet-button" data-settings-open="layout">按键布局 ›</button>' : ''}<button class="quiet-button" data-settings-open="backup">存档备份与迁移 ›</button><button class="quiet-button" data-settings-open="reset">恢复默认设置 ›</button></nav>
-    ${!mobile ? '<button class="quiet-button shortcut-category" data-settings-open="shortcuts" data-settings-page="root">键盘快捷键 ›</button>' : ''}
-    <button class="quiet-button settings-back" data-settings-back hidden>‹ 返回设置</button>
+  const reset = (page: string) => `<button class="quiet-button category-reset" data-category-reset="${page}">恢复此分类默认</button>`;
+  return `<header class="settings-heading"><button class="quiet-button settings-back" data-settings-back hidden>‹ 分类</button><h2>设置</h2><button class="quiet-button" data-close-modal>完成</button></header><p class="settings-context">${inGame ? '本局已暂停 · 只调整本机体验' : '自动保存 · 所有玩法共用'}</p><div class="settings-workspace">
+    <nav class="settings-categories" data-settings-page="root" aria-label="设置分类">${[['sound','声音与音乐'],['control','操作与辅助'],['display','画面与性能'],['backup','数据与维护']].map(([id,label]) => `<button class="quiet-button" data-settings-open="${id}">${label} ›</button>`).join('')}</nav>
+    <div class="settings-detail" tabindex="-1">
     <section data-settings-page="sound" hidden><h3 tabindex="-1">声音与音乐</h3>
-    ${range('volume', '音效音量', 0, 100, '%', '发射轻一点，消除更清楚；0 为静音。')}
-    ${range('musicVolume', '音乐音量', 0, 100, '%', '调整背景音乐音量，0 为静音。')}
-    ${toggle('adaptiveMusic', '局内音乐加速', '开启后随棋盘压力加快；关闭后始终使用原速，音高不变。')}
-    <div class="sound-preview-actions"><button class="quiet-button" id="preview-menu">试听菜单曲</button><button class="quiet-button" id="preview-play">试听紧张节奏</button><button class="quiet-button" id="preview-sound">试听消除音效</button></div><p id="music-preview-status" class="mode-note" role="status">当前：菜单曲</p>
-    </section><section data-settings-page="display" hidden><h3 tabindex="-1">画面与帧率</h3>
-    ${select('frameRate','帧率上限',[['auto','自动 · 最高 120 FPS'],['30','30 FPS · 省电'],['60','60 FPS'],['90','90 FPS'],['120','120 FPS']],'按屏幕刷新能力和持续负载自动调整。高帧率可能增加耗电。')}
-    ${select('quality','画面清晰度',[['auto','自动'],['1','标准'],['1.5','清晰'],['2','精细']],'清晰度与帧率独立，调整不会改变棋盘规则。')}
-    ${toggle('reducedMotion','减少动态效果','简化闪光与位移；保持相同的计时和发射节奏。')}
-    ${toggle('showPerformance','显示帧率','局内显示实际绘制帧率和当前目标。')}
-    <p class="mode-note" id="settings-performance-status" role="status">自动适应设备，最高 120 FPS。</p>
-    </section><section data-settings-page="aim" hidden><h3 tabindex="-1">瞄准辅助</h3>
-    ${toggle('aimAssist', '瞄准辅助', '显示反弹路线与空心落点圈。')}
-    </section>${mobile ? `<section data-settings-page="control" hidden><h3 tabindex="-1">操作与反馈</h3>
-      ${toggle('immersiveMode', '沉浸模式', '隐藏底部按钮；在整个棋盘（含发射区）按住拖动瞄准，松手发射。棋盘稍向下移。')}
-      ${range('sensitivity', '微调灵敏度', 50, 150, '%', '中间慢，两侧快；松手立即停止。')}
-      <div class="control-preview"><div class="preview-cannon" aria-hidden="true"><span id="preview-barrel">↑</span></div><output id="preview-angle">0.0°</output><label for="preview-fine">按住滑条，试试微调</label><input id="preview-fine" type="range" min="-100" max="100" value="0" aria-label="体验微调"><button class="quiet-button" id="preview-fire">试试发射反馈</button></div>
-      ${toggle('hapticShoot', '发射轻震', '只在发射成功时轻震。')}
-      ${toggle('hapticMatch', '消除轻震', '同色消除或悬空掉落时轻震。')}
-      </section><section data-settings-page="layout" hidden><h3 tabindex="-1">按键布局</h3>
-      <div class="setting-row"><div><strong>左右调换</strong><small>交换发射键和双滑条。</small></div><button id="setting-swap" class="quiet-button">${settings.controlsSwapped ? '发射在右 ⇄' : '发射在左 ⇄'}</button></div>
-      ${range('fireSize', '发射键宽度', 76, 120, 'px', '按手指大小调整。')}
-      ${range('controlOffset', '控制区下移', 0, 48, 'px', '小屏会自动限制下移距离。')}
-      <div class="grip-preview" aria-label="按键位置预览"><span class="grip-fire">发射</span><span class="grip-sliders">方向 ━━━<br>微调 ━━━</span></div></section>` : ''}
-    <section data-settings-page="backup" hidden><h3 tabindex="-1">存档备份与迁移</h3><p>导出三种玩法的存档、记录和设置。导入前会预览内容并保留恢复副本。</p><p id="backup-last-export" class="mode-note"></p><div class="settings-categories"><button class="quiet-button" data-backup="export">导出备份</button><button class="quiet-button" data-backup="import">导入备份</button><button class="quiet-button" data-backup="restore">恢复导入前备份</button>${!mobile ? '<button class="quiet-button" data-backup="legacy">导入旧 Windows 版存档</button>' : ''}</div><p id="backup-status" class="mode-note" role="status"></p></section>
-    ${!mobile ? shortcuts : ''}
-    <section data-settings-page="reset" hidden><h3 tabindex="-1">恢复默认设置</h3><p>恢复音量、操作、快捷键和显示设置。存档、得分和排行榜不会改变。</p><button class="primary-button" id="settings-reset">恢复默认设置</button><p id="settings-reset-status" role="status"></p></section>
-    <div class="modal-footer"><button class="primary-button" data-close-modal>完成设置 ✓</button></div>`;
+      ${range('volume','音效音量',0,100,'%','0 为静音。')}${range('musicVolume','音乐音量',0,100,'%','不影响发射和消除音效。')}
+      ${toggle('adaptiveMusic','局内音乐加速','随自己棋盘压力加快，音高保持不变。静音时保留此偏好。')}
+      <div class="sound-preview-actions"><button class="quiet-button" id="preview-menu">试听原速</button><button class="quiet-button" id="preview-play">试听紧张节奏</button><button class="quiet-button" id="preview-sound">试听消除</button></div><p id="music-preview-status" role="status">当前：菜单曲</p>${reset('sound')}
+    </section>
+    <section data-settings-page="control" hidden><h3 tabindex="-1">操作与辅助</h3>${toggle('aimAssist','瞄准辅助','显示反弹路线和空心落点圈。')}
+    ${mobile ? `${toggle('immersiveMode','沉浸操作','隐藏底部按键；按住棋盘瞄准，松手发射，移出取消。')}
+      <div data-button-settings ${settings.immersiveMode ? 'hidden' : ''}><h4>按钮操作</h4>${range('sensitivity','微调灵敏度',50,150,'%','中间慢，两侧快；松手立即停止。')}
+      <div class="control-preview"><div class="preview-cannon" aria-hidden="true"><span id="preview-barrel">↑</span></div><output id="preview-angle">0.0°</output><label for="preview-fine">按住滑条，试试微调</label><input id="preview-fine" type="range" min="-100" max="100" value="0" aria-label="体验微调"><button class="quiet-button" id="preview-fire">试试发射</button></div>
+      <div class="setting-row"><span><strong>左右调换</strong><small>交换发射键和双滑杆。</small></span><button id="setting-swap" class="quiet-button">${settings.controlsSwapped ? '发射在右 ⇄' : '发射在左 ⇄'}</button></div>
+      ${range('fireSize','发射键宽度',76,120,'px','不压缩微调区域。')}${range('controlOffset','控制区下移',0,48,'px','按可用空间自动限制。')}
+      <div class="grip-preview"><span class="grip-fire">发射</span><span class="grip-sliders">方向 ━━━<br>微调 ━━━</span></div></div>
+      <h4>触觉反馈</h4><p id="settings-haptics-status" role="status" ${supportsHaptics === true ? 'hidden' : ''}>${supportsHaptics === false ? '此设备不支持震动反馈。' : '设备能力待确认'}</p><div data-haptics-controls ${supportsHaptics === true ? '' : 'hidden'}>${toggle('hapticShoot','发射轻震','发射成功后轻震。',supportsHaptics !== true)}${toggle('hapticMatch','消除轻震','同色消除或掉落后轻震。',supportsHaptics !== true)}</div>`
+      : `<p>鼠标左、右键按住瞄准，松开发射。F11 切换全屏。</p><h4>键盘快捷键</h4><p>点击按键后按下新键，每个动作使用不同按键。</p><div class="shortcut-settings">${(Object.keys(SHORTCUT_LABELS) as ShortcutAction[]).map(action => `<div class="setting-row"><strong>${SHORTCUT_LABELS[action]}</strong><button class="quiet-button" data-shortcut-edit="${action}" aria-label="修改${SHORTCUT_LABELS[action]}快捷键">${shortcutLabel(settings.shortcuts[action])}</button></div>`).join('')}</div><p id="shortcut-status" role="status"></p>`}${reset('control')}
+    </section>
+    <section data-settings-page="display" hidden><h3 tabindex="-1">画面与性能</h3>
+      ${select('frameRate','帧率上限',[['auto','自动 · 最高 120 FPS'],['30','30 FPS · 省电'],['60','60 FPS'],['90','90 FPS'],['120','120 FPS']],'实际帧率受屏幕和持续负载限制。')}
+      ${select('quality','画面清晰度',[['auto','自动'],['1','标准'],['1.5','清晰'],['2','精细']],'与帧率独立，不改变棋盘规则。')}
+      ${toggle('reducedMotion','减少动态效果','简化位移与闪光，保持相同发射节奏。')}${toggle('showPerformance','显示帧率','显示实际绘制帧率和当前目标。')}<p id="settings-performance-status" role="status">自动适应设备，最高 120 FPS。</p>${reset('display')}
+    </section>
+    <section data-settings-page="backup" hidden><h3 tabindex="-1">数据与维护</h3><p>导出存档、记录和设置。导入前预览并保留恢复副本。</p><p id="backup-last-export"></p><div class="settings-categories"><button class="quiet-button" data-backup="export">导出备份</button>${inGame ? '<p>导入、恢复备份及全部恢复默认，请返回首页后操作。</p>' : '<button class="quiet-button" data-backup="import">导入备份</button>' + restoreBackup + (!mobile ? '<button class="quiet-button" data-backup="legacy">导入旧 Windows 存档</button>' : '')}</div><p id="backup-status" role="status"></p>${inGame ? '' : '<h4>恢复设置</h4><p>只恢复声音、操作和显示偏好，存档及成绩不变。</p><button class="quiet-button" id="settings-reset">恢复全部默认设置</button>'}<p id="settings-reset-status" role="status"></p></section>
+    </div></div><p class="settings-save-status" role="status" aria-live="polite"></p>`;
 }
 
 export function bindSettingsPanel(root: HTMLElement, settings: Settings, onChange: (commit: boolean) => void): () => void {
   const abort = new AbortController();
   const listen = (element: Element | null, event: string, fn: EventListener) => element?.addEventListener(event, fn, { signal: abort.signal });
+  const refreshHaptics = () => {
+    const capability = getHapticsCapability();
+    const controls = root.querySelector<HTMLElement>('[data-haptics-controls]');
+    const status = root.querySelector<HTMLElement>('#settings-haptics-status');
+    if (controls) {
+      controls.hidden = capability !== true;
+      controls.querySelectorAll<HTMLInputElement>('input').forEach(input => { input.disabled = capability !== true; });
+    }
+    if (status) {
+      status.hidden = capability === true;
+      status.textContent = capability === false ? '此设备不支持震动反馈。' : '设备能力待确认';
+    }
+  };
+  window.addEventListener('orbbound-performance-capabilities', refreshHaptics, { signal: abort.signal });
+  refreshHaptics();
   let editing: ShortcutAction | null = null;
   const refreshShortcuts = () => root.querySelectorAll<HTMLElement>('[data-shortcut-edit]').forEach(button => {
     const action = button.dataset.shortcutEdit as ShortcutAction;
@@ -67,6 +87,8 @@ export function bindSettingsPanel(root: HTMLElement, settings: Settings, onChang
   }, { signal: abort.signal });
   const updateGrip = () => {
     const grip = root.querySelector<HTMLElement>('.grip-preview');
+    const buttonSettings = root.querySelector<HTMLElement>('[data-button-settings]');
+    if (buttonSettings) buttonSettings.hidden = settings.immersiveMode;
     if (!grip) return;
     grip.classList.toggle('swapped', settings.controlsSwapped);
     grip.style.setProperty('--preview-width', `${settings.fireSize * 0.6}px`);
@@ -116,18 +138,20 @@ export function bindSettingsPanel(root: HTMLElement, settings: Settings, onChang
     binding?.reset(); cancelAnimationFrame(raf); raf = 0;
     gameAudio.stopEffects(); gameAudio.setScene('menu');
     root.querySelector('#music-preview-status')!.textContent = '当前：菜单曲';
-    root.querySelectorAll<HTMLElement>('[data-settings-page]').forEach(section => { section.hidden = section.dataset.settingsPage !== page; });
+    root.querySelectorAll<HTMLElement>('[data-settings-page]').forEach(section => { section.hidden = section.dataset.settingsPage !== page && !(section.dataset.settingsPage === 'root' && root.classList.contains('settings-desktop')); });
+    root.querySelector<HTMLElement>('.settings-detail')!.hidden = page === 'root';
+    root.querySelectorAll<HTMLElement>('[data-settings-open]').forEach(button => button.setAttribute('aria-current', String(button.dataset.settingsOpen === page)));
     root.querySelector<HTMLButtonElement>('[data-settings-back]')!.hidden = page === 'root';
-    root.querySelectorAll<HTMLElement>('.settings-card > h2, .settings-card > p').forEach(element => { element.hidden = page !== 'root'; });
-    root.querySelector<HTMLElement>('.modal-card')?.scrollTo(0, 0);
+    root.querySelector<HTMLElement>('.settings-detail')?.scrollTo(0, 0);
     root.querySelector<HTMLElement>(`[data-settings-page="${page}"] ${page === 'root' ? 'button' : 'h3'}`)?.focus({ preventScroll: true });
   };
   root.querySelectorAll<HTMLElement>('[data-settings-open]').forEach(button => listen(button, 'click', () => navigate(button.dataset.settingsOpen!)));
   listen(root.querySelector('[data-settings-back]'), 'click', () => navigate('root'));
-  listen(root.querySelector('#settings-reset'), 'click', () => {
+  const resetValues = (category?: keyof typeof SETTINGS_CATEGORIES) => {
     binding?.reset(); gameAudio.stopEffects();
-    Object.assign(settings, DEFAULT_SETTINGS); onChange(true);
-    settings.shortcuts = { ...DEFAULT_SHORTCUTS }; editing = null; refreshShortcuts();
+    const keys: (keyof Settings)[] = category ? SETTINGS_CATEGORIES[category] : Object.keys(DEFAULT_SETTINGS) as (keyof Settings)[];
+    for (const key of keys) Object.assign(settings, { [key]: key === 'shortcuts' ? { ...DEFAULT_SHORTCUTS } : DEFAULT_SETTINGS[key] });
+    onChange(true); editing = null; refreshShortcuts();
     root.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-setting]').forEach(input => {
       const key = input.dataset.setting as keyof Settings;
       if (input instanceof HTMLInputElement && input.type === 'checkbox') input.checked = Boolean(settings[key]);
@@ -135,12 +159,15 @@ export function bindSettingsPanel(root: HTMLElement, settings: Settings, onChang
       const output = root.querySelector(`#value-${key}`);
       if (output) output.textContent = `${settings[key]}${input.dataset.unit ?? ''}`;
     });
-    const swap = root.querySelector('#setting-swap'); if (swap) swap.textContent = '发射在左 ⇄';
+    const swap = root.querySelector('#setting-swap'); if (swap) swap.textContent = settings.controlsSwapped ? '发射在右 ⇄' : '发射在左 ⇄';
     angle = 0; if (barrel) barrel.style.transform = 'rotate(0deg)';
     const angleOutput = root.querySelector('#preview-angle'); if (angleOutput) angleOutput.textContent = '0.0°';
-    updateGrip(); root.querySelector('#settings-reset-status')!.textContent = '已恢复默认设置';
-  });
-  updateGrip();
+    updateGrip(); root.querySelector('.settings-save-status')!.textContent = category ? '已恢复此分类默认设置' : '已恢复全部默认设置';
+  };
+  listen(root.querySelector('#settings-reset'), 'click', () => resetValues());
+  root.querySelectorAll<HTMLElement>('[data-category-reset]').forEach(button => listen(button, 'click', () => resetValues(button.dataset.categoryReset as keyof typeof SETTINGS_CATEGORIES)));
+  root.classList.toggle('settings-desktop', document.documentElement.classList.contains('desktop-ui'));
+  navigate('root'); updateGrip();
   return () => { binding?.dispose(); cancelAnimationFrame(raf); abort.abort(); onChange(true); gameAudio.stopEffects(); gameAudio.setScene('menu'); };
 }
 

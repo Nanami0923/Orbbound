@@ -257,7 +257,7 @@ describe('LAN deterministic score authority', () => {
 
 describe('LAN wire validation', () => {
   it('publishes bounded compatibility fingerprints for rules and content', () => {
-    expect(LAN_PROTOCOL_VERSION).toBe(2);
+    expect(LAN_PROTOCOL_VERSION).toBe(3);
     expect(LAN_RULES_HASH).toMatch(/^[0-9a-f]{8}$/);
     expect(LAN_CONTENT_HASH).toMatch(/^[0-9a-f]{8}$/);
   });

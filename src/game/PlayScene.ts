@@ -13,6 +13,7 @@ import { fineRotationSpeed } from './rotation';
 import { haptic } from './feedback';
 import { recordRound } from '../storage/history';
 import { usesButtonControls } from './input-mode';
+import { insideInputSurface, isFirePointerButton } from './input-controller';
 import { shortcutAction, shortcutLabel } from './shortcuts';
 import { heldRotationDegrees } from './rotation';
 import { rebaseTweenClock } from './tween-clock';
@@ -196,6 +197,7 @@ export class PlayScene extends Phaser.Scene {
     this.input.mouse?.disableContextMenu();
     this.input.on('pointermove', this.handlePointerMove, this);
     this.input.on('pointerup', this.handlePointerUp, this);
+    this.input.on('pointerupoutside', () => { this.pointerActive = false; });
     this.input.on('pointerout', () => { this.pointerActive = false; });
     this.input.keyboard?.on('keydown', this.handleKeyDown, this);
     this.input.keyboard?.on('keyup', this.handleKeyUp, this);
@@ -550,7 +552,7 @@ export class PlayScene extends Phaser.Scene {
 
   private handlePointerDown(pointer: Phaser.Input.Pointer): void {
     if (usesButtonControls()) return;
-    if (pointer.button !== 0 && pointer.button !== 2) return;
+    if (!isFirePointerButton(pointer.button)) return;
     if (!this.canSteer) return;
     this.pointerActive = this.phase === 'READY';
     this.updateAim(pointer);
@@ -562,10 +564,11 @@ export class PlayScene extends Phaser.Scene {
     if (pointer.isDown || this.pointerActive || pointer.worldY < BOARD_GEOMETRY.launcherY) this.updateAim(pointer);
   }
 
-  private handlePointerUp(): void {
+  private handlePointerUp(pointer: Phaser.Input.Pointer): void {
     if (usesButtonControls()) { this.pointerActive = false; return; }
     if (!this.pointerActive) return;
     this.pointerActive = false;
+    if (!insideInputSurface(pointer.worldX, pointer.worldY, { left: 0, top: 0, right: GAME_WIDTH, bottom: GAME_HEIGHT })) return;
     if (!this.settings.independentLaunch) this.launch();
   }
 

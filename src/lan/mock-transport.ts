@@ -3,7 +3,7 @@ import type { DiscoveredRoom, HostInfo, LanEvent, LanTransport } from './transpo
 /** Development-only browser simulation. No native sockets or LAN guarantees. */
 export class MockLanTransport implements LanTransport {
   readonly available = true;
-  private channel = new BroadcastChannel('orbbound-lan-development-v1');
+  private channel = new BroadcastChannel('orbbound-lan-development-v3');
   private identity = crypto.randomUUID();
   private listeners = new Set<(event: LanEvent) => void>();
   private links = new Map<string, string>();

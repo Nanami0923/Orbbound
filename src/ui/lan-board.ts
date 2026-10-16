@@ -6,7 +6,7 @@ import type { GameState, ShotTrace } from '../core/types';
 import { gameAudio, boardMusicPressure } from '../game/audio';
 import { LanPresentation } from './lan-presentation';
 import { pointOnTrace } from '../lan/presentation';
-import { FrameBudget } from '../game/frame-rate';
+import { FrameBudget, FrameRateGovernor, percentile } from '../game/frame-rate';
 import { haptic } from '../game/feedback';
 import { usesButtonControls } from '../game/input-mode';
 import { directAimDegrees, fineRotationSpeed, heldRotationDegrees } from '../game/rotation';
@@ -14,6 +14,9 @@ import { immersiveAngle } from '../game/immersive-control';
 import { bindSteeringControl } from '../game/steering-control';
 import { shortcutAction } from '../game/shortcuts';
 import { loadSettings } from '../storage/storage';
+import { subscribeSettings } from '../storage/settings-store';
+import { insideInputSurface, isFirePointerButton } from '../game/input-controller';
+import { syncGameShell } from './game-shell';
 import type { LanSession } from '../lan/session';
 
 function orb(context: CanvasRenderingContext2D, color: number, x: number, y: number, radius = 17): void {
@@ -54,11 +57,12 @@ export function bindLanBoard(root: HTMLElement, session: LanSession): () => void
   const other = root.querySelector<HTMLCanvasElement>('#lan-other-board')!;
   const slider = root.querySelector<HTMLInputElement>('#lan-angle')!;
   const fine = root.querySelector<HTMLInputElement>('#lan-fine')!;
-  const settings = loadSettings(), touch = usesButtonControls(), abort = new AbortController();
+  let settings = loadSettings();
+  const touch = usesButtonControls(), abort = new AbortController();
   const fireButton = root.querySelector<HTMLButtonElement>('#lan-fire')!;
   const leftButton = root.querySelector<HTMLButtonElement>('#lan-turn-left')!;
   const rightButton = root.querySelector<HTMLButtonElement>('#lan-turn-right')!;
-  let angle = 0, dirty = true, raf = 0, direction = 0, held = 0, lastAt = 0, lastPaint = 0, opponentRevision = -1;
+  let angle = 0, dirty = true, raf = 0, direction = 0, held = 0, lastAt = 0, lastPaint = 0;
   let pointer: number | null = null, queued: { angle: number; expiresAt: number } | undefined;
   let lastState: GameState | undefined, cachedState: GameState | undefined, cachedAngle = NaN, cachedTrace: ShotTrace | undefined;
   let animation: { state: GameState; trace: ShotTrace; start: number; duration: number; color: number; seqShots: number } | undefined;
@@ -66,11 +70,15 @@ export function bindLanBoard(root: HTMLElement, session: LanSession): () => void
   presentation.reset(session.view.snapshot?.eventSeq ?? 0);
   let terminalAt: number | undefined;
   const budget = new FrameBudget(); const heldKeys = new Set<number>();
+  const governor = new FrameRateGovernor(); governor.setRequested(settings.frameRate);
+  let reportStarted = performance.now(), paintedFrames = 0, lastRaf = 0, opponentPaintAt = -Infinity;
+  let intervals: number[] = [], costs: number[] = [];
   const releasePointer = () => { const previous = pointer; pointer = null; if (previous !== null && canvas.hasPointerCapture(previous)) canvas.releasePointerCapture(previous); };
   const resetInput = () => { direction = 0; held = 0; heldKeys.clear(); fine.value = '0'; queued = undefined; releasePointer(); directControl.reset(); fineControl.reset(); dirty = true; };
   const setAngle = (degrees: number) => { angle = directAimDegrees(degrees); slider.value = String(angle); dirty = true; };
   const state = () => session.view.snapshot?.players[session.view.selfId];
-  const active = () => session.view.phase === 'playing' && !document.hidden && !root.closest('[hidden]') && !root.querySelector('.lan-confirm');
+  const settingsOpen = () => document.documentElement?.classList.contains('settings-open') || !document.querySelector?.<HTMLElement>('#modal-root')?.hidden && !!document.querySelector?.<HTMLElement>('#modal-root');
+  const active = () => session.view.phase === 'playing' && !state()?.sealed && !document.hidden && !root.closest('[hidden]') && !root.querySelector('.lan-confirm') && !settingsOpen();
   const canFire = () => active() && !session.view.pendingShot && !!state() && !state()!.sealed
     && session.displayElapsed() < (session.view.snapshot?.durationMs ?? 0)
     && session.displayElapsed() + (session.view.snapshot?.startedAtMs ?? 0) >= state()!.readyAtMs;
@@ -99,17 +107,16 @@ export function bindLanBoard(root: HTMLElement, session: LanSession): () => void
     if ((!touch && pointer === null) || pointer === event.pointerId) { event.preventDefault(); pointAim(event); }
   }, { signal: abort.signal });
   canvas.addEventListener('pointerdown', event => {
-    if (!active() || (touch && !settings.immersiveMode) || event.button !== 0 || pointer !== null) return;
+    if (!active() || (touch && !settings.immersiveMode) || !isFirePointerButton(event.button, touch) || pointer !== null || !touch && !canFire()) return;
     event.preventDefault(); queued = undefined; pointer = event.pointerId; canvas.setPointerCapture(pointer); pointAim(event);
-    if (!touch) fire();
   }, { signal: abort.signal });
   canvas.addEventListener('pointerup', event => {
     if (pointer !== event.pointerId) return;
     event.preventDefault(); const rect = canvas.getBoundingClientRect();
-    const inside = event.clientX >= rect.left && event.clientX <= rect.right && event.clientY >= rect.top && event.clientY <= rect.bottom;
+    const inside = insideInputSurface(event.clientX, event.clientY, rect);
     releasePointer();
-    if (!touch || !settings.immersiveMode || !active() || !inside) return;
-    pointAim(event); if (canFire()) fire(); else queued = { angle, expiresAt: performance.now() + 1600 };
+    if (touch && !settings.immersiveMode || !active() || !inside) return;
+    pointAim(event); if (canFire()) fire(); else if (touch) queued = { angle, expiresAt: performance.now() + 1600 };
   }, { signal: abort.signal });
   for (const type of ['pointercancel', 'lostpointercapture']) canvas.addEventListener(type, event => {
     if ((event as PointerEvent).pointerId === pointer) { queued = undefined; releasePointer(); }
@@ -140,14 +147,46 @@ export function bindLanBoard(root: HTMLElement, session: LanSession): () => void
   }, { signal: abort.signal });
   window.addEventListener('blur', resetInput, { signal: abort.signal });
   document.addEventListener('visibilitychange', () => { if (document.hidden) resetInput(); }, { signal: abort.signal });
+  const opponentCanvases = () => {
+    const items = [...(root.querySelectorAll?.<HTMLCanvasElement>('[data-lan-player-board]') ?? [])];
+    return items.length ? items : [other];
+  };
+  const opponentRevisions = new Map<string, number>();
   const resize = () => {
+    const wrap = canvas.parentElement, available = wrap?.parentElement;
+    if (wrap && available) {
+      const space = available.getBoundingClientRect();
+      if (space.width > 0 && space.height > 0) wrap.style.width = `${Math.min(space.width, space.height * 640 / 760)}px`;
+    }
     const rect = canvas.getBoundingClientRect(), scale = settings.quality === 'auto' ? Math.min(2, devicePixelRatio || 1) : settings.quality;
     if (rect.width > 0) { canvas.width = Math.max(1, Math.round(rect.width * scale)); canvas.height = Math.max(1, Math.round(rect.height * scale)); }
-    const otherRect = other.getBoundingClientRect();
-    if (otherRect.width > 0) { other.width = Math.max(1, Math.round(otherRect.width * scale)); other.height = Math.max(1, Math.round(otherRect.height * scale)); }
-    dirty = true; opponentRevision = -1;
+    for (const target of opponentCanvases()) {
+      const otherRect = target.getBoundingClientRect();
+      if (otherRect.width > 0) { target.width = Math.max(1, Math.round(otherRect.width * scale)); target.height = Math.max(1, Math.round(otherRect.height * scale)); }
+    }
+    opponentRevisions.clear();
+    dirty = true;
   };
-  const observer = new ResizeObserver(resize); observer.observe(canvas); observer.observe(other); resize();
+  const observer = new ResizeObserver(resize); observer.observe(canvas); observer.observe(other);
+  if (canvas.parentElement?.parentElement) observer.observe(canvas.parentElement.parentElement);
+  resize();
+  if (root.classList) syncGameShell(root, { touch, immersive: settings.immersiveMode, mode: session.view.snapshot?.mode ?? 'score' });
+  const unsubscribeSettings = subscribeSettings(value => {
+    resetInput(); animation = undefined; settings = value;
+    governor.setRequested(value.frameRate); budget.reset();
+    gameAudio.setMix(value.volume, value.musicVolume); gameAudio.setAdaptiveMusic(value.adaptiveMusic);
+    if (root.classList) {
+      syncGameShell(root, { touch, immersive: value.immersiveMode, mode: session.view.snapshot?.mode ?? 'score' });
+      root.classList.toggle('lan-swapped', value.controlsSwapped);
+      root.style.setProperty('--lan-fire-width', `${value.fireSize}px`);
+      root.style.setProperty('--lan-control-offset', `${value.controlOffset}px`);
+    }
+    resize();
+  });
+  window.addEventListener('orbbound-performance-capabilities', event => { governor.setCapabilities((event as CustomEvent).detail); resize(); }, { signal: abort.signal });
+  const cachedCapabilities = (window as unknown as { __orbboundPerformanceCapabilities?: unknown }).__orbboundPerformanceCapabilities;
+  if (cachedCapabilities) governor.setCapabilities(cachedCapabilities);
+  window.dispatchEvent(new Event('orbbound-performance-request'));
   window.addEventListener('resize', resize, { signal: abort.signal });
   let previousPhase = session.view.phase;
   let previousInputActive = active();
@@ -165,6 +204,14 @@ export function bindLanBoard(root: HTMLElement, session: LanSession): () => void
     raf = requestAnimationFrame(frame);
     const dt = Math.min(100, lastAt ? at - lastAt : 0) / 1000; lastAt = at;
     if (document.hidden) return;
+    if (lastRaf && at > lastRaf && at - lastRaf < 250) intervals.push(at - lastRaf);
+    lastRaf = at;
+    if (at - reportStarted >= 1000) {
+      const seconds = (at - reportStarted) / 1000, idle = !presentation.busy && !animation && !direction && !Number(fine.value);
+      governor.observeDisplay(intervals); governor.assess(percentile(costs, .95), paintedFrames / seconds, idle);
+      if (typeof CustomEvent !== 'undefined') window.dispatchEvent(new CustomEvent('snood-performance', { detail: { source: 'lan', renderFps: paintedFrames / seconds, targetFps: governor.target, idle, reason: governor.reason } }));
+      reportStarted = at; paintedFrames = 0; intervals = []; costs = [];
+    }
     const inputActive = active();
     if (!inputActive && previousInputActive) resetInput();
     previousInputActive = inputActive;
@@ -174,31 +221,45 @@ export function bindLanBoard(root: HTMLElement, session: LanSession): () => void
     if (active() && Number(fine.value)) setAngle(angle + fineRotationSpeed(Number(fine.value), settings.sensitivity) * dt);
     fireButton.disabled = !canFire(); slider.disabled = fine.disabled = leftButton.disabled = rightButton.disabled = !active();
     fireButton.textContent = session.view.pendingShot ? '确认中' : state()?.sealed ? '已触底' : queued ? '已待发' : canFire() ? '发射 ↑' : '准备中';
-    if (budget.next(at, settings.frameRate === 'auto' ? 120 : settings.frameRate) === null) return;
+    if (budget.next(at, governor.target) === null) return;
     const player = state(), snapshot = session.view.snapshot; if (!player || !snapshot) return;
     const musicPlaying = session.view.phase === 'playing' && !player.sealed;
-    gameAudio.setScene(musicPlaying ? 'play' : 'menu');
-    gameAudio.setPressure(musicPlaying ? boardMusicPressure(player.state.board) : 0);
+    if (!settingsOpen()) {
+      gameAudio.setScene(musicPlaying ? 'play' : 'menu');
+      gameAudio.setPressure(musicPlaying ? boardMusicPressure(player.state.board) : 0);
+    }
     if (session.view.phase === 'finished' && terminalAt === undefined) terminalAt = at;
     if (session.view.phase !== 'finished') terminalAt = undefined;
     const logicalTime = snapshot.startedAtMs + session.displayElapsed() + (terminalAt === undefined ? 0 : Math.min(2000, at - terminalAt));
     presentation.ingest(session.view.presentationEvents ?? [], snapshot.eventSeq ?? 0, logicalTime);
-    const rival = snapshot.players[session.view.selfId === 'host' ? 'guest' : 'host'];
-    if (rival && (rival.boardRevision !== opponentRevision || presentation.busy)) { presentation.draw(other, rival.playerId, rival.state, logicalTime, true, false); opponentRevision = rival.boardRevision; }
+    const workStarted = performance.now();
+    const paintOpponents = at - opponentPaintAt >= 50;
+    for (const target of opponentCanvases()) {
+      const rivalId = target.dataset?.lanPlayerBoard ?? snapshot.playerIds.find(id => id !== session.view.selfId);
+      const rival = rivalId && snapshot.players[rivalId];
+      if (rival && paintOpponents && (rival.boardRevision !== opponentRevisions.get(rival.playerId) || presentation.busy)) {
+        presentation.draw(target, rival.playerId, rival.state, logicalTime, true, false);
+        opponentRevisions.set(rival.playerId, rival.boardRevision);
+      }
+    }
+    if (paintOpponents) opponentPaintAt = at;
     if (!dirty && !animation && !presentation.busy && at - lastPaint < 200) return;
     dirty = false; lastPaint = at;
     if (animation && at - animation.start >= animation.duration) animation = undefined;
-    const visibleState = animation?.state ?? player.state;
+    const observed = player.sealed && root.dataset?.watchPlayer ? snapshot.players[root.dataset.watchPlayer] : undefined;
+    const visiblePlayer = observed ?? player;
+    const visibleState = animation?.state ?? visiblePlayer.state;
     const presenting = presentation.busy;
-    presentation.draw(canvas, player.playerId, presenting ? player.state : visibleState, logicalTime, settings.reducedMotion, true, angle * Math.PI / 180,
-      !animation && settings.aimAssist && session.view.phase === 'playing' ? getTrace() : undefined);
+    presentation.draw(canvas, visiblePlayer.playerId, presenting ? visiblePlayer.state : visibleState, logicalTime, settings.reducedMotion, !observed, angle * Math.PI / 180,
+      !observed && !animation && settings.aimAssist && session.view.phase === 'playing' ? getTrace() : undefined);
     if (animation && !presenting && !settings.reducedMotion) {
       // A pointer event can arrive after this RAF's timestamp was sampled.
       const point = pointOnTrace(animation.trace, (at - animation.start) / animation.duration);
       orb(canvas.getContext('2d')!, animation.color, point.x, point.y);
     }
     root.querySelector<HTMLOutputElement>('#lan-angle-value')!.value = `${angle.toFixed(1)}°`;
+    paintedFrames++; costs.push(Math.max(0, performance.now() - workStarted));
   };
   raf = requestAnimationFrame(frame);
-  return () => { resetInput(); presentation.reset(); gameAudio.setPressure(0); gameAudio.setScene('menu'); directControl.dispose(); fineControl.dispose(); abort.abort(); cancelAnimationFrame(raf); observer.disconnect(); unsubscribe(); };
+  return () => { resetInput(); presentation.reset(); gameAudio.setPressure(0); gameAudio.setScene('menu'); directControl.dispose(); fineControl.dispose(); abort.abort(); cancelAnimationFrame(raf); observer.disconnect(); unsubscribe(); unsubscribeSettings(); };
 }

@@ -8,6 +8,7 @@ import type { GameEvent, ShotTrace } from '../core/types';
 import { boundPresentationEvents, compressTrace } from './presentation';
 import type { PresentationDraft, ShotStages } from './presentation';
 import type { AuthorityOutcome, MatchEndReason, MatchResult, MatchSnapshot, PlayerMatchState, ShotCommand, ShotRejectionReason } from './protocol';
+import { matchRanking } from './protocol';
 
 /** Every player receives the same numbered wave, independently of supply RNG. */
 export function deriveWaveSeed(matchSeed: number, waveIndex: number): number {
@@ -41,19 +42,18 @@ export function eventBase(player: PlayerMatchState, atMs: number) {
   return { playerId: player.playerId, atMs, beforeRevision: player.boardRevision, afterRevision: player.boardRevision };
 }
 
-export function endMatch(input: MatchSnapshot, reason: MatchEndReason, atMs: number, forcedWinner?: string | null): MatchSnapshot {
+export function endMatch(input: MatchSnapshot, reason: MatchEndReason, atMs: number, _forcedWinner?: string | null): MatchSnapshot {
   if (input.status === 'finished') return input;
-  const [firstId, secondId] = input.playerIds;
-  const first = input.players[firstId], second = input.players[secondId];
-  const difference = first.score - second.score || first.completedWaves - second.completedWaves;
-  const winnerId = forcedWinner !== undefined ? forcedWinner : difference === 0 ? null : difference > 0 ? firstId : secondId;
+  const ranking = matchRanking(input, reason === 'interrupted');
+  const winnerIds = reason === 'interrupted' ? [] : ranking.filter(entry => entry.rank === 1 && entry.status !== 'forfeit').map(entry => entry.playerId);
+  const winnerId = winnerIds.length === 1 ? winnerIds[0] : null;
   const elapsedMs = Math.min(input.durationMs, Math.max(input.elapsedMs, atMs - input.startedAtMs));
   const result: MatchResult = {
-    mode: input.mode, resultId: `${input.matchId}-result`, matchId: input.matchId, reason, winnerId,
+    mode: input.mode, resultId: `${input.matchId}-result`, matchId: input.matchId, reason, terminationReason: reason, winnerId, winnerIds, ranking,
     finishedAtMs: input.startedAtMs + elapsedMs,
     players: Object.fromEntries(input.playerIds.map(id => {
-      const { score, completedWaves, totalShots, sealed, battle } = input.players[id];
-      return [id, { score, completedWaves, totalShots, sealed, ...(battle ? { battle: { ...battle.stats } } : {}) }];
+      const { score, completedWaves, totalShots, sealed, forfeited, eliminationRank, battle } = input.players[id];
+      return [id, { score, completedWaves, totalShots, sealed, forfeited, eliminationRank, ...(battle ? { battle: { ...battle.stats } } : {}) }];
     })),
   };
   return { ...input, elapsedMs, status: 'finished', result };
@@ -78,7 +78,7 @@ interface ResolvedPlayerShot {
 /** Validate against this player's batch-start board; never mutates the input. */
 export function resolvePlayerShot(snapshot: MatchSnapshot, player: PlayerMatchState, command: ShotCommand, now: number): ResolvedPlayerShot | ShotRejectionReason {
   if (command.seq <= player.lastSeq) return 'DUPLICATE_SEQUENCE';
-  if (player.sealed) return 'PLAYER_SEALED';
+  if (player.sealed || player.forfeited) return 'PLAYER_SEALED';
   if (command.boardRevision !== player.boardRevision) return 'STALE_STATE';
   if (now < player.readyAtMs) return 'COOLDOWN';
   const trace = traceShot(player.state.board, command.angleMilliDeg * Math.PI / 180000, { ...BOARD_GEOMETRY, rowOffset: player.state.rowOffset ?? 0 });

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const options = vi.hoisted(() => ({ touch: true, immersive: true, reducedMotion: false }));
 vi.mock('../src/game/input-mode', () => ({ usesButtonControls: () => options.touch }));
-vi.mock('../src/game/audio', async importOriginal => ({ ...await importOriginal<typeof import('../src/game/audio')>(), gameAudio: { unlock: vi.fn(), blip: vi.fn(), setScene: vi.fn(), setPressure: vi.fn() } }));
+vi.mock('../src/game/audio', async importOriginal => ({ ...await importOriginal<typeof import('../src/game/audio')>(), gameAudio: { unlock: vi.fn(), blip: vi.fn(), setScene: vi.fn(), setPressure: vi.fn(), setMix: vi.fn(), setAdaptiveMusic: vi.fn() } }));
 vi.mock('../src/game/feedback', () => ({ haptic: vi.fn() }));
 vi.mock('../src/storage/storage', async importOriginal => {
   const original = await importOriginal<typeof import('../src/storage/storage')>();
@@ -11,6 +11,7 @@ import { bindLanBoard } from '../src/ui/lan-board';
 import { formatLanDuration } from '../src/ui/lan-panel';
 import { applyShot, createMatch } from '../src/lan/authority';
 import type { LanSession } from '../src/lan/session';
+import { updateSettings } from '../src/storage/settings-store';
 
 class ElementStub extends EventTarget {
   value = '0'; disabled = false; hidden = false; textContent = ''; width = 640; height = 760; owner: number | null = null;
@@ -69,6 +70,22 @@ beforeEach(() => { options.touch = true; options.immersive = true; options.reduc
 afterEach(() => { disposals.splice(0).forEach(dispose => dispose()); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe('LAN actual control event lifecycle', () => {
+  it('applies quality now and releases the old immersive gesture when settings change', () => {
+    const { board, session } = setup();
+    send(board, 'pointerdown'); expect(board.owner).toBe(1);
+    updateSettings({ immersiveMode: false, quality: 1 }, { persist: false });
+    expect(board.owner).toBeNull(); expect(board.width).toBe(320);
+    send(board, 'pointerup'); expect(session.shoot).not.toHaveBeenCalled();
+  });
+
+  it('reports LAN rendering performance independently from a hidden single-player scene', () => {
+    const { windowEvents, frame } = setup();
+    const reports: Array<{ source: string; targetFps: number; renderFps: number }> = [];
+    windowEvents.addEventListener('snood-performance', event => reports.push((event as CustomEvent).detail));
+    updateSettings({ frameRate: 60 }, { persist: false }); frame(1); frame(1010);
+    expect(reports).toHaveLength(1); expect(reports[0].source).toBe('lan');
+    expect(reports[0].targetFps).toBe(60); expect(reports[0].renderFps).toBeGreaterThanOrEqual(0);
+  });
   it('clamps prediction when a sampled RAF timestamp precedes the pointer event clock', () => {
     const game = setup(); game.frame(900); game.wallTime(1000);
     send(game.fire, 'pointerdown');
@@ -79,7 +96,20 @@ describe('LAN actual control event lifecycle', () => {
     const { board, session } = setup();
     expect(board.width).toBe(640); expect(board.height).toBe(760);
     send(board, 'pointerdown', { clientX: 170, clientY: 100 });
+    expect(session.shoot).not.toHaveBeenCalled();
+    send(board, 'pointerup', { clientX: 170, clientY: 100 });
     expect(session.shoot).toHaveBeenCalledWith(0);
+  });
+
+  it('uses either desktop mouse button on release and cancels an outside release', () => {
+    options.touch = false;
+    const { board, session } = setup();
+    send(board, 'pointerdown', { button: 2 });
+    expect(session.shoot).not.toHaveBeenCalled();
+    send(board, 'pointerup', { button: 2, clientX: 500 });
+    expect(session.shoot).not.toHaveBeenCalled();
+    send(board, 'pointerdown', { button: 2 }); send(board, 'pointerup', { button: 2 });
+    expect(session.shoot).toHaveBeenCalledOnce();
   });
 
   it('keeps regular touch play on controls without aiming or firing from board touches', () => {

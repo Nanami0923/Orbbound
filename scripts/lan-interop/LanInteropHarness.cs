@@ -51,7 +51,7 @@ internal static class LanInteropHarness {
             using(var service=new LanService(events.Add)) {
                 if(args[0]=="host") {
                     var info=(Dictionary<string,object>)Call(service,"startHost",Map("name","互通测试","port",FreePort(),
-                        "metadata",Map("roomId","interop-test","protocolVersion",2,"rulesHash","interop-v2")));
+                        "metadata",Map("roomId","interop-test","protocolVersion",3,"rulesHash","interop-v3")));
                     Console.WriteLine("READY "+info["port"]);Console.Out.Flush();
                     string id=(string)events.Next("connected")["connectionId"];
                     foreach(string expected in messages) {

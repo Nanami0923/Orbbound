@@ -20,9 +20,10 @@ export function createMatch(config: MatchConfig, nowMs = 0): MatchSnapshot {
     playerId, state: createGameState(config.difficultyId, deriveWaveSeed(config.seed, 0)),
     score: 0, totalShots: 0, waveIndex: 0, completedWaves: 0, boardRevision: 0,
     readyAtMs: nowMs, nextDescentAtMs: nowMs + descentInterval(config.difficultyId, 0, config.durationMs), lastSeq: 0, sealed: false, sealedAtMs: null,
-    ...(mode === 'battle' ? { battle: createBattleState(nowMs) } : {}),
+    forfeited: false, forfeitedAtMs: null, eliminationRank: null,
+    ...(mode === 'battle' ? { battle: createBattleState(nowMs, config.playerIds.length) } : {}),
   };
-  return { ...config, mode, playerIds: [...config.playerIds], schemaVersion: 2, eventSeq: 0, rulesHash: LAN_RULES_HASH, startedAtMs: nowMs, elapsedMs: 0, status: 'playing', players, result: null };
+  return { ...config, mode, playerIds: [...config.playerIds], schemaVersion: 3, eventSeq: 0, rulesHash: LAN_RULES_HASH, startedAtMs: nowMs, elapsedMs: 0, status: 'playing', players, result: null };
 }
 
 /** Score mode catches up scheduled drops at their original logical timestamps. */
@@ -87,7 +88,27 @@ export function finishMatch(input: MatchSnapshot, reason: 'interrupted' = 'inter
 }
 
 export function forfeitMatch(input: MatchSnapshot, playerId: string, nowMs = input.startedAtMs + input.elapsedMs): MatchSnapshot {
-  const snapshot = advanceMatch(input, nowMs);
-  if (!snapshot.playerIds.includes(playerId)) throw new Error('联机玩家不存在');
-  return finalizeOutcome(snapshot, endMatch(snapshot, 'forfeit', nowMs, snapshot.playerIds.find(id => id !== playerId)!), []).snapshot;
+  return forfeitPlayersMatch(input, [playerId], nowMs);
+}
+
+/** A control boundary precedes simulation. Batch simultaneous departures together. */
+export function forfeitPlayersMatch(input: MatchSnapshot, playerIds: readonly string[], nowMs = input.startedAtMs + input.elapsedMs): MatchSnapshot {
+  checkedTime(nowMs);
+  if (playerIds.some(id => !input.playerIds.includes(id))) throw new Error('联机玩家不存在');
+  if (input.status === 'finished') return input;
+  const now = Math.max(input.startedAtMs + input.elapsedMs, nowMs);
+  if (now >= input.startedAtMs + input.durationMs) return advanceMatch(input, now);
+  const leaving = new Set(playerIds.filter(id => !input.players[id].sealed && !input.players[id].forfeited));
+  // Leaving the spectator view cannot forfeit an already completed board.
+  if (!leaving.size) return input;
+  const remaining = input.playerIds.filter(id => !input.players[id].sealed && !leaving.has(id));
+  let snapshot: MatchSnapshot = { ...input, elapsedMs: now - input.startedAtMs, players: { ...input.players } };
+  for (const id of leaving) {
+    const player = input.players[id];
+    snapshot.players[id] = { ...player, state: { ...player.state, status: 'LOST' }, sealed: true, sealedAtMs: now,
+      forfeited: true, forfeitedAtMs: now, eliminationRank: input.mode === 'battle' ? remaining.length + 1 : null };
+  }
+  const eligible = snapshot.playerIds.filter(id => !snapshot.players[id].forfeited);
+  if (input.mode === 'battle' ? remaining.length <= 1 : eligible.length <= 1 || eligible.every(id => snapshot.players[id].sealed)) snapshot = endMatch(snapshot, 'forfeit', now);
+  return finalizeOutcome(input, snapshot, []).snapshot;
 }

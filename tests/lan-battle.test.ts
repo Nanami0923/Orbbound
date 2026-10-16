@@ -21,7 +21,7 @@ function prepareClear(snapshot: MatchSnapshot, count: number, id = 'host') {
 function queue(snapshot: MatchSnapshot, id: string, created: number[], prefix = id): AttackRow[] {
   snapshot.eventSeq = Math.max(snapshot.eventSeq, 10);
   snapshot.elapsedMs = Math.max(snapshot.elapsedMs, ...created, 0);
-  const rows = created.map((createdAtMs, index) => ({ attackId: `${prefix}-${index}`, sourcePlayerId: id === 'host' ? 'guest' : 'host', targetPlayerId: id,
+  const rows = created.map((createdAtMs, index) => ({ attackId: `${prefix}-${index}`, sourcePlayerId: id === 'host' ? 'guest' : 'host', sourcePlayerIds: [id === 'host' ? 'guest' : 'host'], targetPlayerId: id,
     createdAtMs, notBeforeAtMs: createdAtMs + 2000, sourceEventSeq: 1 }));
   snapshot.players[id].battle!.pendingAttacks = rows;
   return rows;
@@ -47,7 +47,8 @@ describe('LAN atomic chain battle', () => {
     const initial = match(); prepareClear(initial, count);
     const result = applyBattleBatch(initial, [command(initial)], 100);
     expect(result.outcomes[0].accepted).toBe(true);
-    expect(result.snapshot.players.host.battle).toMatchObject({ chargeRemainder: remainder, stats: { generatedRows: rows, sentRows: rows, discardedRows: discarded } });
+    expect(result.snapshot.players.host.battle).toMatchObject({ chargeRemainder: remainder, defenseRemainder: remainder, stats: { sentRows: rows } });
+    expect(result.snapshot.players.guest.battle).toMatchObject({ incomingBalls: remainder, stats: { generatedRows: rows, discardedRows: discarded } });
     expect(result.snapshot.players.guest.battle!.pendingAttacks).toHaveLength(rows);
     expect(result.snapshot.players.guest.battle!.pendingAttacks.every(row => row.createdAtMs === 100 && row.notBeforeAtMs === 2100)).toBe(true);
     expect(isMatchSnapshot(result.snapshot)).toBe(true);
@@ -65,14 +66,15 @@ describe('LAN atomic chain battle', () => {
     const rows = queue(initial, 'host', [0, 0, 0]);
     const result = applyBattleBatch(initial, [command(initial)], 100);
     expect(result.snapshot.players.host.battle).toMatchObject({ chargeRemainder: 2, pendingAttacks: [rows[2]],
-      stats: { generatedRows: 2, cancelledRows: 2, sentRows: 0, discardedRows: 1 } });
-    expect(result.snapshot.players.guest.battle!.pendingAttacks).toHaveLength(0);
+      stats: { generatedRows: 0, cancelledRows: 2, sentRows: 2, discardedRows: 0 } });
+    expect(result.snapshot.players.guest.battle).toMatchObject({ incomingBalls: 2, stats: { generatedRows: 2, discardedRows: 1 } });
+    expect(result.snapshot.players.guest.battle!.pendingAttacks).toHaveLength(2);
     expect(initial.players.host.battle!.pendingAttacks).toHaveLength(3);
     expect(initial.players.host.battle!.chargeRemainder).toBe(0);
     expect(isMatchSnapshot(result.snapshot)).toBe(true);
   });
 
-  it('defends its old queue then mutually cancels remaining new rows atomically', () => {
+  it('defends old and new incoming rows independently while also contributing outgoing balls', () => {
     const initial = match(); prepareClear(initial, 24); prepareClear(initial, 12, 'guest');
     queue(initial, 'host', [0]);
     const shots = [command(initial), command(initial, 'guest')];
@@ -81,16 +83,18 @@ describe('LAN atomic chain battle', () => {
     expect(forward.snapshot).toEqual(reverse.snapshot);
     expect(forward.presentationEvents).toEqual(reverse.presentationEvents);
     expect(forward.outcomes.every(item => item.accepted)).toBe(true);
-    expect(forward.snapshot.players.host.battle).toMatchObject({ pendingAttacks: [], stats: { generatedRows: 2, cancelledRows: 2, sentRows: 0 } });
-    expect(forward.snapshot.players.guest.battle).toMatchObject({ pendingAttacks: [], stats: { generatedRows: 1, cancelledRows: 1, sentRows: 0 } });
+    expect(forward.snapshot.players.host.battle).toMatchObject({ pendingAttacks: [], stats: { generatedRows: 1, cancelledRows: 2, sentRows: 1 } });
+    expect(forward.snapshot.players.guest.battle!.pendingAttacks).toHaveLength(1);
+    expect(forward.snapshot.players.guest.battle!.stats).toMatchObject({ generatedRows: 2, cancelledRows: 1, sentRows: 0 });
     expect(isPresentationEvents(forward.presentationEvents)).toBe(true);
   });
 
-  it('limits queues to three and counts overflow on the attacker without refund', () => {
+  it('limits target queues to three and consumes overflow contribution without refund', () => {
     const initial = match(); prepareClear(initial, 24); queue(initial, 'guest', [0, 0]);
     const result = applyBattleBatch(initial, [command(initial)], 100);
     expect(result.snapshot.players.guest.battle!.pendingAttacks).toHaveLength(3);
-    expect(result.snapshot.players.host.battle!.stats).toMatchObject({ generatedRows: 2, sentRows: 1, discardedRows: 1 });
+    expect(result.snapshot.players.host.battle!.stats).toMatchObject({ sentRows: 1 });
+    expect(result.snapshot.players.guest.battle!.stats).toMatchObject({ generatedRows: 2, receivedRows: 1, discardedRows: 1 });
     expect(result.snapshot.players.host.battle!.chargeRemainder).toBe(0);
   });
 
@@ -206,7 +210,7 @@ describe('LAN atomic chain battle', () => {
     const shot = command(initial);
     const first = applyBattleBatch(initial, [shot, shot, { ...shot, seq: 2 }], 0);
     expect(first.outcomes.map(item => item.accepted)).toEqual([true, false, false]);
-    expect(first.snapshot.players.host.battle!.stats.generatedRows).toBe(1);
+    expect(first.snapshot.players.guest.battle!.stats.generatedRows).toBe(1);
     expect(applyBattleBatch(first.snapshot, [shot], 100).outcomes[0].reason).toBe('DUPLICATE_SEQUENCE');
     expect(applyBattleBatch(first.snapshot, [{ ...shot, seq: 2 }], 100).outcomes[0].reason).toBe('STALE_STATE');
     expect(applyBattleBatch(first.snapshot, [command(first.snapshot)], 100).outcomes[0].reason).toBe('COOLDOWN');
@@ -238,7 +242,7 @@ describe('LAN atomic chain battle', () => {
   it('rejects malformed attack state and false battle result claims', () => {
     const initial = match(); queue(initial, 'host', [0]);
     const mutations: Array<(state: MatchSnapshot) => void> = [
-      state => { state.schemaVersion = 1 as 2; }, state => { state.mode = 'score'; }, state => { state.players.host.battle!.chargeRemainder = 12; },
+      state => { state.schemaVersion = 1 as 3; }, state => { state.mode = 'score'; }, state => { state.players.host.battle!.chargeRemainder = 12; },
       state => { state.players.host.battle!.pendingAttacks[0].notBeforeAtMs = 0; }, state => { state.players.host.battle!.pendingAttacks[0].targetPlayerId = 'guest'; },
       state => { state.players.host.battle!.pendingAttacks[0].sourceEventSeq = 999; }, state => { state.players.host.battle!.naturalGuardUntilMs = Infinity; },
       state => { state.players.host.battle!.appliedRows = 2; }, state => { state.players.host.battle!.pendingAttacks.push(...state.players.host.battle!.pendingAttacks); },
