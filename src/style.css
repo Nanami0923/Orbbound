@@ -109,7 +109,7 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
 .board-wrap { min-width: 0; }
 .board-heading { justify-content: space-between; padding: 0 5px 10px; color: var(--soft); font-size: 11px; letter-spacing: 0.05em; }
 .board-heading span:last-child { color: var(--mint); }
-.game-container { width: 100%; max-width: 640px; margin: 0 auto; aspect-ratio: 640 / 760; overflow: hidden; border-radius: 24px; box-shadow: var(--shadow); touch-action: none; }
+.game-container { width: 100%; max-width: 640px; margin: 0 auto; aspect-ratio: 640 / 760; overflow: hidden; border-radius: var(--board-corner-radius,24px); box-shadow: var(--shadow); touch-action: none; }
 .game-container canvas { display: block; width: 100% !important; height: 100% !important; }
 .mobile-launch-row { display: none; }
 

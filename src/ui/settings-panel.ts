@@ -41,9 +41,9 @@ export function settingsMarkup(settings: Settings, mobile: boolean, inGame = fal
       : `<p>鼠标左、右键按住瞄准，松开发射。F11 切换全屏。</p><h4>键盘快捷键</h4><p>点击按键后按下新键，每个动作使用不同按键。</p><div class="shortcut-settings">${(Object.keys(SHORTCUT_LABELS) as ShortcutAction[]).map(action => `<div class="setting-row"><strong>${SHORTCUT_LABELS[action]}</strong><button class="quiet-button" data-shortcut-edit="${action}" aria-label="修改${SHORTCUT_LABELS[action]}快捷键">${shortcutLabel(settings.shortcuts[action])}</button></div>`).join('')}</div><p id="shortcut-status" role="status"></p>`}${reset('control')}
     </section>
     <section data-settings-page="display" hidden><h3 tabindex="-1">画面与性能</h3>
-      ${select('frameRate','帧率上限',[['auto','自动 · 最高 120 FPS'],['30','30 FPS · 省电'],['60','60 FPS'],['90','90 FPS'],['120','120 FPS']],'实际帧率受屏幕和持续负载限制。')}
+      ${select('frameRate','帧率上限',[['30','30 FPS · 省电'],['60','60 FPS · 默认'],['90','90 FPS'],['120','120 FPS']],'选择活动绘制上限；实际帧率受屏幕、系统和设备性能限制。')}
       ${select('quality','画面清晰度',[['auto','自动'],['1','标准'],['1.5','清晰'],['2','精细']],'与帧率独立，不改变棋盘规则。')}
-      ${toggle('reducedMotion','减少动态效果','简化位移与闪光，保持相同发射节奏。')}${toggle('showPerformance','显示帧率','显示实际绘制帧率和当前目标。')}<p id="settings-performance-status" role="status">自动适应设备，最高 120 FPS。</p>${reset('display')}
+      ${toggle('reducedMotion','减少动态效果','简化位移与闪光，保持相同发射节奏。')}${toggle('showPerformance','显示帧率','显示实际绘制帧率和当前目标。')}<p id="settings-performance-status" role="status">请求 ${settings.frameRate} FPS · 等待实际绘制数据</p>${reset('display')}
     </section>
     <section data-settings-page="backup" hidden><h3 tabindex="-1">数据与维护</h3><p>导出存档、记录和设置。导入前预览并保留恢复副本。</p><p id="backup-last-export"></p><div class="settings-categories"><button class="quiet-button" data-backup="export">导出备份</button>${inGame ? '<p>导入、恢复备份及全部恢复默认，请返回首页后操作。</p>' : '<button class="quiet-button" data-backup="import">导入备份</button>' + restoreBackup + (!mobile ? '<button class="quiet-button" data-backup="legacy">导入旧 Windows 存档</button>' : '')}</div><p id="backup-status" role="status"></p>${inGame ? '' : '<h4>恢复设置</h4><p>只恢复声音、操作和显示偏好，存档及成绩不变。</p><button class="quiet-button" id="settings-reset">恢复全部默认设置</button>'}<p id="settings-reset-status" role="status"></p></section>
     </div></div><p class="settings-save-status" role="status" aria-live="polite"></p>`;

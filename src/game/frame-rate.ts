@@ -1,14 +1,17 @@
 export const FRAME_RATES = [30, 60, 90, 120] as const;
 export type FrameRate = typeof FRAME_RATES[number];
-export type FrameRateSetting = 'auto' | FrameRate;
+export type FrameRateSetting = FrameRate;
 export type RenderQuality = 1 | 1.5 | 2;
 export type RenderQualitySetting = 'auto' | RenderQuality;
-export const validFrameRate = (value: unknown): value is FrameRateSetting => value === 'auto' || FRAME_RATES.includes(value as FrameRate);
+export const validFrameRate = (value: unknown): value is FrameRateSetting => FRAME_RATES.includes(value as FrameRate);
+/** Local legacy/corrupt preferences recover safely; backup validation remains strict. */
+export const normalizeFrameRate = (value: unknown): FrameRate => validFrameRate(value) ? value : 60;
 export const validRenderQuality = (value: unknown): value is RenderQualitySetting => value === 'auto' || [1, 1.5, 2].includes(value as number);
 
 export interface PerformanceCapabilities {
   displayHz?: number;
   refreshRate?: number;
+  refreshRateKnown?: boolean;
   supportedRefreshRates?: number[];
   powerSave?: boolean;
   thermalStatus?: number | null;
@@ -18,7 +21,8 @@ export function cleanCapabilities(value: unknown): PerformanceCapabilities {
   const record = value as PerformanceCapabilities;
   const hz = record.displayHz ?? record.refreshRate;
   const result: PerformanceCapabilities = {};
-  if (typeof hz === 'number' && Number.isFinite(hz) && hz >= 24 && hz <= 500) result.displayHz = hz;
+  if (typeof record.refreshRateKnown === 'boolean') result.refreshRateKnown = record.refreshRateKnown;
+  if (record.refreshRateKnown !== false && typeof hz === 'number' && Number.isFinite(hz) && hz >= 24 && hz <= 500) result.displayHz = hz;
   if (Array.isArray(record.supportedRefreshRates)) result.supportedRefreshRates = record.supportedRefreshRates.filter(hz => typeof hz === 'number' && Number.isFinite(hz) && hz >= 24 && hz <= 500);
   if (typeof record.powerSave === 'boolean') result.powerSave = record.powerSave;
   if (record.thermalStatus === null || (typeof record.thermalStatus === 'number' && Number.isInteger(record.thermalStatus) && record.thermalStatus >= 0 && record.thermalStatus <= 6)) result.thermalStatus = record.thermalStatus;
@@ -63,34 +67,27 @@ export class FrameBudget {
   }
 }
 
-/** Automatic maximum, display/energy caps and measured sustained-load hysteresis. */
+/** Fixed user cap, limited only by a known native display rate. RAF estimates are diagnostic. */
 export class FrameRateGovernor {
-  public requested: FrameRateSetting = 'auto';
-  public target: FrameRate = 120;
+  public requested: FrameRateSetting = 60;
   public capabilities: PerformanceCapabilities = {};
   public observedHz: number | null = null;
-  private badWindows = 0;
-  private goodWindows = 0;
-  private recoveryWindows = 0;
-  public setRequested(value: FrameRateSetting): void { this.requested = value; this.recoveryWindows = 0; this.reconcile(true); }
-  public setCapabilities(value: unknown): void { this.capabilities = { ...this.capabilities, ...cleanCapabilities(value) }; this.reconcile(); }
-  public get displayHz(): number { return Math.min(this.capabilities.displayHz ?? 500, this.observedHz ?? this.capabilities.displayHz ?? 120); }
-  public get ceiling(): FrameRate {
-    let cap = Math.min(this.requested === 'auto' ? 120 : this.requested, this.displayHz * 1.04);
-    if (this.capabilities.powerSave || (this.capabilities.thermalStatus ?? 0) >= 3) cap = Math.min(cap, 30);
-    else if ((this.capabilities.thermalStatus ?? 0) >= 2) cap = Math.min(cap, 60);
-    return [...FRAME_RATES].reverse().find(rate => rate <= cap) ?? 30;
+  public setRequested(value: FrameRateSetting): void { this.requested = normalizeFrameRate(value); }
+  public setCapabilities(value: unknown): void {
+    const next = cleanCapabilities(value);
+    this.capabilities = { ...this.capabilities, ...next };
+    if (next.refreshRateKnown === false) delete this.capabilities.displayHz;
+    else if (next.displayHz !== undefined) this.capabilities.refreshRateKnown = true;
   }
+  public get displayHz(): number | null { return this.capabilities.displayHz ?? null; }
+  public get ceiling(): number { return Math.min(this.requested, this.displayHz ?? this.requested); }
+  public get target(): number { return this.ceiling; }
   public get reason(): string {
-    if (this.capabilities.powerSave) return '省电模式';
-    if ((this.capabilities.thermalStatus ?? 0) >= 3) return '温度保护';
+    if (this.target < this.requested) return '原生显示上限';
+    if (this.capabilities.powerSave) return '系统省电模式';
+    if ((this.capabilities.thermalStatus ?? 0) >= 3) return '系统温度较高';
     if ((this.capabilities.thermalStatus ?? 0) >= 2) return '温度较高';
-    if (this.target < this.ceiling) return '负载自适应';
-    if (this.ceiling < (this.requested === 'auto' ? 120 : this.requested)) return '屏幕或回调上限';
-    return this.requested === 'auto' ? '自动' : '手动上限';
-  }
-  private reconcile(reset = false): void {
-    if (reset || this.target > this.ceiling) { this.target = this.ceiling; this.badWindows = 0; this.goodWindows = 0; }
+    return '手动上限';
   }
   public observeDisplay(intervals: number[]): void {
     if (intervals.length < 20) return;
@@ -100,24 +97,9 @@ export class FrameRateGovernor {
     const known = [30, 60, 90, 120, 144, 165, 240, 360];
     const nearest = known.reduce((a, b) => Math.abs(b - hz) < Math.abs(a - hz) ? b : a);
     this.observedHz = Math.abs(nearest - hz) / nearest < 0.08 ? nearest : hz;
-    this.reconcile();
   }
-  public assess(costP95: number, updateFps: number, idle: boolean): void {
-    this.reconcile();
-    if (idle || !Number.isFinite(costP95) || updateFps <= 0) { this.badWindows = 0; this.goodWindows = 0; return; }
-    const overBudget = costP95 > 1000 / this.target * 0.85 || updateFps < this.target * 0.8;
-    this.badWindows = overBudget ? this.badWindows + 1 : 0;
-    if (this.badWindows >= 2 && this.target > 30) {
-      this.target = FRAME_RATES[FRAME_RATES.indexOf(this.target) - 1];
-      this.badWindows = 0; this.goodWindows = 0; this.recoveryWindows = 8;
-      return;
-    }
-    if (this.recoveryWindows > 0) { this.recoveryWindows--; return; }
-    const next = FRAME_RATES[FRAME_RATES.indexOf(this.target) + 1];
-    const headroom = next && next <= this.ceiling && costP95 < 1000 / next * 0.6 && updateFps >= this.target * 0.9;
-    this.goodWindows = headroom ? this.goodWindows + 1 : 0;
-    if (this.goodWindows >= 6 && next) { this.target = next; this.goodWindows = 0; }
-  }
+  /** Kept for existing render adapters; measured load never changes the user's fixed cap. */
+  public assess(_costP95: number, _updateFps: number, _idle: boolean): void {}
 }
 
 export function chooseQuality(setting: RenderQualitySetting, cssWidth: number, devicePixelRatio: number, constrained = false): RenderQuality {

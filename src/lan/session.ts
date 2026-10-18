@@ -1,7 +1,8 @@
 import { advanceWithEvents, applyShot, createMatch, finishMatch, forfeitPlayersMatch } from './authority';
 import { applyBattleBatch } from './battle';
 import { isPresentationEvent, partitionPresentationEvents, type PresentationEvent } from './presentation';
-import { isMatchSnapshot, LAN_CONTENT_HASH, LAN_PROTOCOL_VERSION, LAN_RULES_HASH, type MatchSnapshot, type BattleBatchOutcome } from './protocol';
+import { isMatchSnapshot, LAN_CONTENT_HASH, LAN_PROTOCOL_VERSION, LAN_RULES_HASH, PAUSE_RULES, type MatchSnapshot, type BattleBatchOutcome } from './protocol';
+import { PresentationClock } from './presentation-clock';
 import { lanPlatform, parseAddress, type DiscoveredRoom, type HostInfo, type LanEvent, type LanTransport, type DiscoveryStatus } from './transport';
 import { recentLanAddresses, rememberLanAddress } from '../storage/lan-history';
 
@@ -73,9 +74,7 @@ export class LanSession {
   private retrying = false;
   private preparationDeadline = 0;
   private pauseDeadline = 0;
-  private pauseBegan = 0;
-  private pauseSpent = 0;
-  private pauseUsed = new Set<string>();
+  private pauseResumeRequester?: string;
   private pauseCooldown = new Map<string, number>();
   private pauseResults = new Map<string, PauseOutcome>();
   private pendingPause?: { requestId: string; reason: PauseReason; began: number; queried: boolean; confirmed?: boolean };
@@ -93,17 +92,19 @@ export class LanSession {
   private seenMatches = new Set<string>();
   private awaitingWelcome = false;
   private scanDeadline = 0;
+  private discoveryRequested = false;
   private lastEventSeq = 0;
   private eventWatermarks = new Map<string, number>();
   private queuedShots = new Map<string, Record<string, unknown>>();
   private lastAdvertisement = '';
+  private presentationClock = new PresentationClock();
 
   constructor(readonly transport: LanTransport, private now = () => performance.now()) {
     this.unsubscribe = transport.subscribe(event => this.event(event));
     this.timer = setInterval(() => this.tick(), 50);
   }
   subscribe(listener: () => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener); }
-  private changed(): void { for (const listener of this.listeners) listener(); }
+  private changed(): void { this.presentationTime(); for (const listener of this.listeners) listener(); }
   private fail(error: unknown): void { this.view.error = error instanceof Error ? error.message : String(error); this.changed(); }
   private connectionFor(playerId: string): string | undefined { return this.peers.get(playerId)?.connectionId; }
   private playerFor(connectionId: string): Peer | undefined { return [...this.peers.values()].find(p => p.connectionId === connectionId); }
@@ -170,12 +171,12 @@ export class LanSession {
   }
   private async reset(): Promise<void> {
     this.generation++; this.peer = undefined; this.peers.clear(); this.awaitingWelcome = false; this.candidates.clear(); this.commands.clear(); this.queuedShots.clear(); this.pendingForfeits.clear(); this.packetRates.clear(); this.transfers.clear();
-    this.scanDeadline = 0; this.view.discovery = { scanId: '', status: 'cancelled', paths: 0, sent: 0, received: 0, errors: 0, diagnostics: [] };
+    this.scanDeadline = 0; this.discoveryRequested = false; this.view.discovery = { scanId: '', status: 'cancelled', paths: 0, sent: 0, received: 0, errors: 0, diagnostics: [] };
     this.lastEventSeq = 0; this.eventWatermarks.clear(); this.view.presentationEvents = []; this.lastAdvertisement = '';
     this.view.pendingShot = false; this.pendingSeq = undefined; this.view.snapshot = undefined;
     this.view.resumeReady = []; this.view.pauseRequester = undefined; this.reconnectToken = '';
     this.view.pauseRequest = undefined; this.view.pauseOutcome = undefined; this.view.settingsOpen = []; this.localSettingsOpen = false; this.view.autoOpenSettings = false; this.view.forceCloseSettings = false;
-    this.pendingPause = undefined; this.pauseResults.clear(); this.pauseCooldown.clear(); this.pauseUsed.clear(); this.pauseSpent = 0; this.pauseDeadline = 0; this.pauseBegan = 0; this.closingSettings = false; this.closeAcks.clear(); this.closureMissing.clear();
+    this.pendingPause = undefined; this.pauseResults.clear(); this.pauseCooldown.clear(); this.pauseResumeRequester = undefined; this.pauseDeadline = 0; this.closingSettings = false; this.closeAcks.clear(); this.closureMissing.clear(); this.presentationClock.reset();
     this.view.pauseRemainingMs = this.view.pauseVoteRemainingMs = 0;
     this.recoveryDeadline = 0; this.recoveryBegan = 0; this.recoverySpent = 0; this.hostRecoveryCount = 0;
     this.epoch = 0; this.lastServerSeq = -1; this.receivedEpoch = 0;
@@ -184,13 +185,16 @@ export class LanSession {
     this.view.players = []; this.view.roomId = ''; this.view.rooms = [];
     await this.transport.request('dispose').catch(() => {});
   }
-  async browse(): Promise<void> {
+  async browse(options: { discover?: boolean } = {}): Promise<void> {
     const operation = this.reset(), generation = this.generation; await operation; if (generation !== this.generation || this.closed) return;
+    this.discoveryRequested = options.discover !== false;
     this.view.isHost = false; this.view.selfId = 'guest'; this.view.phase = 'browsing'; this.changed();
-    await this.refreshDiscovery();
+    if (this.discoveryRequested) await this.refreshDiscovery();
   }
   async refreshDiscovery(extraAddresses: string[] = []): Promise<void> {
-    if (this.view.phase !== 'browsing' || this.closed || !this.foreground) return;
+    if (this.view.phase !== 'browsing' || this.closed) return;
+    this.discoveryRequested = true;
+    if (!this.foreground) return;
     const scanId = id(); this.scanDeadline = this.now() + 8500; this.view.error = '';
     this.view.discovery = { scanId, status: 'scanning', paths: 0, sent: 0, received: 0, errors: 0, diagnostics: [] }; this.changed();
     const candidates = [...new Set([...extraAddresses, ...recentLanAddresses().map(r => r.address)])].filter(address => !!parseAddress(address)).slice(0, 8);
@@ -245,7 +249,7 @@ export class LanSession {
     if (!this.view.isHost || this.view.phase !== 'lobby' || this.view.players.length < 2 || this.view.players.length > (this.view.config.capacity ?? 4) || this.view.players.some(p => !p.ready || !p.connected) || !this.allPresent()) return;
     if (this.view.settingsOpen.length) { this.view.notice = '请先关闭所有选手的设置'; this.publishRoom(); return; }
     this.activeMs = 0; this.sequence = 0; this.commands.clear(); this.queuedShots.clear(); this.lastEventSeq = 0; this.view.presentationEvents = [];
-    this.pauseUsed.clear(); this.pauseResults.clear(); this.pauseCooldown.clear(); this.pauseSpent = 0; this.pauseDeadline = 0; this.pauseBegan = 0; this.view.pauseOutcome = undefined; this.view.pauseRequest = undefined; this.view.settingsOpen = [];
+    this.pauseResults.clear(); this.pauseCooldown.clear(); this.pauseResumeRequester = undefined; this.pauseDeadline = 0; this.view.pauseOutcome = undefined; this.view.pauseRequest = undefined; this.view.settingsOpen = []; this.presentationClock.reset();
     this.hostRecoveryCount = 0; this.recoverySpent = 0; this.recoveryDeadline = 0; this.recoveryBegan = 0;
     for (const peer of this.peers.values()) { peer.loaded = false; peer.recoveryCount = 0; peer.recoveryDeadline = 0; }
     this.epoch++;
@@ -289,15 +293,17 @@ export class LanSession {
   requestPause(reason: PauseReason = 'pause'): void {
     if (this.view.phase !== 'playing' || !this.operating(this.view.selfId)) { this.view.notice = '当前不能申请暂停'; this.changed(); return; }
     if (this.view.pauseRequest) { this.view.notice = '已有暂停申请，请先处理'; this.changed(); return; }
+    const remaining = (this.pauseCooldown.get(this.view.selfId) ?? 0) - this.now();
+    if (remaining > 0) { this.view.notice = `请等待 ${Math.ceil(remaining / 1000)} 秒后再次申请`; this.changed(); return; }
     const requestId = id(); this.pendingPause = { requestId, reason, began: this.now(), queried: false };
     this.view.pauseOutcome = undefined; this.view.notice = reason === 'settings' ? '正在申请暂停以调整设置' : '正在申请暂停';
-    this.view.pauseRequest = { requestId, requesterId: this.view.selfId, reason, participantIds: [], votes: {}, expiresAt: this.hostNow() + 10000, status: 'sending', epoch: this.view.isHost ? this.epoch : this.receivedEpoch };
+    this.view.pauseRequest = { requestId, requesterId: this.view.selfId, reason, participantIds: [], votes: {}, expiresAt: this.hostNow() + PAUSE_RULES.voteMs, status: 'sending', epoch: this.view.isHost ? this.epoch : this.receivedEpoch };
     this.view.pauseRequester = this.view.selfId; this.changed();
     if (this.view.isHost) this.askPause(this.view.selfId, requestId, reason, this.epoch); else this.send('PAUSE_REQUEST', { requestId, reason, epoch: this.receivedEpoch });
   }
   private askPause(playerId: string, requestId: string, reason: PauseReason, epoch: unknown): void {
     const existing = this.pauseResults.get(requestId);
-    if (existing) { this.send('PAUSE_OUTCOME', { outcome: existing }, this.connectionFor(playerId)); return; }
+    if (existing) { if (existing.requesterId === playerId) this.send('PAUSE_OUTCOME', { outcome: existing }, this.connectionFor(playerId)); return; }
     const pending = this.view.pauseRequest;
     if (pending?.status === 'waiting') {
       if (pending.requestId === requestId && pending.requesterId === playerId) this.publishRoom();
@@ -306,12 +312,10 @@ export class LanSession {
     }
     let message = '';
     if (this.view.phase !== 'playing' || epoch !== this.epoch || !this.operating(playerId)) message = '当前不能申请暂停';
-    else if (this.pauseUsed.has(playerId)) message = '每人每局可成功申请一次暂停';
-    else if (this.pauseSpent >= 120000) message = '本局暂停预算已用尽';
-    else if ((this.pauseCooldown.get(playerId) ?? 0) > this.now()) message = '请等待 15 秒后再次申请';
+    else if ((this.pauseCooldown.get(playerId) ?? 0) > this.now()) message = `请等待 ${Math.ceil((this.pauseCooldown.get(playerId)! - this.now()) / 1000)} 秒后再次申请`;
     if (message) { this.reportPause({ requestId, requesterId: playerId, reason, status: 'rejected', message }); return; }
     const participantIds = this.view.snapshot!.playerIds.filter(p => this.operating(p));
-    this.view.pauseRequest = { requestId, requesterId: playerId, reason, participantIds, votes: { [playerId]: true }, expiresAt: this.now() + 10000, status: 'waiting', epoch: this.epoch };
+    this.view.pauseRequest = { requestId, requesterId: playerId, reason, participantIds, votes: { [playerId]: true }, expiresAt: this.now() + PAUSE_RULES.voteMs, status: 'waiting', epoch: this.epoch };
     this.view.pauseRequester = playerId; this.pendingPause = undefined; this.view.notice = '暂停申请已送达，等待其他选手同意'; this.publishRoom();
     this.approveIfUnanimous();
   }
@@ -333,24 +337,26 @@ export class LanSession {
     if (this.view.isHost) this.finishPauseRequest('cancelled', '申请人取消了暂停');
     else { this.send('PAUSE_CANCEL', { requestId: request.requestId, epoch: this.receivedEpoch }); this.view.notice = '正在取消暂停申请'; this.changed(); }
   }
-  private reportPause(outcome: PauseOutcome, clear = true): void {
+  private reportPause(outcome: PauseOutcome, clear = true, startCooldown = false): void {
     if (this.pauseResults.has(outcome.requestId)) return;
-    this.pauseResults.set(outcome.requestId, outcome); if (this.pauseResults.size > 64) this.pauseResults.delete(this.pauseResults.keys().next().value!);
+    // Keep terminal request identities for the whole match: old retries must not become a fresh vote.
+    this.pauseResults.set(outcome.requestId, outcome);
     if (clear && this.view.pauseRequest?.requestId === outcome.requestId) { this.view.pauseRequest = undefined; this.view.pauseRequester = undefined; }
     this.view.pauseOutcome = outcome; this.view.notice = outcome.message;
-    if (outcome.status !== 'approved') this.pauseCooldown.set(outcome.requesterId, this.now() + 15000);
+    if (startCooldown && outcome.status !== 'approved') this.pauseCooldown.set(outcome.requesterId, this.now() + PAUSE_RULES.cooldownMs);
     if (this.pendingPause?.requestId === outcome.requestId) this.pendingPause = undefined;
     this.send('PAUSE_OUTCOME', { outcome }); this.publishRoom();
   }
   private finishPauseRequest(status: PauseOutcome['status'], message: string): void {
     const request = this.view.pauseRequest; if (!request) return;
-    this.reportPause({ requestId: request.requestId, requesterId: request.requesterId, reason: request.reason, status, message });
+    this.reportPause({ requestId: request.requestId, requesterId: request.requesterId, reason: request.reason, status, message }, true, true);
   }
   private approveIfUnanimous(): void {
     const request = this.view.pauseRequest;
     if (!request || !request.participantIds.every(p => request.votes[p] === true)) return;
     // All control messages run between 50 ms rule batches; uncommitted shots are cancelled at this boundary.
-    this.pauseUsed.add(request.requesterId); this.pauseBegan = this.now(); this.pauseDeadline = this.now() + Math.min(60000, 120000 - this.pauseSpent);
+    this.pauseResumeRequester = request.requesterId; this.pauseDeadline = this.now() + PAUSE_RULES.maxPauseMs;
+    this.view.pauseRemainingMs = PAUSE_RULES.maxPauseMs;
     this.view.autoOpenSettings = request.reason === 'settings' && request.requesterId === this.view.selfId;
     this.freeze('比赛已暂停，可以调整本机设置', false);
     this.reportPause({ requestId: request.requestId, requesterId: request.requesterId, reason: request.reason, status: 'approved', message: '全员同意，比赛已暂停' });
@@ -395,8 +401,7 @@ export class LanSession {
     if (this.recoveryBegan) this.recoverySpent += Math.max(0, this.now() - this.recoveryBegan);
     this.recoveryBegan = 0; this.recoveryDeadline = 0;
     for (const peer of this.peers.values()) peer.recoveryDeadline = 0;
-    if (this.pauseBegan) this.pauseSpent += Math.min(Math.max(0, this.now() - this.pauseBegan), Math.max(0, this.pauseDeadline - this.pauseBegan));
-    this.pauseBegan = 0; this.pauseDeadline = 0; this.view.pauseRemainingMs = 0; this.view.resumeReady = [];
+    this.pauseDeadline = 0; this.view.pauseRemainingMs = 0; this.view.resumeReady = [];
     this.closingSettings = false; this.view.forceCloseSettings = false; this.view.settingsOpen = []; this.view.autoOpenSettings = false;
     this.closureMissing.clear();
     this.view.pendingShot = false; this.pendingSeq = undefined; this.view.phase = 'countdown';
@@ -438,7 +443,7 @@ export class LanSession {
   }
   foregroundChanged(active: boolean): void {
     if (this.foreground === active) return; this.foreground = active;
-    if (this.view.phase === 'browsing') { if (active) void this.refreshDiscovery(); else void this.stopDiscovery(); }
+    if (this.view.phase === 'browsing') { if (active) { if (this.discoveryRequested) void this.refreshDiscovery(); } else void this.stopDiscovery(); }
     if (!active) {
       this.send('BACKGROUND');
       if (['playing', 'countdown', 'paused', 'preparing'].includes(this.view.phase) && (this.view.isHost || this.operating(this.view.selfId))) this.beginRecovery('玩家离开前台，等待恢复 · 最多 20 秒', [this.view.selfId]);
@@ -692,7 +697,7 @@ export class LanSession {
     const outcome = value as PauseOutcome | null;
     if (!outcome || !validId(outcome.requestId) || !validId(outcome.requesterId) || !['pause', 'settings'].includes(outcome.reason) || !['approved', 'rejected', 'cancelled', 'expired', 'failed'].includes(outcome.status) || typeof outcome.message !== 'string' || this.pauseResults.has(outcome.requestId)) return;
     const intent = this.pendingPause;
-    if (this.view.phase === 'paused' && outcome.status === 'approved' && outcome.reason === 'settings' && outcome.requesterId === this.view.selfId && intent?.requestId === outcome.requestId && (intent.confirmed || this.now() - intent.began < 10000)) this.view.autoOpenSettings = true;
+    if (this.view.phase === 'paused' && outcome.status === 'approved' && outcome.reason === 'settings' && outcome.requesterId === this.view.selfId && intent?.requestId === outcome.requestId && (intent.confirmed || this.now() - intent.began < PAUSE_RULES.voteMs)) this.view.autoOpenSettings = true;
     this.pauseResults.set(outcome.requestId, outcome); if (this.pauseResults.size > 64) this.pauseResults.delete(this.pauseResults.keys().next().value!);
     this.view.pauseOutcome = { ...outcome, message: outcome.message.slice(0, 160) }; this.view.notice = outcome.message.slice(0, 160);
     if (this.view.pauseRequest?.requestId === outcome.requestId) { this.view.pauseRequest = undefined; this.view.pauseRequester = undefined; }
@@ -702,7 +707,11 @@ export class LanSession {
     switch (type) {
       case 'WELCOME': {
         if (!this.awaitingWelcome || !['joining', 'reconnecting'].includes(this.view.phase)) return;
-        if (data.rulesHash !== LAN_RULES_HASH || data.contentHash !== LAN_CONTENT_HASH || typeof data.token !== 'string' || typeof data.epoch !== 'number' || !validId(data.selfId) || !this.readRoom(data)) { this.fail('联机版本或身份不兼容'); return; }
+        if (data.rulesHash !== LAN_RULES_HASH || data.contentHash !== LAN_CONTENT_HASH || typeof data.token !== 'string' || typeof data.epoch !== 'number' || !validId(data.selfId) || !this.readRoom(data)) {
+          this.awaitingWelcome = false; this.view.phase = 'closed';
+          if (this.peer) this.disconnect(this.peer);
+          this.fail('联机版本或身份不兼容'); return;
+        }
         this.awaitingWelcome = false; this.view.selfId = data.selfId; this.reconnectToken = data.token; this.receivedEpoch = data.epoch;
         this.lastServerSeq = typeof data.serverSeq === 'number' ? data.serverSeq : -1;
         if (typeof data.hostNow === 'number') this.offset = data.hostNow - this.now();
@@ -722,7 +731,7 @@ export class LanSession {
         if (this.view.phase === 'preparing' && this.view.snapshot?.matchId === data.snapshot.matchId) { if (this.foreground) this.send('LOADED', { epoch: this.receivedEpoch }); return; }
         if (this.view.phase !== 'lobby' || this.seenMatches.has(data.snapshot.matchId)) return;
         this.seenMatches.add(data.snapshot.matchId); this.view.snapshot = data.snapshot; this.receivedEpoch = data.epoch as number; this.sequence = 0; this.lastServerSeq = -1;
-        this.eventBaseline(); this.pauseResults.clear(); this.pendingPause = undefined; this.view.phase = 'preparing'; this.activeMs = 0; this.preparationDeadline = this.now() + 10000;
+        this.eventBaseline(); this.pauseResults.clear(); this.pauseCooldown.clear(); this.pauseResumeRequester = undefined; this.pendingPause = undefined; this.view.phase = 'preparing'; this.activeMs = 0; this.preparationDeadline = this.now() + 10000;
         if (this.foreground) this.send('LOADED', { epoch: this.receivedEpoch }); else this.send('BACKGROUND'); this.changed(); break;
       case 'START':
         if (!isMatchSnapshot(data.snapshot) || typeof data.startAt !== 'number' || !Number.isFinite(data.startAt)) return;
@@ -804,7 +813,7 @@ export class LanSession {
     }
     if (this.pendingPause && this.view.pauseRequest?.status === 'sending') {
       const waiting = now - this.pendingPause.began;
-      if (waiting >= 10000) { const pending = this.pendingPause; this.pendingPause = undefined; this.view.autoOpenSettings = false; this.view.pauseRequest = undefined; this.view.pauseRequester = undefined; this.view.pauseOutcome = { requestId: pending.requestId, requesterId: this.view.selfId, reason: pending.reason, status: 'failed', message: '暂停申请未确认，请检查连接后重试' }; this.view.notice = this.view.pauseOutcome.message; this.send('PAUSE_CANCEL', { requestId: pending.requestId, epoch: this.receivedEpoch }); this.changed(); }
+      if (waiting >= PAUSE_RULES.voteMs) { const pending = this.pendingPause; this.pendingPause = undefined; this.pauseCooldown.set(this.view.selfId, now + PAUSE_RULES.cooldownMs); this.view.autoOpenSettings = false; this.view.pauseRequest = undefined; this.view.pauseRequester = undefined; this.view.pauseOutcome = { requestId: pending.requestId, requesterId: this.view.selfId, reason: pending.reason, status: 'failed', message: '暂停申请未确认，请检查连接后重试' }; this.view.notice = this.view.pauseOutcome.message; this.send('PAUSE_CANCEL', { requestId: pending.requestId, epoch: this.receivedEpoch }); this.changed(); }
       else if (waiting >= 2000 && !this.pendingPause.queried) { this.pendingPause.queried = true; this.view.notice = '暂停申请尚未确认，正在查询'; this.send('PAUSE_STATUS', { requestId: this.pendingPause.requestId }); this.changed(); }
     }
     this.view.pauseVoteRemainingMs = this.view.pauseRequest ? Math.max(0, this.view.pauseRequest.expiresAt - this.hostNow()) : 0;
@@ -823,7 +832,12 @@ export class LanSession {
     }
     if (this.view.phase === 'countdown') {
       this.view.countdown = Math.max(0, Math.ceil((this.startAt - now) / 1000));
-      if (now >= this.startAt && this.foreground) { this.view.phase = 'playing'; this.lastTick = now; this.lastPublish = now; this.view.notice = ''; }
+      if (now >= this.startAt && this.foreground) {
+        this.view.phase = 'playing'; this.lastTick = now; this.lastPublish = now; this.view.notice = '';
+        if (this.view.isHost && this.pauseResumeRequester) {
+          this.pauseCooldown.set(this.pauseResumeRequester, now + PAUSE_RULES.cooldownMs); this.pauseResumeRequester = undefined;
+        }
+      }
       this.changed();
     } else if (this.view.phase === 'playing' && this.view.snapshot) {
       if ((delta > 1500 || !this.foreground) && (this.view.isHost || this.operating(this.view.selfId))) { this.beginRecovery('游戏暂时挂起，等待选手恢复', [this.view.selfId]); return; }
@@ -848,6 +862,14 @@ export class LanSession {
     if (!this.view.snapshot) return 0;
     const extra = !this.view.isHost && this.view.phase === 'playing' ? Math.min(1200, Math.max(0, this.now() - this.lastPublish)) : 0;
     return Math.min(this.view.snapshot.durationMs, this.view.snapshot.elapsedMs + extra);
+  }
+  /** Absolute display-only time in the same coordinates as PresentationEvent.atMs. */
+  presentationTime(): number {
+    const snapshot = this.view.snapshot;
+    if (!snapshot) { this.presentationClock.reset(); return 0; }
+    return this.presentationClock.sample({ matchId: snapshot.matchId, epoch: this.view.isHost ? this.epoch : this.receivedEpoch,
+      phase: this.view.phase, time: snapshot.startedAtMs + snapshot.elapsedMs, end: snapshot.startedAtMs + snapshot.durationMs,
+      sampledAt: this.view.isHost ? this.lastTick : this.lastPublish }, this.now());
   }
   roomAgeMs(room: SessionRoom): number { return Math.max(0, this.now() - room.lastSeenAt); }
 }

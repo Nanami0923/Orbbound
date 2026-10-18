@@ -1,0 +1,19 @@
+{
+  "version": "4.6.0",
+  "title": "联机性能与棋盘统一（测试版）",
+  "prerelease": true,
+  "artifacts": [
+    {
+      "platform": "Android",
+      "file": "Orbbound-4.6.0-Android.apk",
+      "bytes": 1377055,
+      "sha256": "a63ba2e82979a04674d8a74291fd50618509f2021bba76dfac1b9802655fec03"
+    },
+    {
+      "platform": "Windows",
+      "file": "Orbbound-Windows-4.6.0-x64.zip",
+      "bytes": 720953,
+      "sha256": "6a674dd2b913da0b2ef7398d23fcd406b5937dec0503a45264114365b9bcfdf5"
+    }
+  ]
+}

@@ -170,7 +170,7 @@ it.each([true,false])('shows the smaller next orb beside the cannon even with ai
   const scene = new PlayScene();
   const next = {setScale:vi.fn()};
   const createOrb=vi.fn(()=>next);
-  const graphics={clear:vi.fn(),fillStyle:vi.fn(),fillCircle:vi.fn(),lineStyle:vi.fn(),strokeCircle:vi.fn()};
+  const graphics={clear:vi.fn().mockReturnThis(),fillStyle:vi.fn().mockReturnThis(),fillCircle:vi.fn().mockReturnThis(),lineStyle:vi.fn().mockReturnThis(),strokeCircle:vi.fn().mockReturnThis()};
   Object.assign(scene,{settings:{aimAssist},createOrb,launcherBase:graphics});
   (scene as unknown as {renderLauncher():void}).renderLauncher();
   expect(createOrb).toHaveBeenCalledWith(scene.activeState.nextColor,{x:405,y:698});

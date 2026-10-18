@@ -7,6 +7,8 @@ import { traceShot } from '../core/physics';
 import type { Cell, GameEvent, GameState, Point } from '../core/types';
 import { BOARD_GEOMETRY, GAME_HEIGHT, GAME_WIDTH, UI_COLORS } from '../content/game-config';
 import { getOrbTheme } from '../content/theme';
+import { BOARD_APPEARANCE, boardGeometry, drawAimMarkers, drawArena, drawDangerLine, drawLauncherBarrel, drawLauncherBase } from '../render/board-appearance';
+import { paintOrbArtwork } from '../render/board-artwork';
 import { DEFAULT_SETTINGS, type Settings } from '../storage/storage';
 import { gameAudio, boardMusicPressure } from './audio';
 import { fineRotationSpeed } from './rotation';
@@ -32,7 +34,7 @@ function sendWindowEvent(name: string, detail: unknown): void {
 
 export class PlayScene extends Phaser.Scene {
   private gameState: GameState = createGameState();
-  private get geometry() { return { ...BOARD_GEOMETRY, rowOffset: this.gameState.rowOffset ?? 0, ceilingRow: this.gameState.ceilingRow ?? 0, top: BOARD_GEOMETRY.top + (this.gameState.ceilingRow ?? 0) * BOARD_GEOMETRY.rowStep }; }
+  private get geometry() { return boardGeometry(this.gameState); }
   private phase: ScenePhase = 'READY';
   private settings: Settings = { ...DEFAULT_SETTINGS };
   private audio = gameAudio;
@@ -132,7 +134,7 @@ export class PlayScene extends Phaser.Scene {
     delta = Number.isFinite(delta) ? Math.max(0, delta) : 0;
     const steeringDelta = Math.min(250, delta);
     if (this.recoil > 0) {
-      this.recoil = Math.max(0, this.recoil - delta / 140);
+      this.recoil = Math.max(0, this.recoil - delta / BOARD_APPEARANCE.recoilMs);
       this.positionBarrel();
     }
     if (this.isTimed) this.syncTimedClock();
@@ -359,49 +361,22 @@ export class PlayScene extends Phaser.Scene {
   }
 
   private createArena(): void {
-    const background = this.add.graphics();
-    background.fillStyle(0x111a2d, 1);
-    background.fillRoundedRect(26, 48, 588, 592, 24);
-    background.lineStyle(1, UI_COLORS.line, 0.8);
-    background.strokeRoundedRect(26, 48, 588, 592, 24);
-
-    background.fillStyle(0x21304d, 0.55);
-    background.fillRoundedRect(42, 61, 556, 20, 10);
-    background.fillStyle(0x0d1323, 0.48);
-    background.fillRoundedRect(42, 608, 556, 24, 12);
-
-    background.lineStyle(1, UI_COLORS.line, 0.38);
-    for (let row = 0; row < 17; row += 1) {
-      const y = BOARD_GEOMETRY.baseY + row * BOARD_GEOMETRY.rowStep;
-      background.lineBetween(48, y, 592, y);
-    }
-
-    for (let index = 0; index < 14; index += 1) {
-      const x = 58 + index * 40;
-      background.fillStyle(UI_COLORS.accent, index % 2 === 0 ? 0.16 : 0.08);
-      background.fillCircle(x, 72, 2.2);
-    }
-
-    const floorLabel = this.add.text(GAME_WIDTH / 2, 623, '触底线 · 小球到达这里即失败', {
-      resolution: 2,
-      color: '#64718d',
-      fontFamily: 'Segoe UI, Microsoft YaHei, sans-serif',
-      fontSize: '11px',
-      fontStyle: 'bold',
-      letterSpacing: 1,
+    drawArena(this.add.graphics());
+    const floorLabel = this.add.text(GAME_WIDTH / 2, 623, BOARD_APPEARANCE.floorLabel, {
+      resolution: 2, color: '#64718d', fontFamily: BOARD_APPEARANCE.font,
+      fontSize: '11px', fontStyle: 'bold', letterSpacing: 1,
     }).setOrigin(0.5);
     floorLabel.setAlpha(0.85);
     this.dangerLine = this.add.graphics();
-    if (!usesButtonControls()) this.add.text(import.meta.env.MODE === 'windows' ? 478 : 405, 661, import.meta.env.MODE === 'windows' ? '当前球' : '下一球', {
-      resolution: 2, color: '#98a1b8', fontFamily: 'Segoe UI, Microsoft YaHei, sans-serif', fontSize: '14px',
+    // The browser preview keeps its existing next-ball hint. Windows uses the DOM next-ball card.
+    if (!usesButtonControls() && import.meta.env.MODE !== 'windows') this.add.text(405, 661, '下一球', {
+      resolution: 2, color: '#98a1b8', fontFamily: BOARD_APPEARANCE.font, fontSize: '14px',
     }).setOrigin(0.5);
-
   }
 
   private renderBoard(offsetY = 0): void {
     const pressure = boardMusicPressure(this.gameState.board);
-    this.dangerLine?.clear().lineStyle(2, UI_COLORS.danger, .18 + pressure * .65).lineBetween(48, 608, 592, 608);
-    if (this.gameState.ceilingRow) this.dangerLine?.lineStyle(2, UI_COLORS.accent, .6).lineBetween(48, this.geometry.top, 592, this.geometry.top);
+    if (this.dangerLine) { this.dangerLine.clear(); drawDangerLine(this.dangerLine, pressure, this.geometry); }
     this.boardGroup.setY(offsetY);
     const retained = new Set<string>();
 
@@ -434,70 +409,31 @@ export class PlayScene extends Phaser.Scene {
   }
 
   private renderLauncher(): void {
-    this.launcherOrb?.destroy();
-    this.nextOrb?.destroy();
-
+    this.launcherOrb?.destroy(); this.nextOrb?.destroy(); this.nextOrb = undefined;
     this.launcherBase.clear();
-    if (!usesButtonControls()) {
-      this.nextOrb = this.createOrb(import.meta.env.MODE === 'windows' ? this.gameState.currentColor : this.gameState.nextColor, { x: import.meta.env.MODE === 'windows' ? 478 : 405, y: 698 });
-      this.nextOrb.setScale(import.meta.env.MODE === 'windows' ? 1.35 : .72);
+    if (!usesButtonControls() && import.meta.env.MODE !== 'windows') {
+      this.nextOrb = this.createOrb(this.gameState.nextColor, { x: 405, y: 698 }); this.nextOrb.setScale(.72);
     }
-    const theme = getOrbTheme(this.gameState.currentColor);
-    if (this.barrel) {
-      this.barrel.clear();
-      this.barrel.fillStyle(0x080e1a, 1).fillRoundedRect(-17, -62, 34, 68, 10);
-      this.barrel.lineStyle(2, 0x7d91ad, 1).strokeRoundedRect(-17, -62, 34, 68, 10);
-      this.barrel.fillStyle(0x304763, 1).fillRoundedRect(-12, -57, 24, 51, 7);
-      this.barrel.fillStyle(theme.color, 1).fillRoundedRect(-11, -60, 22, 9, 3);
-      this.barrel.fillStyle(0xf5f2eb, 0.8).fillTriangle(-5, -36, 5, -36, 0, -44);
-      this.barrel.setRotation(this.angle);
-    }
-    this.launcherBase.fillStyle(0x0b1120, 0.95);
-    this.launcherBase.fillCircle(BOARD_GEOMETRY.launcherX, BOARD_GEOMETRY.launcherY + 3, 42);
-    this.launcherBase.lineStyle(2, UI_COLORS.line, 0.9);
-    this.launcherBase.strokeCircle(BOARD_GEOMETRY.launcherX, BOARD_GEOMETRY.launcherY + 3, 42);
-    this.launcherBase.fillStyle(0x253451, 0.9);
-    this.launcherBase.fillCircle(BOARD_GEOMETRY.launcherX, BOARD_GEOMETRY.launcherY + 3, 29);
-    this.launcherBase.fillStyle(UI_COLORS.accent, 0.65);
-    this.launcherBase.fillCircle(BOARD_GEOMETRY.launcherX, BOARD_GEOMETRY.launcherY - 23, 4);
-
-    this.launcherOrb = this.createOrb(this.gameState.currentColor, {
-      x: BOARD_GEOMETRY.launcherX,
-      y: BOARD_GEOMETRY.launcherY,
-    });
-    this.launcherOrb.setScale(0.93);
-    this.launcherOrb.setRotation?.(0);
-
+    if (this.barrel) { this.barrel.clear(); drawLauncherBarrel(this.barrel, this.gameState.currentColor); this.barrel.setRotation(this.angle); }
+    drawLauncherBase(this.launcherBase);
+    this.launcherOrb = this.createOrb(this.gameState.currentColor, { x: BOARD_GEOMETRY.launcherX, y: BOARD_GEOMETRY.launcherY });
+    this.launcherOrb.setScale(BOARD_APPEARANCE.loadedScale); this.launcherOrb.setRotation?.(0);
   }
 
   private createOrb(colorId: number, point: Point): Phaser.GameObjects.Container {
     const key = `orb-shared-${colorId}`;
     if (!this.textures.exists(key)) {
-      const theme = getOrbTheme(colorId);
-      const texture = this.textures.createCanvas(key, 192, 192)!;
-      const ctx = texture.context;
-      ctx.scale(4, 4);
-      const circle = (x: number, y: number, radius: number, color: string) => {
-        ctx.beginPath(); ctx.arc(x,y,radius,0,Math.PI*2); ctx.fillStyle=color; ctx.fill();
-      };
-      // Keep every painted pixel inside the ball; no cast shadow can cover a neighbour.
-      ctx.beginPath(); ctx.arc(24,24,17.5,0,Math.PI*2); ctx.clip();
-      circle(24,24,17.5,theme.cssColor);
-      ctx.strokeStyle='rgba(255,255,255,.28)'; ctx.lineWidth=1.5; ctx.stroke();
-      ctx.beginPath(); ctx.ellipse(18,17,5.5,3,0,0,Math.PI*2); ctx.fillStyle='rgba(255,255,255,.24)'; ctx.fill();
-      ctx.fillStyle=theme.ink; ctx.font='bold 17px "Segoe UI Symbol", "Segoe UI", sans-serif';
-      ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(theme.symbol,24,25);
-      circle(18,32,1.7,theme.ink); circle(30,32,1.7,theme.ink);
-      texture.refresh();
+      const texture = this.textures.createCanvas(key, BOARD_APPEARANCE.orbTextureSize, BOARD_APPEARANCE.orbTextureSize)!;
+      texture.context.scale(4, 4); paintOrbArtwork(texture.context, colorId); texture.refresh();
     }
-    return this.add.container(point.x, point.y, [this.add.image(0, 0, key).setDisplaySize(48,48)]);
+    return this.add.container(point.x, point.y, [this.add.image(0, 0, key).setDisplaySize(BOARD_APPEARANCE.orbSize, BOARD_APPEARANCE.orbSize)]);
   }
 
   private positionBarrel(): void {
     if (!this.barrel) return;
     this.barrel.setRotation(this.angle);
-    this.barrel.setPosition?.(BOARD_GEOMETRY.launcherX - Math.sin(this.angle) * this.recoil * 9,
-      BOARD_GEOMETRY.launcherY + Math.cos(this.angle) * this.recoil * 9);
+    this.barrel.setPosition?.(BOARD_GEOMETRY.launcherX - Math.sin(this.angle) * this.recoil * BOARD_APPEARANCE.recoilDistance,
+      BOARD_GEOMETRY.launcherY + Math.cos(this.angle) * this.recoil * BOARD_APPEARANCE.recoilDistance);
   }
   private drawAim(): void {
     this.aimDirty = false;
@@ -522,34 +458,8 @@ export class PlayScene extends Phaser.Scene {
     }
 
     const trace = this.getShotTrace();
-    const theme = getOrbTheme(this.gameState.currentColor);
-    // Use the projectile's physical trace, with uniform spacing across reflections.
-    let distance = 0, nextDot = 34;
-    for (let i = 1; i < trace.points.length; i++) {
-      const a = trace.points[i - 1], b = trace.points[i];
-      const length = Math.hypot(b.x - a.x, b.y - a.y);
-      while (length > 0 && nextDot <= distance + length) {
-        const t = (nextDot - distance) / length;
-        const x = a.x + (b.x - a.x) * t, y = a.y + (b.y - a.y) * t;
-        this.aimGraphics.fillStyle(0x0b1120, 0.9).fillCircle(x, y, 3.5);
-        this.aimGraphics.fillStyle(0xc5d7e0, 0.65).fillCircle(x, y, 2.2);
-        nextDot += 15;
-      }
-      distance += length;
-    }
-
-    if (trace.bounced && trace.points.length > 2) {
-      const bounce = trace.points.find((point, index) => index > 0 && (point.x <= BOARD_GEOMETRY.left + BOARD_GEOMETRY.radius + 0.1 || point.x >= BOARD_GEOMETRY.right - BOARD_GEOMETRY.radius - 0.1));
-      if (bounce) this.aimGraphics.fillStyle(UI_COLORS.warning, 0.9).fillCircle(bounce.x, bounce.y, 4);
-    }
-
-    if (trace.landing) {
-      const landingPoint = cellToPoint(trace.landing, this.geometry);
-      this.aimGraphics.lineStyle(2, 0xffffff, 0.85);
-      this.aimGraphics.strokeCircle(landingPoint.x, landingPoint.y, BOARD_GEOMETRY.radius);
-      this.aimGraphics.lineStyle(1, theme.color, 0.9);
-      this.aimGraphics.strokeCircle(landingPoint.x, landingPoint.y, BOARD_GEOMETRY.radius - 4);
-    }
+    drawAimMarkers(this.aimGraphics, trace, this.geometry, this.gameState.currentColor,
+      trace.landing ? cellToPoint(trace.landing, this.geometry) : undefined);
   }
 
   private handlePointerDown(pointer: Phaser.Input.Pointer): void {
@@ -687,8 +597,8 @@ export class PlayScene extends Phaser.Scene {
     const matched = events.find((event) => event.type === 'match')?.cells ?? [];
     const dropped = events.find((event) => event.type === 'drop')?.cells ?? [];
     const removed = [...matched, ...dropped];
-    const removeDuration = dropped.length ? 330 : 170;
-    const removeDelay = 36;
+    const removeDuration = dropped.length ? BOARD_APPEARANCE.removal.fallMs : BOARD_APPEARANCE.removal.matchMs;
+    const removeDelay = BOARD_APPEARANCE.removal.delay;
 
     const animationGroups = new Map<number, Phaser.GameObjects.Container[]>();
     for (const [index, cell] of removed.entries()) {
@@ -698,7 +608,7 @@ export class PlayScene extends Phaser.Scene {
       const delay = falling ? 90 + Math.min(index, 6) * removeDelay : 0;
       if (this.reducedMotion) orb.setAlpha(0);
       if (falling && !this.reducedMotion) {
-        this.tweens.add({ targets: orb, y: orb.y + 150, angle: 18,
+        this.tweens.add({ targets: orb, y: orb.y + BOARD_APPEARANCE.removal.fallDistance, angle: BOARD_APPEARANCE.removal.fallAngle,
           duration: removeDuration, delay, ease: 'Quad.In' });
       }
       const group = animationGroups.get(delay) ?? [];
@@ -709,7 +619,7 @@ export class PlayScene extends Phaser.Scene {
       if (this.reducedMotion) continue;
       this.tweens.add({
         targets,
-        scale: delay > 0 ? .85 : 0.05,
+        scale: delay > 0 ? BOARD_APPEARANCE.removal.fallScale : BOARD_APPEARANCE.removal.matchScale,
         alpha: 0,
         duration: removeDuration,
         delay,
@@ -773,28 +683,28 @@ export class PlayScene extends Phaser.Scene {
       targets: flash,
       scale: 1.75,
       alpha: 0,
-      duration: 220,
+      duration: BOARD_APPEARANCE.landingFlashMs,
       ease: 'Cubic.Out',
       onComplete: () => { flash.destroy(); this.transient.delete(flash); },
     });
   }
 
   private showScorePopup(points: number, label: string): void {
-    const text = this.add.text(BOARD_GEOMETRY.launcherX, 590, `+${points}  ${label}`, {
+    const text = this.add.text(BOARD_GEOMETRY.launcherX, BOARD_APPEARANCE.score.y, `+${points}  ${label}`, {
       resolution: 2,
       color: '#f5f2eb',
       fontFamily: 'Segoe UI, Microsoft YaHei, sans-serif',
-      fontSize: '16px',
+      fontSize: `${BOARD_APPEARANCE.score.fontSize}px`,
       fontStyle: 'bold',
       stroke: '#111a2d',
-      strokeThickness: 5,
+      strokeThickness: BOARD_APPEARANCE.score.stroke,
     }).setOrigin(0.5);
     this.transient.add(text);
     this.tweens.add({
       targets: text,
-      y: this.reducedMotion ? 590 : 550,
+      y: this.reducedMotion ? BOARD_APPEARANCE.score.y : BOARD_APPEARANCE.score.endY,
       alpha: 0,
-      duration: 620,
+      duration: BOARD_APPEARANCE.score.duration,
       ease: 'Cubic.Out',
       onComplete: () => { text.destroy(); this.transient.delete(text); },
     });

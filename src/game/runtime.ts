@@ -9,7 +9,8 @@ export interface PerformanceReport {
   targetFps: number;
   updateFps: number;
   renderFps: number;
-  displayHz: number;
+  displayHz: number | null;
+  observedRafHz: number | null;
   quality: RenderQuality;
   idle: boolean;
   frameP95Ms: number;
@@ -31,7 +32,7 @@ export function installPerformanceRuntime(game: Phaser.Game): void {
   const wake = () => { lastActivity = performance.now(); if (lastIdle) budget.wake(); };
   const applyQuality = () => {
     const cssWidth = document.querySelector('#game-container')?.getBoundingClientRect().width || GAME_WIDTH;
-    const constrained = governor.target < governor.ceiling || governor.capabilities.powerSave === true || (governor.capabilities.thermalStatus ?? 0) >= 2;
+    const constrained = governor.capabilities.powerSave === true || (governor.capabilities.thermalStatus ?? 0) >= 2;
     const next = chooseQuality(settings.quality, cssWidth, window.devicePixelRatio || 1, constrained);
     if (next === quality) return;
     quality = next;
@@ -89,8 +90,9 @@ export function installPerformanceRuntime(game: Phaser.Game): void {
     governor.observeDisplay(rawIntervals);
     governor.assess(percentile(costs, 0.95), updates / seconds, activeFrames < updates * 0.8);
     applyQuality();
-    const report: PerformanceReport = { requested: settings.frameRate, targetFps: governor.target,
-      updateFps: Math.round(updates / seconds), renderFps: Math.round(renders / seconds), displayHz: Math.round(governor.displayHz),
+    const report: PerformanceReport = { requested: governor.requested, targetFps: governor.target,
+      updateFps: Math.round(updates / seconds), renderFps: Math.round(renders / seconds), displayHz: governor.displayHz,
+      observedRafHz: governor.observedHz,
       quality, idle, frameP95Ms: Math.round(percentile(frameIntervals, 0.95) * 10) / 10,
       workP95Ms: Math.round(percentile(costs, 0.95) * 10) / 10, reason: idle ? '静止省电' : governor.reason };
     window.dispatchEvent(new CustomEvent('snood-performance', { detail: report }));

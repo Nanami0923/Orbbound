@@ -15,12 +15,13 @@ it('Windows always retains desktop input even on a narrow touch display',()=>{
  vi.stubEnv('MODE','windows');vi.stubGlobal('window',{matchMedia:()=>({matches:true})});
  expect(usesButtonControls()).toBe(false);
 });
-it('Windows keeps the side orb as current color with the new rotating launcher',()=>{
+it('Windows removes the independent current-color copy and retains the loaded cannon ball',()=>{
  vi.stubEnv('MODE','windows');const scene=new PlayScene();
+ Object.assign(scene.activeState,{currentColor:0,nextColor:1});
  const createOrb=vi.fn(()=>({setScale:vi.fn(),setRotation:vi.fn()}));
- const graphics={clear:vi.fn(),fillStyle:vi.fn(),fillCircle:vi.fn(),lineStyle:vi.fn(),strokeCircle:vi.fn()};
+ const graphics={clear:vi.fn().mockReturnThis(),fillStyle:vi.fn().mockReturnThis(),fillCircle:vi.fn().mockReturnThis(),lineStyle:vi.fn().mockReturnThis(),strokeCircle:vi.fn().mockReturnThis()};
  Object.assign(scene,{createOrb,launcherBase:graphics,settings:{aimAssist:false}});
  (scene as unknown as {renderLauncher():void}).renderLauncher();
- expect(createOrb).toHaveBeenNthCalledWith(1,scene.activeState.currentColor,{x:478,y:698});
- expect(createOrb).toHaveBeenCalledTimes(2);
+ expect(createOrb).toHaveBeenCalledExactlyOnceWith(scene.activeState.currentColor,{x:320,y:708});
+ expect(readFileSync('index.html','utf8')).toContain('id="next-orb-preview"');
 });

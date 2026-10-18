@@ -23,6 +23,8 @@ const remoteCommit=ref.object.type==='tag'?(await api(`git/tags/${ref.object.sha
 if(remoteCommit!==sha)throw Error('Remote release tag does not match local commit');
 const metadata=JSON.parse(readFileSync(`docs/releases/${version}-artifacts.json`,'utf8'));
 if(metadata.version!==version)throw Error('Artifact metadata version mismatch');
+const notesBase=`https://github.com/${repository}/blob/${tag}/docs/releases/`;
+const releaseBody=readFileSync(`docs/releases/${version}-notes.md`,'utf8').replace(/\]\(([^)]+)\)/g,(match,href)=>/^[a-z][a-z0-9+.-]*:/i.test(href)||href.startsWith('#')?match:`](${new URL(href,notesBase).href})`);
 const files=[
   `最终交付/Android/Orbbound-${version}/Orbbound-${version}-Android.apk`,
   `最终交付/Android/Orbbound-${version}/Orbbound-${version}-Android.apk.sha256`,
@@ -38,7 +40,7 @@ for(const file of files.filter(file=>!file.endsWith('.sha256')&&!file.endsWith('
 }
 const lookup=await fetch(`https://api.github.com/repos/${repository}/releases/tags/${tag}`,{headers});
 let release;
-if(lookup.status===404)release=await api('releases','POST',{tag_name:tag,target_commitish:sha,name:`Orbbound ${version} · ${metadata.title ?? 'Android / Windows'}`,body:readFileSync(`docs/releases/${version}-notes.md`,'utf8'),draft:true,prerelease:metadata.prerelease===true});
+if(lookup.status===404)release=await api('releases','POST',{tag_name:tag,target_commitish:sha,name:`Orbbound ${version} · ${metadata.title ?? 'Android / Windows'}`,body:releaseBody,draft:true,prerelease:metadata.prerelease===true});
 else if(lookup.ok){release=await lookup.json();if(!release.draft)throw Error('Release is public; assets will not be replaced');}
 else throw Error(`Release lookup failed: ${lookup.status}`);
 for(const file of files){

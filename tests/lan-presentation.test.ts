@@ -12,6 +12,7 @@ import { gameAudio, boardMusicPressure } from '../src/game/audio';
 import { haptic } from '../src/game/feedback';
 import { createGameState } from '../src/core/engine';
 import { createMatch } from '../src/lan/authority';
+import { BOARD_APPEARANCE } from '../src/render/board-appearance';
 import { BOARD_GEOMETRY } from '../src/content/game-config';
 import { cellToPoint } from '../src/core/grid';
 import type { BoardDescendedEvent, PresentationEvent, ShotResolvedEvent } from '../src/lan/presentation';
@@ -31,7 +32,7 @@ function shot(eventSeq = 1, playerId = 'host'): ShotResolvedEvent {
     stages: { flightMs: 220, resolutionMs: 656, descentMs: 0, waveMs: 0 }, readyAtMs: 976 };
 }
 function painter() {
-  const context = { save: vi.fn(), restore: vi.fn(), fillRect: vi.fn(), fillText: vi.fn(), globalAlpha: 1, fillStyle: '', font: '', textAlign: '' };
+  const context = { save: vi.fn(), restore: vi.fn(), fillRect: vi.fn(), fillText: vi.fn(), strokeText: vi.fn(), beginPath: vi.fn(), arc: vi.fn(), fill: vi.fn(), globalAlpha: 1, fillStyle: '', font: '', textAlign: '' };
   const canvas = { getContext: () => context } as unknown as HTMLCanvasElement;
   const paint = vi.fn(), orb = vi.fn(), feedback = vi.fn();
   return { canvas, context, paint, orb, feedback, presentation: new LanPresentation(paint, orb, feedback) };
@@ -43,11 +44,28 @@ function descent(eventSeq = 1): BoardDescendedEvent {
 }
 
 describe('LAN committed canvas presentation', () => {
+  it('caches the transition board and removal list for all renders of a committed event', () => {
+    const p = painter(), event = shot(), before = structuredClone(event.beforeState); p.presentation.ingest([event], 1, 100);
+    p.presentation.draw(p.canvas, 'host', event.afterState, 450, false, true); const first = p.paint.mock.calls.at(-1)![1];
+    p.presentation.draw(p.canvas, 'host', event.afterState, 500, false, true);
+    expect(p.paint.mock.calls.at(-1)![1]).toBe(first); expect(event.beforeState).toEqual(before);
+    expect(p.presentation.busyFor('host')).toBe(true); expect(p.presentation.busyFor('guest')).toBe(false);
+  });
+
+  it('keeps score cosmetics after a short match without extending the committed shot stage', () => {
+    const p = painter(), event = shot(); event.rulesEvents = [{ type: 'match', cells: [{ row: 0, col: 5 }], points: 30 }];
+    event.stages = { flightMs: 220, resolutionMs: 190, descentMs: 0, waveMs: 0 }; event.readyAtMs = 510;
+    p.presentation.ingest([event], 1, 100); p.presentation.advance(510, 'host');
+    expect(p.presentation.hasBoardAnimationFor('host')).toBe(false); expect(p.presentation.busyFor('host')).toBe(true); expect(p.presentation.busyFor('host', false)).toBe(false);
+    p.presentation.draw(p.canvas, 'host', event.afterState, 600, false, true); expect(p.paint.mock.calls.at(-1)![1]).toBe(event.afterState);
+    expect(event.readyAtMs).toBe(510); p.presentation.advance(941, 'host'); expect(p.presentation.busyFor('host')).toBe(false);
+  });
+
   it('holds the before-board during flight and interpolates compressed bounce paths by distance', () => {
     const p = painter(), event = shot(); p.presentation.ingest([event], 1, 100);
     p.presentation.draw(p.canvas, 'host', event.afterState, 210, false, true);
     expect(p.paint.mock.calls.at(-1)?.[1]).toBe(event.beforeState);
-    expect(p.orb).toHaveBeenCalledWith(p.context, 1, 100, 500);
+    expect(p.orb).toHaveBeenCalledWith(p.context, 1, 100, 500, BOARD_APPEARANCE.orbRadius * BOARD_APPEARANCE.loadedScale);
     expect(p.feedback).not.toHaveBeenCalled(); expect(p.presentation.busy).toBe(true);
   });
 
@@ -70,8 +88,7 @@ describe('LAN committed canvas presentation', () => {
     const p = painter(), event = shot(); p.presentation.ingest([event], 1, 100);
     p.presentation.draw(p.canvas, 'host', event.afterState, 210, true, true); expect(p.orb).not.toHaveBeenCalled();
     p.presentation.draw(p.canvas, 'host', event.afterState, 600, true, true);
-    const dropped = p.orb.mock.calls.find(call => call[1] === 2)!;
-    expect(dropped[3]).toBe(cellToPoint({ row: 1, col: 6 }, { ...BOARD_GEOMETRY, rowOffset: event.beforeState.rowOffset ?? 0 }).y);
+    expect(p.orb).not.toHaveBeenCalled(); // Match the single-player reduced-motion instant removal.
     expect(p.presentation.busy).toBe(true); p.presentation.draw(p.canvas, 'host', event.afterState, 976, true, true);
     expect(p.presentation.busy).toBe(false); expect(p.paint.mock.calls.at(-1)?.[1]).toBe(event.afterState);
   });
@@ -194,7 +211,7 @@ function boundBoard(playerIds = ['host', 'guest'], selfId = 'host') {
   const listeners = new Set<() => void>(); let activeMs = 0, frameMs = 0, nextFrame: FrameRequestCallback | undefined;
   const session = { view: { selfId, phase: 'playing' as SessionPhase, pendingShot: false, presentationEvents: [] as PresentationEvent[],
     snapshot: createMatch({ matchId: 'audio-binding', difficultyId: 'normal', durationMs: 180000, seed: 42, playerIds }) },
-    displayElapsed: () => activeMs, shoot: vi.fn(), subscribe: (listener: () => void) => { listeners.add(listener); return () => listeners.delete(listener); } };
+    displayElapsed: () => activeMs, presentationTime: () => activeMs, shoot: vi.fn(), subscribe: (listener: () => void) => { listeners.add(listener); return () => listeners.delete(listener); } };
   const document = Object.assign(new EventTarget(), { hidden: false });
   vi.stubGlobal('window', new EventTarget()); vi.stubGlobal('document', document); vi.stubGlobal('performance', { now: () => frameMs });
   vi.stubGlobal('devicePixelRatio', 1); vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { nextFrame = callback; return 1; });
@@ -237,7 +254,7 @@ describe('LAN board sound and background music binding', () => {
     const game = boundBoard(), local = game.session.view.snapshot.players.host.state, rival = game.session.view.snapshot.players.guest.state;
     rival.board[17][0] = 1; game.frame(0);
     expect(gameAudio.setScene).toHaveBeenLastCalledWith('play'); expect(gameAudio.setPressure).toHaveBeenLastCalledWith(boardMusicPressure(local.board));
-    local.board[17][0] = 1; game.frame(50); expect(gameAudio.setPressure).toHaveBeenLastCalledWith(1);
+    local.board = local.board.map(row => [...row]); local.board[17][0] = 1; game.frame(50); expect(gameAudio.setPressure).toHaveBeenLastCalledWith(1);
   });
 
   it.each(['countdown', 'paused', 'reconnecting', 'finished'] as const)('uses quiet music pressure in %s and restores it on play', phase => {

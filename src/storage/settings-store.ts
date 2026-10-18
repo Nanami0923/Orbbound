@@ -1,4 +1,5 @@
 import { loadSettings, saveSettings, type Settings } from './storage';
+import { normalizeFrameRate } from '../game/frame-rate';
 
 let current: Settings | undefined;
 const listeners = new Set<(settings: Settings) => void>();
@@ -16,6 +17,7 @@ export function updateSettings(patch: Partial<Settings>, options: { persist?: bo
   Object.assign(settings, patch);
   if (patch.shortcuts) settings.shortcuts = { ...patch.shortcuts };
   settings.independentLaunch = false;
+  settings.frameRate = normalizeFrameRate(settings.frameRate);
   if (options.persist !== false) saveSettings(settings);
   for (const listener of listeners) listener(settings);
   return settings;

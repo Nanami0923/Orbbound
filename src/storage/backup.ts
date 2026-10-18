@@ -1,5 +1,6 @@
 import { CAMPAIGN_PROGRESS_KEY, LEGACY_PROGRESS_KEY, validProgress } from './campaign';
-import { isGameState } from './storage';
+import { isGameState, loadSettings } from './storage';
+import { normalizeFrameRate, validFrameRate } from '../game/frame-rate';
 import { validShortcuts } from '../game/shortcuts';
 import { readStorage, storageError, writeStorage } from './safe-storage';
 
@@ -7,7 +8,10 @@ export const BACKUP_KEYS = ['orbbound-save-v1', 'orbbound-timed-active-v2', 'orb
 type Values = Record<string, string>;
 export function exportBackup(): string {
   const values: Values = {};
-  for (const key of BACKUP_KEYS) { const value = readStorage(key); if (value !== null) values[key] = value; }
+  for (const key of BACKUP_KEYS) {
+    const value = readStorage(key);
+    if (value !== null) values[key] = key === BACKUP_KEYS[2] ? JSON.stringify(loadSettings()) : value;
+  }
   return JSON.stringify({ app: 'orbbound', version: 1, exportedAt: Date.now(), values }, null, 2);
 }
 export function validateBackup(text: string): Values {
@@ -26,10 +30,12 @@ export function validateBackup(text: string): Values {
       if (!value || typeof value !== 'object' || Array.isArray(value)) throw Error('设置无效');
       for (const [name,v] of Object.entries(value)) {
         if (name === 'shortcuts') { if (!validShortcuts(v)) throw Error('快捷键设置无效或重复'); continue; }
-        if (name === 'frameRate') { if (!['auto',30,60,90,120].includes(v as string | number)) throw Error('帧率设置无效'); continue; }
+        if (name === 'frameRate') { if (v !== 'auto' && !validFrameRate(v)) throw Error('帧率设置无效'); continue; }
         if (name === 'quality') { if (!['auto',1,1.5,2].includes(v as string | number)) throw Error('画质设置无效'); continue; }
         if (ranges[name] ? typeof v !== 'number' || !Number.isFinite(v) || v < ranges[name][0] || v > ranges[name][1] : !booleans.includes(name) || typeof v !== 'boolean') throw Error('设置字段或数值无效');
       }
+      values[key] = JSON.stringify({ ...value, frameRate: normalizeFrameRate(value.frameRate) });
+      continue;
     } else if (key === BACKUP_KEYS[3]) {
       if (!Number.isSafeInteger(value) || value < 0) throw Error('最高分无效');
     } else if (key === CAMPAIGN_PROGRESS_KEY || key === LEGACY_PROGRESS_KEY) {

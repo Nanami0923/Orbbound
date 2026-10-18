@@ -11,6 +11,11 @@ export type LanMatchDuration = typeof LAN_MATCH_DURATIONS[number];
 export type LanDifficulty = 'easy' | 'normal' | 'hard';
 export type LanMode = 'score' | 'battle';
 export const BATTLE_RULES = { batchMs: 50, ballsPerRow: 12, generatedCap: 2, queueCap: 3, warningMs: 2000, attackIntervalMs: 3000, naturalGuardMs: 1000, descentMs: 360 } as const;
+export const PAUSE_RULES = {
+  perPlayerSuccessLimit: null, totalBudgetMs: null, cooldownMs: 15000,
+  approvedCooldownStarts: 'playing', failedCooldownStarts: 'outcome', sharedReasons: ['pause', 'settings'],
+  voteMs: 10000, maxPauseMs: 60000,
+} as const;
 export const battleThreshold = (players: number): number => BATTLE_RULES.ballsPerRow * Math.max(1, players - 1);
 
 /** Compatibility fingerprint, not a security/authentication primitive. */
@@ -24,14 +29,14 @@ export const LAN_CONTENT_HASH = fingerprint(DIFFICULTIES.map(({ id, colors, init
 // Bump the algorithm revision whenever physics, RNG, attachment or scheduling
 // behavior changes. Geometry, scoring and tunable content are also fingerprinted.
 export const LAN_RULES_HASH = fingerprint({
-  rules: LAN_RULES_VERSION, core: RULES_VERSION, algorithmRevision: 3,
+  rules: LAN_RULES_VERSION, core: RULES_VERSION, algorithmRevision: 4,
   geometry: BOARD_GEOMETRY, columns: BOARD_COLUMNS, rows: BOARD_ROWS, loseRow: LOSE_ROW,
   threshold: MATCH_THRESHOLD, dangerMax: DANGER_MAX, content: LAN_CONTENT_HASH,
   scoring: Array.from({ length: BOARD_COLUMNS * BOARD_ROWS + 1 }, (_, count) => [matchPoints(count), dropPoints(count)]),
   timing: { flightMsPerPoint: 2.8, minFlightMs: 220, maxFlightMs: 920, matchMs: 190, dropMs: 656, idleMs: 60, descentMs: 360,
     descent: [[36000, 18000], [30000, 15000], [24000, 12000]], maxAngleMilliDeg: LAN_MAX_ANGLE_MILLI_DEG },
   waveSeed: 'imul-9e3779b9-murmur3-fmix32-v1',
-  battle: BATTLE_RULES, multiplayer: 'target-sum-dynamic-ratio-defense-dual-v1-competition-rank', attackSeed: 'wave-seed-xor-a771ac4b-applied-ordinal-v1',
+  battle: BATTLE_RULES, pause: PAUSE_RULES, multiplayer: 'target-sum-dynamic-ratio-defense-dual-v1-competition-rank', attackSeed: 'wave-seed-xor-a771ac4b-applied-ordinal-v1',
 });
 
 export interface MatchConfig {

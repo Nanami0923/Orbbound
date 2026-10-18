@@ -35,6 +35,25 @@ it('reloads an imported profile into the live object and does not mutate shortcu
   previous.shortcuts.fire = 'KeyZ'; expect(DEFAULT_SETTINGS.shortcuts.fire).not.toBe('KeyZ');
 });
 
+it('normalizes runtime patches and reloads while preserving the single live settings object', () => {
+  const stored=fixture(), first=getSettings();
+  updateSettings({frameRate:120}); expect(first.frameRate).toBe(120);
+  updateSettings({frameRate:'auto' as never},{persist:false}); expect(first.frameRate).toBe(60);
+  expect(loadSettings().frameRate).toBe(120);
+  stored.set('orbbound-settings-v1',JSON.stringify({frameRate:'auto',musicVolume:9}));
+  expect(reloadSettings()).toBe(first); expect(first).toMatchObject({frameRate:60,musicVolume:9});
+});
+
+it.each([true,false])('offers only fixed frame caps and retains independent auto quality (mobile=%s)', mobile => {
+  fixture(); const markup=settingsMarkup(DEFAULT_SETTINGS,mobile);
+  const rate=markup.match(/<select[^>]*data-setting="frameRate"[^>]*>[\s\S]*?<\/select>/)![0];
+  expect([...rate.matchAll(/<option value="([^"]+)"/g)].map(match=>match[1])).toEqual(['30','60','90','120']);
+  expect(rate).toContain('value="60" selected'); expect(DEFAULT_SETTINGS.frameRate).toBe(60);
+  expect(markup).toContain('value="auto" selected');
+  expect(markup).not.toContain('自动适应设备，最高 120 FPS');
+  expect(markup).toContain('请求 60 FPS');
+});
+
 it('can reach every campaign level through chapter pages even on short screens', () => {
   fixture(320);
   const size = campaignPageSize(), found: number[] = [];

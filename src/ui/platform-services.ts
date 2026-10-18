@@ -1,8 +1,10 @@
 import { Capacitor, registerPlugin, type PluginListenerHandle } from '@capacitor/core';
 import type { Settings } from '../storage/storage';
+import { normalizeFrameRate } from '../game/frame-rate';
 
 export interface DisplayInfo {
   refreshRate: number;
+  refreshRateKnown?: boolean;
   supportedRefreshRates?: number[];
   powerSave?: boolean;
   thermalStatus?: number | null;
@@ -27,7 +29,8 @@ export function applyDisplayInfo(info: DisplayInfo, force = false): void {
   lastDisplayInfo = info;
   if (typeof window === 'undefined') return;
   const detail = {
-    displayHz:Number.isFinite(info.refreshRate) ? info.refreshRate : undefined,
+    displayHz:info.refreshRateKnown !== false && Number.isFinite(info.refreshRate) ? info.refreshRate : undefined,
+    refreshRateKnown:info.refreshRateKnown !== false && Number.isFinite(info.refreshRate) && info.refreshRate >= 24 && info.refreshRate <= 500,
     supportedRefreshRates:info.supportedRefreshRates,
     powerSave:info.powerSave === true,
     thermalStatus:typeof info.thermalStatus === 'number' ? info.thermalStatus : undefined,
@@ -48,7 +51,7 @@ function boundedDisplayRequest(request: Promise<DisplayInfo>): Promise<DisplayIn
 }
 export function refreshPlatformPerformance(settings:Settings, force = false): Promise<void> {
   if (!isAndroid()) return Promise.resolve();
-  desiredRefreshRate = settings.frameRate === 'auto' ? 120 : settings.frameRate;
+  desiredRefreshRate = normalizeFrameRate(settings.frameRate);
   if (force) appliedRefreshRate = 0;
   if (refreshInFlight) return refreshInFlight;
   if (appliedRefreshRate === desiredRefreshRate) return Promise.resolve();

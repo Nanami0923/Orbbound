@@ -28,7 +28,7 @@ function fixture(cached?: unknown) {
 }
 
 it.each([144,165,240])('counts real Game.step and postrender at 120fps on %iHz',hz=>{
-  const f=fixture();
+  const f=fixture(); f.settings({frameRate:120});
   for(let i=0;i<=hz*6;i++)f.frame(i*1000/hz);
   expect(f.steps).toBeGreaterThanOrEqual(719); expect(f.steps).toBeLessThanOrEqual(721);
   expect(f.reports.length).toBeGreaterThanOrEqual(5);
@@ -81,11 +81,12 @@ it('switches quality on the existing game and camera while preserving world coor
   f.events.emit('destroy');
 });
 
-it('applies native energy capability updates',()=>{
+it('reports native energy state without automatically downgrading the selected frame cap',()=>{
   const f=fixture();
   f.target.dispatchEvent(new CustomEvent('orbbound-performance-capabilities',{detail:{refreshRate:120,powerSave:true,thermalStatus:null}}));
   for(let i=0;i<=240;i++)f.frame(i*1000/120);
-  expect(f.reports.at(-1)?.targetFps).toBe(30);expect(f.reports.at(-1)?.reason).toBe('省电模式');
+  expect(f.reports.at(-1)?.targetFps).toBe(60);expect(f.reports.at(-1)?.requested).toBe(60);
+  expect(f.reports.at(-1)?.reason).toBe('系统省电模式');
   f.events.emit('destroy');
 });
 
@@ -93,5 +94,21 @@ it('applies cached native capabilities received before asynchronous engine boot'
   const f=fixture({refreshRate:60,supportedRefreshRates:[60,120]});
   for(let i=0;i<=240;i++)f.frame(i*1000/120);
   expect(f.steps).toBe(121);expect(f.reports.at(-1)?.targetFps).toBe(60);
+  f.events.emit('destroy');
+});
+
+it.each([120,144,165,240])('defaults to 60 real updates on %iHz and distinguishes unknown display information', hz => {
+  const f=fixture();
+  for(let i=0;i<=hz*3;i++)f.frame(i*1000/hz);
+  expect(f.steps).toBe(181);
+  expect(f.reports.at(-1)).toMatchObject({requested:60,targetFps:60,renderFps:60,displayHz:null});
+  f.events.emit('destroy');
+});
+
+it('keeps a manual 120 target under slow RAF callbacks instead of permanently downgrading it',()=>{
+  const f=fixture(); f.settings({frameRate:120});
+  for(let i=0;i<=90;i++)f.frame(i*1000/30);
+  expect(f.reports.at(-1)).toMatchObject({requested:120,targetFps:120,renderFps:30,observedRafHz:30});
+  expect(f.reports.at(-1)?.displayHz).toBeNull();
   f.events.emit('destroy');
 });

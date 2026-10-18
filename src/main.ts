@@ -789,9 +789,9 @@ bindDesktopBridge(() => {
 });
 bindAndroidServices(()=>settings);
 window.addEventListener('snood-performance',event=>{
-  const detail=(event as CustomEvent<{source?:string;renderFps:number;targetFps:number;idle:boolean;reason:string}>).detail;
+  const detail=(event as CustomEvent<{source?:string;requested?:number;renderFps:number;targetFps:number;idle:boolean;reason:string}>).detail;
   if (lan.isActive() !== (detail.source === 'lan')) return;
-  const label=`${Math.round(detail.renderFps)} FPS · ${detail.idle ? '静止省电' : `目标 ${detail.targetFps}`}`;
+  const label=`${Math.round(detail.renderFps)} FPS · 请求 ${detail.requested ?? settings.frameRate} / 调度 ${Math.round(detail.targetFps * 100) / 100}${detail.idle ? ' · 静止按需' : ''}`;
   const badge=document.querySelector<HTMLElement>('#performance-badge');if(badge){badge.hidden=!settings.showPerformance||(lan.isActive() ? !document.querySelector('#lan-screen.lan-in-game') : !!gameScreen?.hidden);if(settings.showPerformance)setTextIfChanged(badge,label);}
   const status=document.querySelector<HTMLElement>('#settings-performance-status');if(status)setTextIfChanged(status,label);
 });
