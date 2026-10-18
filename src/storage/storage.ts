@@ -1,4 +1,4 @@
-import { readStorage, writeStorage } from './safe-storage';
+import { readStorage, storageError, writeStorage } from './safe-storage';
 import { DEFAULT_SHORTCUTS, loadShortcuts, type Shortcuts } from '../game/shortcuts';
 import type { GameState } from '../core/types';
 import { CAMPAIGN_LEVELS, CAMPAIGN_REVISION } from '../content/campaign';
@@ -94,10 +94,10 @@ export function saveSettings(settings: Settings): void {
   writeStorage(SETTINGS_KEY, JSON.stringify({ ...settings, frameRate: normalizeFrameRate(settings.frameRate) }));
 }
 
-export function saveGame(state: GameState): void {
-  if (!storageAvailable() || state.status !== 'READY') return;
-  try { writeStorage(saveKey(state.mode), JSON.stringify(freezeTimed(state))); }
-  catch { window.dispatchEvent(new CustomEvent('snood-storage-error')); }
+export function saveGame(state: GameState): boolean {
+  if (!storageAvailable() || state.status !== 'READY') return false;
+  try { return writeStorage(saveKey(state.mode), JSON.stringify(freezeTimed(state))); }
+  catch { storageError(); return false; }
 }
 
 export function loadGame(mode: 'endless' | 'timed' | 'campaign' = 'endless'): GameState | null {
@@ -120,8 +120,8 @@ export function hasLegacySave(): boolean {
   catch { return false; }
 }
 
-export function clearGame(mode: 'endless' | 'timed' | 'campaign' = 'endless'): void {
-  if (storageAvailable()) writeStorage(saveKey(mode), null);
+export function clearGame(mode: 'endless' | 'timed' | 'campaign' = 'endless'): boolean {
+  return storageAvailable() && writeStorage(saveKey(mode), null);
 }
 
 export function getHighScore(): number {

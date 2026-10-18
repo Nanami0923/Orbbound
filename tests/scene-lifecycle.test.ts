@@ -35,7 +35,7 @@ it('campaign clock only counts READY decision time and cannot be settled for an 
 });
 
 it('restarting a campaign repeats the level rather than creating an endless board', () => {
-  vi.stubGlobal('window', {dispatchEvent:vi.fn()});
+  vi.stubGlobal('window', {dispatchEvent:vi.fn(),localStorage:{removeItem:vi.fn()}});
   try {
     const scene = new PlayScene(), begin = vi.fn();
     Object.assign(scene, {gameState:{...createCampaign(6),step:5},begin});
@@ -46,13 +46,13 @@ it('restarting a campaign repeats the level rather than creating an endless boar
 
 it('never recreates an abandoned save on home, background or unload persistence', () => {
   const events: string[] = [];
-  vi.stubGlobal('window', { dispatchEvent: (event: Event) => { events.push(event.type); return true; } });
+  vi.stubGlobal('window', { dispatchEvent: (event: Event) => { events.push(event.type); return true; }, localStorage:{removeItem:vi.fn()} });
   try {
     const scene = new PlayScene();
     Object.assign(scene, { ready: true, gameState: createRound('normal', 'endless'), pauseGame: vi.fn() });
     scene.abandonGame();
     scene.persistGame(); scene.persistGame();
-    expect(events).toEqual(['snood-clear-save']);
+    expect(events).toEqual(['snood-persistence-result','snood-clear-save']);
   } finally { vi.unstubAllGlobals(); }
 });
 

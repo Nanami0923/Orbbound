@@ -1,6 +1,6 @@
 import { CAMPAIGN_LEVELS, getLevel } from './content/campaign';
 import { campaignStars, createCampaign } from './core/campaign';
-import { isUnlocked, loadProgress, recordCampaign } from './storage/campaign';
+import { isUnlocked, loadProgress } from './storage/campaign';
 import { campaignMarkup, campaignPageSize, levelMarkup, starRules } from './ui/campaign-panel';
 import { bindDesktopBridge } from './ui/desktop-bridge';
 import { bindModalFocus } from './ui/modal-focus';
@@ -23,8 +23,8 @@ import { DANGER_MAX, getDifficulty, shotsUntilDescent } from './core/engine';
 import { createRound, scoreMultiplier, weightedScore, type GameMode } from './core/modes';
 import type { GameState } from './core/types';
 import type { PlayScene } from './game/PlayScene';
-import { getOrbTheme } from './content/theme';
-import { clearGame, hasLegacySave, loadGame, saveGame, setHighScore, type Settings } from './storage/storage';
+import { updateOrbPreview } from './ui/next-orb-preview';
+import { clearGame, hasLegacySave, loadGame, setHighScore, type Settings } from './storage/storage';
 import './style.css';
 import { buildHome, updateHome } from './ui/home';
 import { gameAudio } from './game/audio';
@@ -36,8 +36,9 @@ import { getSettings, updateSettings, subscribeSettings, reloadSettings } from '
 import { bindViewportShell, bindModalPages, type ModalLayout } from './ui/viewport-shell';
 import { settingsEffects, snapshotSettings } from './ui/settings-effects';
 import { syncGameShell } from './ui/game-shell';
-import { formatHeadings } from './ui/typography';
-import { loadHistory, recordRound, formatDuration, rankingKey, leaderboard, recordRules, roundStanding, type HistoryDifficulty, type HistoryRules } from './storage/history';
+import { formatHeadings, prepareModalHeader } from './ui/typography';
+import { createModalNavigation, type ModalPage } from './ui/modal-navigation';
+import { loadHistory, recordRound, hasCompletedRound, formatDuration, rankingKey, leaderboard, recordRules, roundStanding, type HistoryDifficulty, type HistoryRules } from './storage/history';
 import { installLan } from './ui/lan-panel';
 
 interface SceneStateDetail {
@@ -55,6 +56,7 @@ interface SceneStateDetail {
   danger: number;
   currentColor: number;
   nextColor: number;
+  previewNextColor?: number;
   difficultyId: string;
   step: number;
   elapsedMs: number;
@@ -72,10 +74,10 @@ if (!usesButtonControls()) {
     'settle-button': ['settle', '结算本局'], 'restart-button': ['restart', '重新开始'],
     'game-settings-button': ['settings', '游戏设置'], 'back-home-button': ['save', '存档并返回'],
   };
-  for (const [id, [action, label]] of Object.entries(buttons)) document.querySelector(`#${id}`)!.innerHTML = `${label}<kbd data-shortcut="${action}"></kbd>`;
-  document.querySelector('.sidebar-actions [data-history]')!.innerHTML = '历史与排行<kbd data-shortcut="history"></kbd>';
-  document.querySelector('.sidebar-actions')!.insertAdjacentHTML('beforeend', '<button id="game-help-button" class="side-button" type="button">玩法提示<kbd data-shortcut="help"></kbd></button>');
-  document.querySelector('.sidebar-actions')!.insertAdjacentHTML('beforeend', '<button id="fullscreen-button" class="side-button" type="button">全屏<kbd>F11</kbd></button>');
+  for (const [id, [action, label]] of Object.entries(buttons)) document.querySelector(`#${id}`)!.innerHTML = `<span>${label}</span><kbd data-shortcut="${action}"></kbd>`;
+  document.querySelector('.sidebar-actions [data-history]')!.innerHTML = '<span>历史与排行</span><kbd data-shortcut="history"></kbd>';
+  document.querySelector('.sidebar-actions')!.insertAdjacentHTML('beforeend', '<button id="game-help-button" class="side-button" type="button"><span>玩法提示</span><kbd data-shortcut="help"></kbd></button>');
+  document.querySelector('.sidebar-actions')!.insertAdjacentHTML('beforeend', '<button id="fullscreen-button" class="side-button" type="button"><span>全屏</span><kbd>F11</kbd></button>');
 }
 const homeScreen = document.querySelector<HTMLElement>('#home-screen');
 const gameScreen = document.querySelector<HTMLElement>('#game-screen');
@@ -123,8 +125,10 @@ let disposeModalPages: (() => void) | undefined;
 let resizeModal: (() => void) | undefined;
 let modalResizeFrame = 0;
 let settingsOnClosed: (() => void) | undefined;
+let settingsRestore: (() => void) | undefined;
 let roundRequest = 0;
-let onModalDismiss: (() => void) | undefined;
+const modalNavigation = createModalNavigation(closeModal);
+let modalPage: ModalPage | undefined;
 let releaseModalFocus:(()=>void)|null=null;
 let modalReturnFocus:HTMLElement|null=null;
 let roundBootTimer:number|undefined;
@@ -182,7 +186,7 @@ async function ensureGame(): Promise<void> {
   if (!game) { game = module.createGame(); replayDisplayInfo(); window.dispatchEvent(new Event('orbbound-query-display')); }
 }
 
-function showHome(): void {
+function showHome(): boolean {
   roundRequest++;
   window.clearTimeout(roundBootTimer); roundBootTimer=undefined;
   window.clearTimeout(roundReadyTimer); roundReadyTimer=undefined;
@@ -190,7 +194,7 @@ function showHome(): void {
   gameAudio.setScene('menu');
   const scene = getScene();
   scene?.pauseGame();
-  getScene()?.persistGame();
+  const saved = scene ? scene.persistGame() : true;
   resumeAfterModal = false;
   closeModal();
   game?.loop.sleep();
@@ -198,6 +202,7 @@ function showHome(): void {
   if (homeScreen) homeScreen.hidden = false;
   updateHomeState();
   document.querySelector<HTMLElement>('#campaign-button')?.focus({preventScroll:true});
+  return saved;
 }
 
 function showGame(): void {
@@ -206,6 +211,16 @@ function showGame(): void {
 }
 
 async function startRound(state: Parameters<PlayScene['begin']>[0] | null, difficulty = selectedDifficulty): Promise<void> {
+  if (state && hasCompletedRound(state)) {
+    clearGame(state.mode); showHome(); showToast('本局已经结算，不能续玩旧存档'); return;
+  }
+  const previous = getScene();
+  if (previous?.lastPersistenceResult?.ok === false && previous.activeState.status !== 'READY' && !previous.persistGame()) {
+    showToast('本局结果尚未保存，请先重试保存后开始新局'); return;
+  }
+  if (state?.sessionId && previous?.activeState.status !== 'READY' && state.sessionId === previous?.activeState.sessionId) {
+    showHome(); showToast('本局已经结算，请开始新局'); return;
+  }
   gameAudio.setForeground(true); gameAudio.unlock();
   const request = ++roundRequest, mode = selectedMode, duration = selectedDuration;
   window.clearTimeout(roundBootTimer);
@@ -324,7 +339,7 @@ function updateGameState(detail: SceneStateDetail): void {
     button.disabled = detail.status !== 'READY';
     button.setAttribute('aria-label', '存档并返回首页');
   }
-  if (nextOrbPreview) updateOrbPreview(nextOrbPreview, detail.nextColor);
+  if (nextOrbPreview) updateOrbPreview(nextOrbPreview, detail.previewNextColor ?? detail.nextColor);
   const current = document.querySelector<HTMLElement>('#current-orb-preview');
   if (current) updateOrbPreview(current, import.meta.env.MODE === 'windows' ? detail.nextColor : detail.currentColor);
   const clock = document.querySelector<HTMLElement>('#round-clock');
@@ -361,15 +376,6 @@ function statusLabel(phase: SceneStateDetail['phase'], status: SceneStateDetail[
   return '选择角度';
 }
 
-function updateOrbPreview(element: HTMLElement, colorId: number): void {
-  if (element.dataset.colorId === String(colorId)) return;
-  element.dataset.colorId = String(colorId);
-  const orb = getOrbTheme(colorId);
-  element.dataset.symbol = orb.symbol;
-  element.style.backgroundColor = orb.cssColor;
-  element.style.setProperty('--orb-ink', orb.ink);
-}
-
 function showToast(message: string): void {
   if (!toast) return;
   window.clearTimeout(toastTimer);
@@ -378,28 +384,32 @@ function showToast(message: string): void {
   toastTimer = window.setTimeout(() => toast.classList.remove('show'), 2200);
 }
 
-function openModal(content: string, className = '', onDismiss?: () => void, layout: ModalLayout = 'compact'): void {
-  if (!modalRoot) return;
+function openModal(content: string, className = '', onDismiss?: () => void, layout: ModalLayout = 'compact'): boolean {
+  if (!modalRoot) return false;
   resizeModal = undefined;
   disposeModal?.(); disposeModal = null;
   disposeModalPages?.(); disposeModalPages = undefined;
   stopRotation(); gameAudio.setScene('menu');
   if (modalRoot.hidden) {
     modalReturnFocus=document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    resumeAfterModal = !gameScreen?.hidden && !!getScene() && !getScene()!.isPaused;
+    resumeAfterModal = !gameScreen?.hidden && !!getScene() && getScene()!.activeState.status === 'READY' && !getScene()!.isPaused;
+    const previousPage = modalPage;
     getScene()?.pauseGame();
+    if (modalPage !== previousPage) return false;
   }
   releaseModalFocus?.();releaseModalFocus=null;
-  onModalDismiss = onDismiss;
+  const page = modalPage = modalNavigation.open(onDismiss);
   modalRoot.innerHTML = `<div class="modal-card ${className}" role="dialog" aria-modal="true">${content}</div>`;
   modalRoot.hidden = false;
   document.documentElement.classList.add('modal-open');
   formatHeadings(modalRoot);
+  prepareModalHeader(modalRoot.querySelector<HTMLElement>('.modal-card')!);
   releaseModalFocus=bindModalFocus(modalRoot.querySelector<HTMLElement>('.modal-card')!,[homeScreen,gameScreen,document.querySelector<HTMLElement>('#lan-screen')].filter((element):element is HTMLElement=>!!element));
   disposeModalPages = bindModalPages(modalRoot.querySelector<HTMLElement>('.modal-card')!, layout);
   game?.loop.sleep();
-  modalRoot.querySelectorAll<HTMLElement>('[data-close-modal]').forEach(button => button.addEventListener('click', dismissModal));
+  modalRoot.querySelectorAll<HTMLElement>('[data-close-modal]').forEach(button => button.addEventListener('click', page.dismiss));
   modalRoot.onclick = handleModalBackdrop;
+  return true;
 }
 
 function handleModalBackdrop(event: MouseEvent): void {
@@ -407,17 +417,16 @@ function handleModalBackdrop(event: MouseEvent): void {
 }
 
 function dismissModal(): void {
-  const action = onModalDismiss;
-  if (action) { onModalDismiss = undefined; action(); }
-  else closeModal();
+  modalNavigation.dismiss();
 }
+const modalAction = (action: () => void) => modalPage?.action(action) ?? (() => {});
 
 function closeModal(): void {
-  onModalDismiss = undefined; resizeModal = undefined;
+  modalNavigation.clear(); modalPage = undefined; resizeModal = undefined;
   if (!modalRoot) return;
   disposeModal?.(); disposeModal = null;
   disposeModalPages?.(); disposeModalPages = undefined;
-  const settingsClosed = settingsOnClosed; settingsOnClosed = undefined;
+  const settingsClosed = settingsOnClosed; settingsOnClosed = undefined; settingsRestore = undefined;
   document.documentElement.classList.remove('settings-open');
   releaseModalFocus?.();releaseModalFocus=null;
   modalRoot.hidden = true;
@@ -432,25 +441,26 @@ function closeModal(): void {
   settingsClosed?.();
 }
 
-function showHistory(top = true, page = 0, board = 'endless', difficulty:HistoryDifficulty='all', rules:HistoryRules=RULES_VERSION): void {
+function showHistory(top = true, page = 0, board = 'endless', difficulty:HistoryDifficulty='all', rules:HistoryRules=RULES_VERSION, onReturn?: () => void): void {
   const data = loadHistory(), capacity = historyPageSize(usesButtonControls());
-  openModal(historyMarkup(data, top, board, page, usesButtonControls(),difficulty,rules), 'history-card', undefined, 'custom');
-  resizeModal = () => showHistory(top,Math.floor(page * capacity / historyPageSize(usesButtonControls())),board,difficulty,rules);
-  document.querySelector('#history-toggle')?.addEventListener('click', () => showHistory(!top,0,board,difficulty,rules));
-  document.querySelector('#history-prev')?.addEventListener('click', () => showHistory(top,page-1,board,difficulty,rules));
-  document.querySelector('#history-next')?.addEventListener('click', () => showHistory(top,page+1,board,difficulty,rules));
-  document.querySelector<HTMLSelectElement>('#history-board')?.addEventListener('change', event => showHistory(top,0,(event.target as HTMLSelectElement).value,difficulty,rules));
-  document.querySelector<HTMLSelectElement>('#history-difficulty')?.addEventListener('change', event => showHistory(top,0,board,(event.target as HTMLSelectElement).value as HistoryDifficulty,rules));
-  document.querySelector<HTMLSelectElement>('#history-rules')?.addEventListener('change', event => showHistory(top,0,board,difficulty,(event.target as HTMLSelectElement).value as HistoryRules));
+  openModal(historyMarkup(data, top, board, page, usesButtonControls(),difficulty,rules), 'history-card', onReturn, 'custom');
+  resizeModal = () => showHistory(top,Math.floor(page * capacity / historyPageSize(usesButtonControls())),board,difficulty,rules,onReturn);
+  document.querySelector('#history-toggle')?.addEventListener('click', modalAction(() => showHistory(!top,0,board,difficulty,rules,onReturn)));
+  document.querySelector('#history-prev')?.addEventListener('click', modalAction(() => showHistory(top,page-1,board,difficulty,rules,onReturn)));
+  document.querySelector('#history-next')?.addEventListener('click', modalAction(() => showHistory(top,page+1,board,difficulty,rules,onReturn)));
+  document.querySelector<HTMLSelectElement>('#history-board')?.addEventListener('change', event => showHistory(top,0,(event.target as HTMLSelectElement).value,difficulty,rules,onReturn));
+  document.querySelector<HTMLSelectElement>('#history-difficulty')?.addEventListener('change', event => showHistory(top,0,board,(event.target as HTMLSelectElement).value as HistoryDifficulty,rules,onReturn));
+  document.querySelector<HTMLSelectElement>('#history-rules')?.addEventListener('change', event => showHistory(top,0,board,difficulty,(event.target as HTMLSelectElement).value as HistoryRules,onReturn));
   document.querySelector('#history-explain')?.addEventListener('click', () => {
-    const back = () => showHistory(top,page,board,difficulty,rules);
+    const back = () => showHistory(top,page,board,difficulty,rules,onReturn);
     openModal(`<button class="modal-close" data-close-modal>返回记录</button><h2>排名规则与趋势</h2><p>结算分 = 基础分 × 难度系数。简单 ×1，普通 ×1.5，困难 ×2。</p><p>同分时用时较短者优先，再同分按较早结算排序。重开不入榜，新旧规则分开排名。</p>${historyTrend(data,board,difficulty,rules)}`, '', back, 'paged');
   });
 }
 
-function showTutorial(): void {
+function showTutorial(onReturn?: () => void): void {
+  const closeLabel = onReturn ? '返回上级' : gameScreen?.hidden ? '返回首页' : '继续游戏';
   openModal(`
-    <button class="modal-close" data-close-modal type="button">关闭</button>
+    <button class="modal-close" data-close-modal type="button">${closeLabel}</button>
     <p class="eyebrow">FIELD GUIDE / 01</p>
     <h2>三步读懂棋盘</h2>
     <p>闯关模式：30 个高难度固定关卡，通关解锁下一关；限发、目标球与限时挑战拥有独立存档和星级。白圈标记目标球，消除或掉落均可；限时关只有可以操作时才计时。</p><p>无尽与限时模式各有独立存档。存档可以续玩，结算后成绩才会入榜。</p><p>限时模式提供 5 / 10 分钟挑战。菜单、存档与后台均暂停计时。次数或下落时间归零时，棋盘下降，两项计数同时重置。限时清盘后继续补充新棋盘。</p>
@@ -459,26 +469,36 @@ function showTutorial(): void {
       <div class="tutorial-step"><b>02</b><div><strong>三个同类连在一起</strong><span>同色相连达到 3 球即可消除。一次消除 3、4、5、6 球，分别得 30、50、80、120 分。</span></div></div>
       <div class="tutorial-step"><b>03</b><div><strong>让悬空小球掉落</strong><span>切断顶部支撑，悬空球就会掉落。掉落 1、2、3 球，额外加 30、70、120 分；掉落越多，加分越高。</span></div></div>
     </div>
-    <div class="modal-footer"><button id="help-practice" class="primary-button" type="button">动手练习 →</button><button class="quiet-button" data-close-modal type="button">继续游戏</button></div>
-  `, '', undefined, 'paged');
-  document.querySelector('#help-practice')?.addEventListener('click',()=>showPractice());
+    <div class="modal-footer"><button id="help-practice" class="primary-button" type="button">动手练习 →</button><button class="quiet-button" data-close-modal type="button">${closeLabel}</button></div>
+  `, '', onReturn, 'paged');
+  document.querySelector('#help-practice')?.addEventListener('click',modalAction(()=>showPractice(onReturn,()=>showTutorial(onReturn))));
 }
 
 function showPractice(onReturn?:()=>void,onCancel:()=>void=showTutorial):void {
   const controlMode:PracticeControlMode=usesButtonControls() ? settings.immersiveMode ? 'immersive' : 'buttons' : 'desktop';
   const finish=()=>{practiceSeen=true;writeStorage('orbbound-practice-seen','1');if(onReturn)onReturn();else closeModal();};
   openModal(practiceMarkup(controlMode),'practice-card',onCancel,'custom');
-  if(modalRoot)disposeModal=bindPracticePanel(modalRoot,{controlMode,shortcuts:settings.shortcuts,sensitivity:settings.sensitivity,onComplete:finish,onSkip:finish,onClose:onCancel});
+  const complete = modalAction(finish);
+  if(modalRoot)disposeModal=bindPracticePanel(modalRoot,{controlMode,shortcuts:settings.shortcuts,sensitivity:settings.sensitivity,onComplete:complete,onSkip:complete,onClose:modalPage!.dismiss});
 }
 
-function showSettings(onClosed?: () => void): void {
+function showSettings(onClosed?: () => void, onReturn?: () => void, page = 'root'): void {
   if (document.documentElement.classList.contains('settings-open')) return;
-  openModal(settingsMarkup(settings, usesButtonControls(), lan.isActive() || !gameScreen?.hidden), 'settings-card', undefined, 'custom');
+  const leaveSettings = onReturn ? () => {
+    disposeModal?.(); disposeModal = null;
+    const closed = settingsOnClosed; settingsOnClosed = undefined;
+    settingsRestore = undefined;
+    document.documentElement.classList.remove('settings-open');
+    closed?.(); onReturn();
+  } : undefined;
+  if (!openModal(settingsMarkup(settings, usesButtonControls(), lan.isActive() || !gameScreen?.hidden), 'settings-card', leaveSettings, 'custom')) return;
   if (!modalRoot) return;
   settingsOnClosed = onClosed;
+  settingsRestore = () => showSettings(onClosed, onReturn, 'backup');
   document.documentElement.classList.add('settings-open');
   disposeModal = bindSettingsPanel(modalRoot, settings, commit => updateSettings(settings, { persist: commit }));
   window.dispatchEvent(new Event('orbbound-settings-open'));
+  if (page !== 'root') modalRoot.querySelector<HTMLButtonElement>(`[data-settings-open="${page}"]`)?.click();
 }
 let appliedSettings = snapshotSettings(settings);
 subscribeSettings(value => {
@@ -511,9 +531,9 @@ function showCampaign(): void {
   modalRoot?.querySelectorAll<HTMLButtonElement>('[data-level]').forEach(button => button.addEventListener('click', () => {
     const id = Number(button.dataset.level);
     if (!isUnlocked(id)) return;
-    openModal(levelMarkup(getLevel(id), loadProgress(), loadGame('campaign')), 'campaign-panel', undefined, 'paged');
-    modalRoot?.querySelector('#campaign-back')?.addEventListener('click', showCampaign);
-    modalRoot?.querySelector('#campaign-begin')?.addEventListener('click', () => beginCampaign(id));
+    openModal(levelMarkup(getLevel(id), loadProgress(), loadGame('campaign')), 'campaign-panel', showCampaign, 'paged');
+    modalRoot?.querySelector('#campaign-back')?.addEventListener('click', modalPage!.dismiss);
+    modalRoot?.querySelector('#campaign-begin')?.addEventListener('click', modalAction(() => beginCampaign(id)));
   }));
 }
 
@@ -526,21 +546,24 @@ function beginCampaign(id: number): void {
 }
 
 function showCampaignResult(state: GameState): void {
-  recordCampaign(state); clearGame('campaign');
+  const saved = getScene()?.lastPersistenceResult?.ok === true;
   const level = getLevel(state.levelId!), won = state.status === 'WON', stars = campaignStars(state);
   const next = CAMPAIGN_LEVELS.find(candidate => candidate.id === level.id + 1);
-  openModal(`<button class="modal-close" data-close-modal>关闭</button><p class="eyebrow">第 ${level.id} 关 / ${level.name}</p><h2>${won ? next ? '目标完成，继续向前' : '三十关，全部走过' : state.endReason === 'shots' ? '发数用尽，再想一步' : state.endReason === 'timeout' ? '时间到了，再试一次' : '棋盘触底，再试一次'}</h2><div class="campaign-result-stars" aria-label="${stars} 星">${'★'.repeat(stars)}${'☆'.repeat(3 - stars)}</div><p>${state.step} 次发射 · 操作用时 ${formatDuration(state.elapsedMs ?? 0)}</p><p>${won ? starRules(level) : escapeText(failureAdvice(state,level))}</p>${won && stars<3 ? `<p>${escapeText(starBudget(level,state.step,state.elapsedMs??0))}。重试同一布局，争取更少发数或更短操作时间。</p>` : ''}${won && !next ? `<p>你已完成本篇章。可以返回选关，挑战全部 ${CAMPAIGN_LEVELS.length * 3} 星。</p>` : ''}<div class="modal-footer">${won && next ? '<button id="campaign-next" class="primary-button">下一关 →</button>' : ''}<button id="campaign-retry" class="${won && next ? 'quiet-button' : 'primary-button'}">重试本关</button><button id="campaign-select" class="quiet-button">返回选关</button><button id="campaign-home" class="quiet-button">首页</button></div>`, 'result-card', () => { showHome(); showCampaign(); }, 'paged');
-  modalRoot?.querySelector('#campaign-next')?.addEventListener('click', () => beginCampaign(next!.id));
-  modalRoot?.querySelector('#campaign-retry')?.addEventListener('click', () => beginCampaign(level.id));
-  modalRoot?.querySelector('#campaign-select')?.addEventListener('click', () => { showHome(); showCampaign(); });
-  modalRoot?.querySelector('#campaign-home')?.addEventListener('click', showHome);
+  openModal(`<button class="modal-close" data-close-modal>关闭</button><p class="eyebrow">第 ${level.id} 关 / ${level.name}</p><h2>${won ? next ? '目标完成，继续向前' : '三十关，全部走过' : state.endReason === 'shots' ? '发数用尽，再想一步' : state.endReason === 'timeout' ? '时间到了，再试一次' : '棋盘触底，再试一次'}</h2><div class="campaign-result-stars" aria-label="${stars} 星">${'★'.repeat(stars)}${'☆'.repeat(3 - stars)}</div><p>${state.step} 次发射 · 操作用时 ${formatDuration(state.elapsedMs ?? 0)}</p><p>${won ? starRules(level) : escapeText(failureAdvice(state,level))}</p>${won && stars<3 ? `<p>${escapeText(starBudget(level,state.step,state.elapsedMs??0))}。重试同一布局，争取更少发数或更短操作时间。</p>` : ''}${won && !next ? `<p>你已完成本篇章。可以返回选关，挑战全部 ${CAMPAIGN_LEVELS.length * 3} 星。</p>` : ''}<div class="modal-footer">${won && next ? '<button id="campaign-next" class="primary-button">下一关 →</button>' : ''}<button id="campaign-retry" class="${won && next ? 'quiet-button' : 'primary-button'}">重试本关</button><button id="campaign-select" class="quiet-button">返回选关</button><button id="campaign-home" class="quiet-button">首页</button></div>`, 'result-card', showHome, 'paged');
+  modalRoot?.querySelector('#campaign-next')?.addEventListener('click', modalAction(() => beginCampaign(next!.id)));
+  modalRoot?.querySelector('#campaign-retry')?.addEventListener('click', modalAction(() => beginCampaign(level.id)));
+  modalRoot?.querySelector('#campaign-select')?.addEventListener('click', modalAction(() => { showHome(); showCampaign(); }));
+  modalRoot?.querySelector('#campaign-home')?.addEventListener('click', modalPage!.dismiss);
+  bindResultSaveRetry(state, saved);
 }
 
 function showResult(state: GameState): void {
   if (state.mode === 'campaign') { showCampaignResult(state); return; }
   const won = state.status === 'WON';
-  if (state.mode !== 'timed') setHighScore(weightedScore(state));
-  clearGame(state.mode);
+  const persistence = getScene()?.lastPersistenceResult;
+  const saved = persistence?.ok === true;
+  const resultRecorded = saved || persistence?.kind === 'clear';
+  if (resultRecorded && state.mode !== 'timed') setHighScore(weightedScore(state));
   selectedMode = state.mode ?? 'endless';
   selectedDuration = state.durationMs ?? 300000;
   selectedDifficulty = state.difficultyId;
@@ -551,23 +574,38 @@ function showResult(state: GameState): void {
     <div class="result-mark">${won ? '✦' : '!'}</div>
     <p class="eyebrow">${state.endReason ? 'ROUND COMPLETE' : won ? 'BOARD CLEARED' : 'ONE MORE TRY'}</p>
     <h2>${title}</h2>
-    <p class="result-description">${state.endReason ? '<span>本局成绩，已为你保存。</span><span>下一局，试着突破自己的纪录。</span>' : won ? '<span>棋盘已清空，这一局很漂亮。</span><span>下一局，试试更大胆的反弹。</span>' : `<span>${escapeText(failureAdvice(state))}</span>`}</p>
+    <p class="result-description">${!resultRecorded ? '<span>本局结果暂未保存，原存档已保留。</span><span>请重试保存，再开始新局。</span>' : state.endReason ? '<span>本局成绩，已为你保存。</span><span>下一局，试着突破自己的纪录。</span>' : won ? '<span>棋盘已清空，这一局很漂亮。</span><span>下一局，试试更大胆的反弹。</span>' : `<span>${escapeText(failureAdvice(state))}</span>`}</p>
     <p class="eyebrow">结算分</p>
     <div class="result-score">${formatScore(weightedScore(state))}</div>
-    <div class="result-meta">基础分 ${state.score} × 难度 ${scoreMultiplier(state.difficultyId)}<br>${state.step} 次发射 · 已计入${state.mode === 'timed' ? `限时 ${state.durationMs! / 60000} 分钟` : '无尽'}排行榜</div>
-    <p class="result-progress">${standing.newRecord ? '新纪录！' : standing.difference===0 ? '追平个人最佳' : `距个人最佳 ${Math.abs(standing.difference).toLocaleString('zh-CN')} 分`}${standing.rank ? ` · 本榜第 ${standing.rank}` : ' · 本榜前十之外'}</p>
+    <div class="result-meta">基础分 ${state.score} × 难度 ${scoreMultiplier(state.difficultyId)}<br>${state.step} 次发射 · ${resultRecorded ? '已计入' : '尚未计入'}${state.mode === 'timed' ? `限时 ${state.durationMs! / 60000} 分钟` : '无尽'}排行榜</div>
+    <p class="result-progress">${!resultRecorded ? '保存成功后会更新排行榜。' : !saved ? '成绩已保存，旧存档清理未完成，请重试。' : `${standing.newRecord ? '新纪录！' : standing.difference===0 ? '追平个人最佳' : `距个人最佳 ${Math.abs(standing.difference).toLocaleString('zh-CN')} 分`}${standing.rank ? ` · 本榜第 ${standing.rank}` : ' · 本榜前十之外'}`}</p>
     <div class="modal-footer"><button id="result-retry" class="primary-button" type="button"><span>${won ? '再开一局' : '再试一次'}</span><b>↗</b></button><button id="result-ranking" class="quiet-button" type="button">查看本榜</button><button id="result-home" class="quiet-button" type="button">返回首页</button></div>
-  `, `result-card${won ? '' : ' lost'}`, undefined, 'paged');
-  modalRoot?.querySelector<HTMLButtonElement>('#result-retry')?.addEventListener('click', () => {
+  `, `result-card${won ? '' : ' lost'}`, showHome, 'paged');
+  modalRoot?.querySelector<HTMLButtonElement>('#result-retry')?.addEventListener('click', modalAction(() => {
     resumeAfterModal = false;
     closeModal();
     startRound(null, selectedDifficulty);
-  });
-  modalRoot?.querySelector<HTMLButtonElement>('#result-home')?.addEventListener('click', () => {
-    closeModal();
-    showHome();
-  });
-  modalRoot?.querySelector('#result-ranking')?.addEventListener('click',()=>{showHome();showHistory(true,0,rankingKey(state),'all',recordRules(state));});
+  }));
+  modalRoot?.querySelector<HTMLButtonElement>('#result-home')?.addEventListener('click', modalPage!.dismiss);
+  modalRoot?.querySelector('#result-ranking')?.addEventListener('click',modalAction(()=>{showHome();showHistory(true,0,rankingKey(state),'all',recordRules(state));}));
+  bindResultSaveRetry(state, saved);
+}
+
+function bindResultSaveRetry(state: GameState, saved: boolean): void {
+  if (saved || !modalRoot) return;
+  disposeModalPages?.(); disposeModalPages = undefined;
+  for (const selector of ['#result-retry', '#campaign-retry', '#campaign-next']) {
+    const button = modalRoot.querySelector<HTMLButtonElement>(selector); if (button) button.disabled = true;
+  }
+  const footer = modalRoot.querySelector('.modal-footer');
+  const button = document.createElement('button'); button.className = 'quiet-button'; button.id = 'result-save-retry'; button.textContent = '重试保存';
+  button.addEventListener('click', modalAction(() => { getScene()?.persistGame(); showResult(state); }));
+  footer?.prepend(button);
+  if (state.mode === 'campaign') {
+    const message = document.createElement('p'); message.className = 'result-progress'; message.textContent = '本关结果保存或存档清理未完成，原副本已保留。';
+    footer?.before(message);
+  }
+  disposeModalPages = bindModalPages(modalRoot.querySelector<HTMLElement>('.modal-card')!, 'paged');
 }
 
 function showModeSetup(mode: GameMode): void {
@@ -587,11 +625,11 @@ function showModeSetup(mode: GameMode): void {
   document.querySelectorAll<HTMLElement>('[data-duration]').forEach(button => button.addEventListener('click', () => {
     selectedDuration = Number(button.dataset.duration); showModeSetup(mode);
   }));
-  document.querySelector('#mode-ranking')?.addEventListener('click', () => showHistory(true,0,mode === 'timed' ? `timed-${selectedDuration}` : 'endless'));
-  document.querySelector('#mode-begin')?.addEventListener('click', () => {
-    const begin=()=>{const previous = loadGame(mode);if (previous) recordRound(previous, true);clearGame(mode); closeModal();void startRound(null);};
+  document.querySelector('#mode-ranking')?.addEventListener('click', modalAction(() => showHistory(true,0,mode === 'timed' ? `timed-${selectedDuration}` : 'endless','all',RULES_VERSION,()=>showModeSetup(mode))));
+  document.querySelector('#mode-begin')?.addEventListener('click', modalAction(() => {
+    const begin=()=>{const scene = getScene(); if (scene?.lastPersistenceResult?.ok === false && scene.activeState.status !== 'READY' && !scene.persistGame()) { showToast('本局结果尚未保存，原副本已保留'); showModeSetup(mode); return; } const previous = loadGame(mode);if (previous?.sessionId && previous.step > 0 && !recordRound(previous, true)) { showToast('本局记录未能保存，原存档已保留'); showModeSetup(mode); return; }if(!clearGame(mode)){showModeSetup(mode);return;} closeModal();void startRound(null);};
     if(!practiceSeen)showPractice(begin,()=>showModeSetup(mode));else begin();
-  });
+  }));
   // Warm the engine after the setup panel paints, when play intent is explicit.
   requestAnimationFrame(() => requestAnimationFrame(() => { void loadRuntime().catch(() => {}); }));
 }
@@ -622,41 +660,46 @@ document.querySelectorAll<HTMLButtonElement>('[data-difficulty]').forEach((butto
   });
 });
 
-document.querySelector<HTMLButtonElement>('#tutorial-button')?.addEventListener('click', showTutorial);
+document.querySelector<HTMLButtonElement>('#tutorial-button')?.addEventListener('click', () => showTutorial());
 document.querySelector<HTMLButtonElement>('#settings-button')?.addEventListener('click', () => showSettings());
 document.querySelector<HTMLButtonElement>('#game-settings-button')?.addEventListener('click', () => showSettings());
-document.querySelector('#game-help-button')?.addEventListener('click', showTutorial);
+document.querySelector('#game-help-button')?.addEventListener('click', () => showTutorial());
 document.querySelector('#fullscreen-button')?.addEventListener('click',()=>window.dispatchEvent(new Event('orbbound-request-fullscreen')));
 document.querySelector('#round-load-cancel')?.addEventListener('click',showHome);
 function saveAndHome(): void {
-  getScene()?.pauseGame();
-  showHome();
-  showToast('已存档，下次可从首页继续');
+  if (showHome()) showToast('已存档，下次可从首页继续');
+  else showToast('本局尚未保存，已保留原副本；请恢复存储后重试');
 }
 document.querySelector<HTMLButtonElement>('#pause-button')?.addEventListener('click', saveAndHome);
 launchButton?.addEventListener('click', () => { if (controlActive()) getScene()?.launchFromButton(); });
 bindFireButton(document.querySelector<HTMLButtonElement>('#mobile-fire')!, () => { if (!controlActive()) return; gameAudio.unlock(); getScene()?.launchFromButton(); });
 document.querySelector('#mobile-pause-button')?.addEventListener('click', saveAndHome);
-document.querySelector('#mobile-help-button')?.addEventListener('click', showTutorial);
+document.querySelector('#mobile-help-button')?.addEventListener('click', () => showTutorial());
 document.querySelector('#settle-button')?.addEventListener('click', () => {
   openModal(`<button class="modal-close" data-close-modal>继续游戏</button><h2>结算本局</h2><p>结算后按难度系数计入对应排行榜，本局存档将结束。</p><div class="modal-footer"><button id="desktop-confirm-settle" class="primary-button">结算并计入排行榜</button></div>`);
-  document.querySelector('#desktop-confirm-settle')?.addEventListener('click', () => { closeModal(); getScene()?.settleGame(); });
+  document.querySelector('#desktop-confirm-settle')?.addEventListener('click', modalAction(() => { resumeAfterModal = false; closeModal(); getScene()?.settleGame(); }));
 });
 function showGameMenu(): void {
   const campaign = getScene()?.activeState.mode === 'campaign';
   openModal(`<button class="modal-close" data-close-modal type="button">继续游戏</button><h2>游戏菜单</h2>
-    <p>本局已暂停并存档。</p><p>${campaign ? '完成目标获得星级，可随时重试本关。' : '继续游玩，或结算成绩后入榜。'}</p>
+    <p>本局已暂停。</p><p>${campaign ? '完成目标获得星级，可随时重试本关。' : '继续游玩，或结算成绩后入榜。'}</p>
     <div class="mobile-menu-actions"><button id="menu-settings" class="quiet-button">设置</button><button id="menu-history" class="quiet-button">历史与排行</button>${campaign ? '' : '<button id="menu-settle" class="quiet-button">结算并入榜</button>'}<button id="menu-restart" class="quiet-button">放弃本局…</button><button id="menu-home" class="quiet-button">存档并返回首页</button></div>`, '', undefined, 'paged');
-  document.querySelector('#menu-settle')?.addEventListener('click', () => { closeModal(); getScene()?.settleGame(); });
-  document.querySelector('#menu-settings')?.addEventListener('click', () => showSettings());
-  document.querySelector('#menu-history')?.addEventListener('click', () => showHistory());
-  document.querySelector('#menu-restart')?.addEventListener('click', () => {
-    openModal(`<button class="modal-close" id="abandon-cancel">返回菜单</button><h2>放弃本局？</h2><p>本局存档将删除，成绩不计入排行榜。请选择重新开始，或退出到首页。</p><div class="mobile-menu-actions"><button id="abandon-restart" class="primary-button">放弃并重开</button><button id="abandon-exit" class="quiet-button">放弃并退出</button></div>`);
-    document.querySelector('#abandon-cancel')?.addEventListener('click', showGameMenu);
-    document.querySelector('#abandon-restart')?.addEventListener('click', () => { closeModal(); getScene()?.restartGame(); });
-    document.querySelector('#abandon-exit')?.addEventListener('click', () => { getScene()?.abandonGame(); resumeAfterModal = false; showHome(); showToast('已放弃本局'); });
-  });
-  document.querySelector('#menu-home')?.addEventListener('click', () => { resumeAfterModal = false; closeModal(); showHome(); });
+  document.querySelector('#menu-settle')?.addEventListener('click', modalAction(() => { resumeAfterModal = false; closeModal(); getScene()?.settleGame(); }));
+  document.querySelector('#menu-settings')?.addEventListener('click', modalAction(() => showSettings(undefined, showGameMenu)));
+  document.querySelector('#menu-history')?.addEventListener('click', modalAction(() => showHistory(true,0,'endless','all',RULES_VERSION,showGameMenu)));
+  document.querySelector('#menu-restart')?.addEventListener('click', modalAction(() => {
+    openModal(`<button class="modal-close" data-close-modal>返回菜单</button><h2>放弃本局？</h2><p>本局存档将删除，成绩不计入排行榜。请选择重新开始，或退出到首页。</p><div class="mobile-menu-actions"><button id="abandon-restart" class="primary-button">放弃并重开</button><button id="abandon-exit" class="quiet-button">放弃并退出</button></div>`, '', showGameMenu);
+    document.querySelector('#abandon-restart')?.addEventListener('click', modalAction(restartCurrentRound));
+    document.querySelector('#abandon-exit')?.addEventListener('click', modalAction(() => {
+      if (!getScene()?.abandonGame()) { showToast('放弃未完成，原存档已保留'); showGameMenu(); return; }
+      resumeAfterModal = false; showHome(); showToast('已放弃本局');
+    }));
+  }));
+  document.querySelector('#menu-home')?.addEventListener('click', modalAction(saveAndHome));
+}
+function restartCurrentRound(): void {
+  if (!getScene()?.restartGame()) { showToast('重开未完成，原存档已保留'); showGameMenu(); return; }
+  closeModal(); game?.loop.wake(); getScene()?.resumeGame(); showToast('新回合已开始');
 }
 document.querySelector('#mobile-menu-button')?.addEventListener('click', showGameMenu);
 
@@ -699,10 +742,9 @@ window.addEventListener('snood-fired', () => {
 });
 document.querySelector<HTMLButtonElement>('#restart-button')?.addEventListener('click', () => {
   const scene=getScene();if(!scene)return;
-  const restart=()=>{closeModal();scene.restartGame();showToast('新回合已开始');};
-  if(scene.activeState.step===0 || scene.activeState.status!=='READY'){restart();return;}
+  if(scene.activeState.step===0 || scene.activeState.status!=='READY'){restartCurrentRound();return;}
   openModal('<button class="modal-close" data-close-modal>继续游戏</button><h2>放弃当前局并重开？</h2><p>当前进度会结束，重开不计入正常排行榜。</p><div class="modal-footer"><button class="quiet-button" data-autofocus data-close-modal>继续游戏</button><button id="confirm-restart" class="primary-button">放弃并重开</button></div>');
-  document.querySelector('#confirm-restart')?.addEventListener('click',restart);
+  document.querySelector('#confirm-restart')?.addEventListener('click',modalAction(restartCurrentRound));
 });
 document.querySelector<HTMLButtonElement>('#back-home-button')?.addEventListener('click', () => {
   saveAndHome();
@@ -711,13 +753,10 @@ document.querySelector<HTMLButtonElement>('#back-home-button')?.addEventListener
 window.addEventListener('snood-state', (event) => {
   updateGameState((event as CustomEvent<SceneStateDetail>).detail);
 });
-window.addEventListener('snood-save-request', (event) => {
-  saveGame((event as CustomEvent<Parameters<PlayScene['begin']>[0]>).detail);
+window.addEventListener('snood-persistence-result', (event) => {
+  const detail = (event as CustomEvent<{ ok: boolean; kind: 'save' | 'result' | 'clear' }>).detail;
   if (!homeScreen?.hidden) updateHomeState();
-});
-window.addEventListener('snood-clear-save', (event) => {
-  clearGame((event as CustomEvent<GameMode>).detail);
-  updateHomeState();
+  if (!detail.ok) showToast(detail.kind === 'clear' ? '结果已保存，旧存档尚未清理，可重试' : detail.kind === 'result' ? '本局结果暂未保存，原副本已保留' : '存档未能保存，原副本已保留');
 });
 window.addEventListener('snood-finished', (event) => {
   const state = (event as CustomEvent<GameState>).detail;
@@ -784,8 +823,15 @@ bindDesktopBridge(() => {
   settings=reloadSettings();gameAudio.setMix(settings.volume,settings.musicVolume);gameAudio.setAdaptiveMusic(settings.adaptiveMusic);
   previousUiDetail=undefined;syncMobileLayout();showHome();void refreshPlatformPerformance(settings);
 }, showToast,(text,commit)=>{
-  openModal(`<button class="modal-close" data-close-modal>取消</button><h2>导入备份？</h2><p>${escapeText(backupSummary(text))}</p><p>同名数据会替换，导入前会保留恢复副本。</p><div class="modal-footer"><button class="quiet-button" data-autofocus data-close-modal>取消</button><button id="confirm-backup-import" class="primary-button">确认导入</button></div>`);
-  document.querySelector('#confirm-backup-import')?.addEventListener('click',commit);
+  const fromSettings = document.documentElement.classList.contains('settings-open');
+  if (lan.isActive() || !gameScreen?.hidden || (!modalRoot?.hidden && !fromSettings)) { showToast('页面已变化，请回到数据与维护重新导入'); return; }
+  const back = fromSettings ? settingsRestore : showHome;
+  closeModal();
+  const confirm = () => {
+    openModal(`<button class="modal-close" data-close-modal>取消</button><h2>导入备份？</h2><p>${escapeText(backupSummary(text))}</p><p>同名数据会替换，导入前会保留恢复副本。</p><div class="modal-footer"><button class="quiet-button" data-autofocus data-close-modal>取消</button><button id="confirm-backup-import" class="primary-button">确认导入</button></div>`, '', back);
+    document.querySelector('#confirm-backup-import')?.addEventListener('click',modalAction(commit));
+  };
+  confirm();
 });
 bindAndroidServices(()=>settings);
 window.addEventListener('snood-performance',event=>{

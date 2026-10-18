@@ -1,0 +1,29 @@
+.mechanism-demo .demo-orbits { opacity:.18; transform-origin:center; animation:home-orbit-drift 32s ease-in-out infinite alternate; }
+.mechanism-demo .demo-shot-left { animation:home-left-shot var(--demo-duration,10s) linear infinite; }
+.mechanism-demo .demo-shot-right { animation:home-right-shot var(--demo-duration,10s) linear infinite; }
+.mechanism-demo .demo-match-left,.mechanism-demo .demo-route-left { animation:home-left-clear var(--demo-duration,10s) linear infinite; }
+.mechanism-demo .demo-match-right,.mechanism-demo .demo-route-right { animation:home-right-clear var(--demo-duration,10s) linear infinite; }
+.mechanism-demo .demo-falling { animation:home-fall var(--demo-duration,10s) linear infinite; }
+.mechanism-demo .demo-route-left,.mechanism-demo .demo-route-right { fill:none; stroke:#a7b4c9; stroke-dasharray:2 7; stroke-opacity:.23; }
+@keyframes home-orbit-drift { to { transform:rotate(9deg) translateY(4px); } }
+@keyframes home-left-shot {
+  0%,10% { transform:translate(0,0); opacity:1; }
+  26%,30% { transform:translate(var(--demo-left-x),var(--demo-left-y)); opacity:1; }
+  34%,98% { transform:translate(var(--demo-left-x),var(--demo-left-y)); opacity:0; }
+  99% { transform:translate(0,0); opacity:0; }
+  100% { transform:translate(0,0); opacity:1; }
+}
+@keyframes home-right-shot {
+  0%,45% { transform:translate(0,0); opacity:0; }
+  50%,54% { transform:translate(0,0); opacity:1; }
+  70%,74% { transform:translate(var(--demo-right-x),var(--demo-right-y)); opacity:1; }
+  78%,100% { transform:translate(var(--demo-right-x),var(--demo-right-y)); opacity:0; }
+}
+@keyframes home-left-clear { 0%,30%,100% { opacity:1; } 34%,94% { opacity:0; } }
+@keyframes home-right-clear { 0%,74%,100% { opacity:1; } 78%,94% { opacity:0; } }
+@keyframes home-fall {
+  0%,78%,100% { transform:translateY(0); opacity:1; }
+  80% { transform:translateY(2px); opacity:1; animation-timing-function:ease-in; }
+  92%,94% { transform:translateY(86px); opacity:0; }
+  95% { transform:translateY(0); opacity:0; }
+}

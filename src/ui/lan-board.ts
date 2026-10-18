@@ -1,5 +1,5 @@
 import { BOARD_GEOMETRY } from '../content/game-config';
-import { getOrbTheme } from '../content/theme';
+import { updateOrbPreview } from './next-orb-preview';
 import { BOARD_APPEARANCE, drawAimMarkers, drawDangerLine } from '../render/board-appearance';
 import { arenaArtwork, canvasGraphics, drawOrb, makeArtworkCanvas, paintArena, paintLauncherBarrel, paintLauncherBase } from '../render/board-artwork';
 import { boardCanvasSize, boardView, type BoardRole } from '../render/board-view';
@@ -89,11 +89,7 @@ export function bindLanBoard(root: HTMLElement, session: LanSession): () => void
     drawLanBoard(target, drawnState, drawnAngle, aim, offset, paintOptions);
     // The preview follows the main canvas's presentation state, including prediction and observation.
     if (target !== canvas) return;
-    const preview = root.querySelector<HTMLElement>('#lan-next-orb-preview');
-    if (!preview || preview.dataset.colorId === String(drawnState.nextColor)) return;
-    const theme = getOrbTheme(drawnState.nextColor);
-    preview.dataset.colorId = String(drawnState.nextColor); preview.dataset.symbol = theme.symbol;
-    preview.style.backgroundColor = theme.cssColor; preview.style.setProperty('--orb-ink', theme.ink);
+    updateOrbPreview(root.querySelector<HTMLElement>('#lan-next-orb-preview'), drawnState.nextColor);
   }, drawOrb, kind => { gameAudio.blip(kind); if (kind !== 'danger') haptic('match', settings); });
   presentation.reset(session.view.snapshot?.eventSeq ?? 0);
   const budget = new FrameBudget(); const heldKeys = new Set<number>();
@@ -194,9 +190,8 @@ export function bindLanBoard(root: HTMLElement, session: LanSession): () => void
   const resize = () => {
     const wrap = canvas.parentElement, available = wrap?.parentElement;
     if (wrap && available) {
-      const space = available.getBoundingClientRect(), preview = available.querySelector<HTMLElement>('.lan-next-preview');
-      const gap = preview && typeof getComputedStyle === 'function' ? Number.parseFloat(getComputedStyle(available).rowGap) || 0 : 0;
-      const height = Math.max(0, space.height - (preview?.getBoundingClientRect().height ?? 0) - gap);
+      // The layout gives this column only the board's remaining space; preview lives in its own grid slot.
+      const space = available.getBoundingClientRect(), height = Math.max(0, space.height);
       const width = Math.min(space.width, height * 640 / 760);
       if (width > 0 && Math.abs((Number.parseFloat(wrap.style.width) || 0) - width) >= .5) wrap.style.width = `${width}px`;
     }

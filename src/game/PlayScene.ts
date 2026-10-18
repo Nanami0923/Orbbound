@@ -9,7 +9,7 @@ import { BOARD_GEOMETRY, GAME_HEIGHT, GAME_WIDTH, UI_COLORS } from '../content/g
 import { getOrbTheme } from '../content/theme';
 import { BOARD_APPEARANCE, boardGeometry, drawAimMarkers, drawArena, drawDangerLine, drawLauncherBarrel, drawLauncherBase } from '../render/board-appearance';
 import { paintOrbArtwork } from '../render/board-artwork';
-import { DEFAULT_SETTINGS, type Settings } from '../storage/storage';
+import { clearGame, DEFAULT_SETTINGS, saveGame, type Settings } from '../storage/storage';
 import { gameAudio, boardMusicPressure } from './audio';
 import { fineRotationSpeed } from './rotation';
 import { haptic } from './feedback';
@@ -20,12 +20,19 @@ import { shortcutAction, shortcutLabel } from './shortcuts';
 import { heldRotationDegrees } from './rotation';
 import { rebaseTweenClock } from './tween-clock';
 import { settingsEffects, snapshotSettings } from '../ui/settings-effects';
-import { advanceTimed, createRound, descentInterval, freezeTimed, resumeTimed, resetDescent } from '../core/modes';
+import { advanceTimed, createRound, descentInterval, freezeTimed, resumeTimed, resetDescent, type GameMode } from '../core/modes';
 
 type ScenePhase = 'READY' | 'FLYING' | 'RESOLVING' | 'PAUSED' | 'WON' | 'LOST';
 
 interface ProgressDriver {
   progress: number;
+}
+
+export interface ScenePersistenceResult {
+  ok: boolean;
+  kind: 'save' | 'result' | 'clear';
+  mode: GameMode;
+  sessionId?: string;
 }
 
 function sendWindowEvent(name: string, detail: unknown): void {
@@ -34,6 +41,10 @@ function sendWindowEvent(name: string, detail: unknown): void {
 
 export class PlayScene extends Phaser.Scene {
   private gameState: GameState = createGameState();
+  private launcherColors: Pick<GameState, 'currentColor' | 'nextColor'> = { currentColor: this.gameState.currentColor, nextColor: this.gameState.nextColor };
+  private persistenceResult?: ScenePersistenceResult;
+  private terminalPersistedId?: string;
+  public get lastPersistenceResult(): ScenePersistenceResult | undefined { return this.persistenceResult; }
   private get geometry() { return boardGeometry(this.gameState); }
   private phase: ScenePhase = 'READY';
   private settings: Settings = { ...DEFAULT_SETTINGS };
@@ -105,7 +116,7 @@ export class PlayScene extends Phaser.Scene {
     this.renderLauncher();
     this.drawAim();
     this.emitState();
-    recordRound(this.gameState);
+    this.persistGame();
     sendWindowEvent('snood-finished', this.gameState);
   }
   public syncTimedClock(): void {
@@ -120,10 +131,30 @@ export class PlayScene extends Phaser.Scene {
       this.persistGame();
     }
   }
-  public persistGame(): void {
-    if (!this.ready || this.abandoned) return;
-    if (this.gameState.status === 'READY') sendWindowEvent('snood-save-request', this.gameState);
-    else { recordCampaign(this.gameState); recordRound(this.gameState); sendWindowEvent('snood-clear-save', this.gameState.mode ?? 'endless'); }
+  private reportPersistence(ok: boolean, kind: ScenePersistenceResult['kind']): boolean {
+    this.persistenceResult = { ok, kind, mode: this.gameState.mode ?? 'endless', sessionId: this.gameState.sessionId };
+    sendWindowEvent('snood-persistence-result', this.persistenceResult);
+    return ok;
+  }
+  private clearStoredGame(): boolean {
+    const ok = this.reportPersistence(clearGame(this.gameState.mode ?? 'endless'), 'clear');
+    if (ok) sendWindowEvent('snood-clear-save', this.gameState.mode ?? 'endless');
+    return ok;
+  }
+  public persistGame(): boolean {
+    if (!this.ready) return false;
+    if (this.abandoned) return true;
+    if (this.gameState.status === 'READY') {
+      const ok = this.reportPersistence(saveGame(this.gameState), 'save');
+      if (ok) sendWindowEvent('snood-save-request', this.gameState);
+      return ok;
+    }
+    if (this.gameState.sessionId && this.terminalPersistedId === this.gameState.sessionId) return true;
+    const recorded = this.gameState.mode === 'campaign' ? recordCampaign(this.gameState) : recordRound(this.gameState);
+    if (!recorded) return this.reportPersistence(false, 'result');
+    if (!this.clearStoredGame()) return false;
+    this.terminalPersistedId = this.gameState.sessionId;
+    return true;
   }
   private clockTick = 0;
   private decisionClockAt: number | null = null;
@@ -212,6 +243,7 @@ export class PlayScene extends Phaser.Scene {
   public begin(state: GameState): void {
     sendWindowEvent('snood-round-start', undefined);
     this.abandoned = false;
+    this.terminalPersistedId = undefined; this.persistenceResult = undefined;
     this.roundEpoch++;
     state = resumeTimed(state);
     this.stopRotation();
@@ -230,6 +262,7 @@ export class PlayScene extends Phaser.Scene {
     state.elapsedMs = Number.isFinite(state.elapsedMs) ? Math.max(0, state.elapsedMs!) : 0;
     this.clockTick = 0;
     this.gameState = state;
+    this.launcherColors = { currentColor: state.currentColor, nextColor: state.nextColor };
     this.phase = state.status;
     if (state.status === 'READY') this.phase = 'READY';
     this.decisionClockAt = state.mode === 'campaign' && this.phase === 'READY' ? Date.now() : null;
@@ -244,18 +277,24 @@ export class PlayScene extends Phaser.Scene {
     this.syncTimedClock();
   }
 
-  public restartGame(): void {
-    if (this.gameState.status === 'READY') recordRound(this.gameState, true);
+  public restartGame(): boolean {
+    if (this.gameState.status === 'READY') {
+      if (this.gameState.mode !== 'campaign' && this.gameState.step > 0 && !recordRound(this.gameState, true)) return this.reportPersistence(false, 'result');
+      if (!this.clearStoredGame()) return false;
+    } else if (!this.persistGame()) return false;
     const difficulty = this.gameState.difficultyId;
-    sendWindowEvent('snood-clear-save', this.gameState.mode ?? 'endless');
     this.begin(this.gameState.mode === 'campaign' ? createCampaign(this.gameState.levelId!) : createRound(difficulty, this.gameState.mode ?? 'endless', this.gameState.durationMs));
+    return true;
   }
 
-  public abandonGame(): void {
+  public abandonGame(): boolean {
     this.pauseGame();
-    if (this.gameState.status === 'READY') recordRound(this.gameState, true);
+    if (this.gameState.status === 'READY') {
+      if (this.gameState.mode !== 'campaign' && this.gameState.step > 0 && !recordRound(this.gameState, true)) return this.reportPersistence(false, 'result');
+      if (!this.clearStoredGame()) return false;
+    } else if (!this.persistGame()) return false;
     this.abandoned = true;
-    sendWindowEvent('snood-clear-save', this.gameState.mode ?? 'endless');
+    return true;
   }
 
   public setSettings(settings: Settings): void {
@@ -265,7 +304,7 @@ export class PlayScene extends Phaser.Scene {
     if (changed.controls || changed.quality) { this.pointerActive = false; this.stopRotation(); }
     if (this.phase === 'READY') this.statusText?.setText(this.controlHint());
     this.audio.setMix(settings.volume, settings.musicVolume);
-    if (changed.visual) { this.renderLauncher(); this.drawAim(); }
+    if (changed.visual) { this.renderLauncher(this.launcherColors); this.drawAim(); }
     sendWindowEvent('snood-settings-applied', this.settings);
     if (changed.quality || changed.frameRate) sendWindowEvent('snood-performance-settings', this.settings);
   }
@@ -285,8 +324,8 @@ export class PlayScene extends Phaser.Scene {
     this.time.paused = true;
     this.pointerActive = false;
     this.drawAim();
-    this.persistGame();
-    this.statusText.setText('已存档 · 可退出，下次继续');
+    const saved = this.persistGame();
+    this.statusText.setText(saved ? '已存档 · 可退出，下次继续' : '未能存档 · 请重试，当前对局仍保留');
     this.emitState();
   }
 
@@ -408,15 +447,16 @@ export class PlayScene extends Phaser.Scene {
     }
   }
 
-  private renderLauncher(): void {
+  private renderLauncher(colors: Pick<GameState, 'currentColor' | 'nextColor'> = this.gameState): void {
+    this.launcherColors = { currentColor: colors.currentColor, nextColor: colors.nextColor };
     this.launcherOrb?.destroy(); this.nextOrb?.destroy(); this.nextOrb = undefined;
     this.launcherBase.clear();
     if (!usesButtonControls() && import.meta.env.MODE !== 'windows') {
-      this.nextOrb = this.createOrb(this.gameState.nextColor, { x: 405, y: 698 }); this.nextOrb.setScale(.72);
+      this.nextOrb = this.createOrb(colors.nextColor, { x: 405, y: 698 }); this.nextOrb.setScale(.72);
     }
-    if (this.barrel) { this.barrel.clear(); drawLauncherBarrel(this.barrel, this.gameState.currentColor); this.barrel.setRotation(this.angle); }
+    if (this.barrel) { this.barrel.clear(); drawLauncherBarrel(this.barrel, colors.currentColor); this.barrel.setRotation(this.angle); }
     drawLauncherBase(this.launcherBase);
-    this.launcherOrb = this.createOrb(this.gameState.currentColor, { x: BOARD_GEOMETRY.launcherX, y: BOARD_GEOMETRY.launcherY });
+    this.launcherOrb = this.createOrb(colors.currentColor, { x: BOARD_GEOMETRY.launcherX, y: BOARD_GEOMETRY.launcherY });
     this.launcherOrb.setScale(BOARD_APPEARANCE.loadedScale); this.launcherOrb.setRotation?.(0);
   }
 
@@ -641,6 +681,7 @@ export class PlayScene extends Phaser.Scene {
       const droppedBoard = events.some((event) => event.type === 'board-drop');
       this.renderBoard(droppedBoard ? -BOARD_GEOMETRY.rowStep : 0);
       this.renderLauncher();
+      this.emitState();
       const finish = () => {
       if (epoch !== this.roundEpoch) return;
 
@@ -661,9 +702,9 @@ export class PlayScene extends Phaser.Scene {
       }
       this.drawAim();
       this.emitState();
-      if (this.phase === 'READY') sendWindowEvent('snood-save-request', this.gameState);
+      if (this.phase === 'READY') this.persistGame();
       if (this.phase === 'WON' || this.phase === 'LOST') {
-        recordRound(this.gameState);
+        this.persistGame();
         sendWindowEvent('snood-finished', this.gameState);
       }
       };
@@ -730,6 +771,7 @@ export class PlayScene extends Phaser.Scene {
       danger: this.gameState.danger,
       currentColor: this.gameState.currentColor,
       nextColor: this.gameState.nextColor,
+      previewNextColor: this.launcherColors.nextColor,
       difficultyId: this.gameState.difficultyId,
       step: this.gameState.step,
       elapsedMs: this.gameState.elapsedMs ?? 0,

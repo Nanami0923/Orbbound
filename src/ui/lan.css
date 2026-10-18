@@ -8,24 +8,128 @@
 .lan-tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}.lan-tabs button{padding:8px 4px;font-size:12px;border:1px solid transparent}.lan-tabs [aria-pressed=true]{border-color:var(--mint);color:var(--mint);background:#63d7bd12}.lan-browser-body{display:flex;flex:1;flex-direction:column;gap:10px;min-height:0}.lan-section-title{display:flex;gap:8px;align-items:center;justify-content:space-between}.lan-section-title>p{font-size:12px;color:var(--muted);margin:0;line-height:1.4}.lan-section-title button{flex:none;padding:6px 16px}.lan-room-list{min-height:0;display:flex;flex-direction:column;gap:8px;flex:1}.lan-room{display:grid;grid-template-columns:minmax(0,1fr);gap:5px;padding:10px 12px;border:1px solid var(--line);background:var(--panel);border-radius:12px;min-width:0}.lan-room strong{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.lan-room small{font-size:11px;color:var(--muted)}.lan-room select{min-width:0;width:100%;min-height:44px;padding:6px;background:var(--bg);color:var(--cream);border:1px solid var(--line);border-radius:7px;font:12px monospace}.lan-room .lan-actions{gap:8px}.lan-room .lan-actions button{min-height:44px;padding:6px 12px;font-size:12px}.lan-pagination{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:auto}.lan-pagination button{min-width:80px;padding:8px 14px;font-size:12px}.lan-pagination span{font-size:12px;color:var(--muted)}
 .lan-recent-row{display:flex;flex-direction:column;align-items:flex-start;gap:4px;padding:10px 12px;min-height:60px!important;flex:none}.lan-recent-row small{font-size:11px;color:var(--muted)}.lan-log-page{min-height:0}.lan-log-page p{font:11px/1.5 monospace;overflow-wrap:anywhere;margin:6px 0}.lan-help-page{display:grid;align-content:start;gap:16px;flex:1}.lan-help-page p{font-size:16px;line-height:1.8;margin:0}.lan-history-list{display:flex;flex-direction:column;gap:8px;min-height:0;flex:1}.lan-history-row{border:1px solid var(--line);background:var(--panel);border-radius:10px;padding:8px 12px;display:grid;grid-template-columns:1fr auto;gap:4px}.lan-history-row small{font-size:10px;color:var(--muted)}.lan-history-row p{grid-column:1/-1;margin:0;font-size:12px;line-height:1.4}
 .lan-players{display:grid;grid-template-columns:1fr 1fr;gap:10px}.lan-player{position:relative;display:grid;align-content:center;gap:5px;border:1px solid var(--line);border-radius:12px;background:var(--panel);padding:12px;min-height:72px;min-width:0}.lan-player strong{font-size:15px;overflow-wrap:anywhere;padding-right:38px}.lan-player small{color:var(--muted);font-size:12px}.lan-player .text-button{position:absolute;right:4px;top:2px;padding:8px 4px;font-size:10px;min-width:40px}.lan-room-list code{font:clamp(16px,3vw,24px) monospace;overflow-wrap:anywhere;user-select:all}
-.lan-in-game .lan-body{max-width:1280px;grid-template-rows:minmax(0,1fr) auto;gap:4px}.lan-in-game .lan-body>h1{display:none}.lan-in-game .lan-content{display:grid;grid-template-rows:52px 44px minmax(0,1fr) 20px;gap:8px}.lan-match-hud{display:grid;grid-template-columns:minmax(100px,1fr) 100px auto;gap:12px;padding:0 12px;align-items:center;min-width:0}.lan-match-hud>div:first-child{display:grid;grid-template-columns:auto 1fr;gap:2px 12px;align-items:center}.lan-match-hud strong{font-size:28px;line-height:1}.lan-match-hud span,.lan-match-hud small{font-size:12px;color:var(--muted)}.lan-match-hud small{grid-column:1/-1}.lan-clock{display:grid;gap:2px;text-align:center;font-variant-numeric:tabular-nums}.lan-clock strong{font-size:24px}.lan-clock small{font-size:10px}.lan-clock span{font-size:10px}.lan-hud-actions{display:flex;gap:6px}.lan-hud-actions button{padding:8px 14px;min-width:60px;font-size:12px}
-.lan-status-slot{min-height:0;display:flex;align-items:center;border:1px solid var(--line);background:var(--panel);border-radius:10px;padding:3px 10px}.lan-attack-bar{margin:0;font-size:12px;line-height:1.4;color:var(--mint);font-variant-numeric:tabular-nums}.lan-status-slot [hidden]{display:none!important}#lan-pause-request{width:100%;display:flex;align-items:center;justify-content:space-between;gap:6px}#lan-request-message{font-size:12px;line-height:1.3;color:var(--gold)}#lan-pause-request .lan-actions{flex:none;gap:4px}#lan-pause-request button{padding:6px 10px;font-size:12px;min-height:36px}
-.lan-game-layout{min-height:0;display:grid;grid-template-columns:minmax(0,1fr) 220px;gap:18px}.lan-own-column{min-height:0;min-width:0;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:4px}.lan-board-wrap{position:relative;min-height:0;max-height:100%;max-width:100%;aspect-ratio:640/760;width:min(100%,560px)}.lan-board-wrap>canvas{display:block;width:100%;height:100%;border-radius:var(--board-corner-radius,24px);touch-action:none}.lan-opponents{min-width:0;min-height:0;display:grid;align-content:start;gap:8px}.lan-opponent{display:grid;grid-template-columns:64px minmax(0,1fr);align-items:center;gap:10px;background:var(--panel);color:var(--cream);border:1px solid var(--line);border-radius:12px;padding:8px;text-align:left;min-width:0}.lan-opponent canvas{width:64px;height:76px;border-radius:6px}.lan-opponent span{min-width:0;display:grid;gap:5px}.lan-opponent strong{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.lan-opponent small{font-size:11px;color:var(--muted)}.lan-controls{display:none}.lan-game-notice{margin:0;font-size:11px;line-height:20px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .lan-game-overlay{position:absolute;inset:0;z-index:3;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px;padding:14px;text-align:center;background:#0d1421e8;border-radius:14px}.lan-game-overlay[hidden]{display:none}.lan-game-overlay strong{font-size:24px}.lan-game-overlay p{font-size:13px;line-height:1.5;margin:0}.lan-game-overlay small{font-size:12px;color:var(--muted)}.lan-game-overlay .lan-actions{width:100%;max-width:320px}.lan-game-overlay button{font-size:12px;padding:8px}#lan-overlay-countdown{font-size:52px}
 .lan-confirm{position:fixed;inset:0;z-index:70;display:grid;place-items:center;background:#080d19d9;padding:16px}.lan-confirm>.lan-card{width:min(460px,100%);max-height:calc(var(--app-height,100dvh) - 32px);display:flex;flex-direction:column;gap:12px}.lan-confirm .lan-actions{flex-wrap:wrap}.lan-confirm .lan-actions button{flex:1 1 100px}.lan-observe-canvas{display:block;min-height:0;max-width:100%;height:min(48dvh,360px);aspect-ratio:640/760;align-self:center}
 .lan-ranking{display:grid;gap:8px}.lan-rank-row{display:grid;grid-template-columns:28px minmax(0,1fr) auto 40px;align-items:center;gap:8px;padding:10px 12px;background:var(--panel);border:1px solid var(--line);border-radius:10px;color:var(--cream);text-align:left}.lan-rank-row b{font-size:18px}.lan-rank-row span{font-size:13px;overflow-wrap:anywhere}.lan-rank-row strong{font-size:18px}.lan-rank-row small{color:var(--muted);font-size:11px}.lan-rank-row.lan-winner{border-color:#63d7bd88;background:#63d7bd12}
 .lan-field-editor{position:fixed;inset:0;z-index:75;background:var(--bg);display:flex;flex-direction:column;justify-content:center;gap:18px;padding:20px;height:var(--app-height,100dvh)}.lan-editing>.lan-body,.lan-editing>.lan-top{visibility:hidden}.lan-field-editor .lan-field{visibility:visible;font-size:15px}.lan-field-editor button{flex:none}.lan-field-editor input{min-height:48px}
-.lan-match-hud>div:first-child{min-width:0;grid-template-columns:minmax(0,1fr) auto}.lan-match-hud strong{line-height:1.25}.lan-match-hud #lan-self-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.lan-clock{grid-template-columns:auto auto;grid-template-rows:auto auto;gap:0 4px}.lan-clock strong{grid-column:1/-1;grid-row:1}.lan-clock small{grid-row:2;grid-column:1}.lan-clock span{grid-row:2;grid-column:2}
-@media(max-width:900px){.lan-screen{padding:10px 14px;gap:8px}.lan-body{gap:10px}.lan-top .brand-name{font-size:14px}.lan-label{font-size:10px;padding-left:7px;margin-left:7px}.lan-game-layout{grid-template-columns:minmax(0,1fr) 155px;gap:10px}.lan-opponent{grid-template-columns:44px minmax(0,1fr);gap:7px;padding:6px}.lan-opponent canvas{width:44px;height:52px}.lan-match-hud{padding:0;gap:8px}.lan-opponent strong{font-size:12px}.lan-opponent small{font-size:10px}}
-.lan-screen.game-shell--touch{padding:max(6px,var(--safe-area-top,env(safe-area-inset-top))) max(12px,var(--safe-area-right,env(safe-area-inset-right))) max(6px,var(--safe-area-bottom,env(safe-area-inset-bottom))) max(12px,var(--safe-area-left,env(safe-area-inset-left)));gap:6px}.lan-screen.game-shell--touch .lan-body{max-width:650px}.game-shell--touch.lan-in-game .lan-content{grid-template-rows:44px 44px minmax(0,1fr) 88px 18px;gap:5px}.game-shell--touch .lan-match-hud{grid-template-columns:minmax(70px,1fr) 64px auto;gap:6px}.game-shell--touch .lan-match-hud>div:first-child{grid-template-columns:auto 1fr;gap:1px 6px}.game-shell--touch .lan-match-hud strong{font-size:21px}.game-shell--touch .lan-match-hud span,.game-shell--touch .lan-match-hud small{font-size:10px}.game-shell--touch .lan-clock strong{font-size:22px}.game-shell--touch .lan-clock small,.game-shell--touch .lan-clock span{font-size:9px}.game-shell--touch .lan-hud-actions{gap:4px}.game-shell--touch .lan-hud-actions button{min-width:44px;padding:6px;font-size:11px}.game-shell--touch .lan-status-slot{padding:0 6px}.game-shell--touch .lan-attack-bar{font-size:10px}.game-shell--touch #lan-request-message{font-size:10px}.game-shell--touch #lan-pause-request button{min-height:44px;padding:4px 6px;font-size:10px}.game-shell--touch .lan-game-layout{grid-template-columns:minmax(0,1fr);grid-template-rows:48px minmax(0,1fr);gap:4px}.game-shell--touch .lan-own-column{grid-row:2}.game-shell--touch .lan-opponents{grid-row:1;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;align-content:stretch}.game-shell--touch .lan-opponent{padding:3px;gap:4px;grid-template-columns:28px minmax(0,1fr);border-radius:7px}.game-shell--touch .lan-opponent canvas{width:28px;height:33.25px}.game-shell--touch .lan-opponent span{gap:1px}.game-shell--touch .lan-opponent strong{font-size:10px}.game-shell--touch .lan-opponent small{font-size:9px}.game-shell--touch .lan-controls{display:grid;grid-template-columns:minmax(0,1fr) var(--lan-fire-width,92px);gap:10px;min-height:0}.game-shell--touch .lan-controls>#lan-turn-left,.game-shell--touch .lan-controls>#lan-turn-right{display:none}.lan-sliders{display:grid;grid-template-rows:1fr 1fr;gap:4px;min-width:0}.lan-sliders label{border:1px solid var(--line);background:var(--panel);border-radius:8px;padding:1px 8px;display:grid;grid-template-columns:1fr auto;font-size:10px;line-height:12px;color:var(--muted);touch-action:none;min-height:42px}.lan-sliders input{grid-column:1/-1;width:100%;height:27px;margin:0;accent-color:var(--mint)}.lan-controls #lan-fire{justify-content:center;font-size:15px;padding:8px;min-height:0}.lan-swapped .lan-controls{grid-template-columns:var(--lan-fire-width,92px) minmax(0,1fr)}.lan-swapped .lan-controls #lan-fire{grid-column:1;grid-row:1}.lan-swapped .lan-controls .lan-sliders{grid-column:2;grid-row:1}.game-shell--touch .lan-game-notice{font-size:10px;line-height:18px}.game-shell--touch .lan-board-wrap>canvas{border-radius:var(--board-corner-radius,24px)}.game-shell--touch .lan-game-overlay{padding:8px;gap:6px}.game-shell--touch .lan-game-overlay strong{font-size:19px}.game-shell--touch .lan-game-overlay p,.game-shell--touch .lan-game-overlay small{font-size:10px;line-height:1.3}.game-shell--touch .lan-game-overlay .lan-actions{gap:5px;flex-wrap:nowrap}.game-shell--touch .lan-game-overlay button{font-size:11px;min-height:44px;padding:6px}
-.game-shell--touch.game-shell--immersive.lan-in-game .lan-content,.game-shell--touch.lan-watching.lan-in-game .lan-content{grid-template-rows:44px 44px minmax(0,1fr) 18px}.game-shell--immersive .lan-controls,.lan-watching .lan-controls{display:none!important}
 @media(max-height:650px){.lan-screen{gap:6px}.lan-body{gap:8px}.lan-body h1{font-size:24px}.lan-content{gap:8px}.lan-form-card{gap:12px}.lan-form-row{gap:10px}.lan-player{min-height:64px;padding:8px}.lan-choice{margin:0}.lan-choice button{min-height:70px;font-size:18px}.lan-history-row{padding:6px 10px}.lan-game-overlay{gap:6px}.lan-game-overlay strong{font-size:20px}.lan-confirm .lan-card p{font-size:12px;margin:0}.lan-rank-row{padding:8px}.lan-rank-row strong{font-size:16px}}
-@media(orientation:landscape) and (max-height:500px){.game-shell--touch.lan-screen{grid-template-rows:36px minmax(0,1fr);padding:4px 10px;gap:3px}.game-shell--touch .lan-top{height:36px}.game-shell--touch .lan-top button{min-height:32px}.game-shell--touch.lan-in-game .lan-content{grid-template-columns:minmax(0,1fr) 150px;grid-template-rows:38px 44px minmax(0,1fr);gap:4px 8px}.game-shell--touch .lan-match-hud{grid-column:1/-1}.game-shell--touch .lan-status-slot{grid-column:1/-1}.game-shell--touch .lan-game-layout{grid-column:1;grid-row:3;grid-template-columns:70px minmax(0,1fr);grid-template-rows:minmax(0,1fr)}.game-shell--touch .lan-own-column{grid-row:1;grid-column:2}.game-shell--touch .lan-opponents{grid-column:1;grid-row:1;grid-template-columns:1fr;grid-template-rows:repeat(3,44px);gap:3px}.game-shell--touch .lan-controls{grid-column:2;grid-row:3;grid-template-columns:1fr;grid-template-rows:88px 44px;gap:6px;align-content:center}.game-shell--touch .lan-controls #lan-fire{grid-row:2;grid-column:1;min-height:44px}.game-shell--touch .lan-sliders{grid-row:1;grid-column:1}.game-shell--touch .lan-game-notice{display:none}.game-shell--touch.game-shell--immersive.lan-in-game .lan-content,.game-shell--touch.lan-watching.lan-in-game .lan-content{grid-template-columns:1fr}.game-shell--touch.game-shell--immersive .lan-game-layout,.game-shell--touch.lan-watching .lan-game-layout{grid-column:1/-1}}
 
-#lan-screen .lan-match-hud>div:first-child{grid-template-columns:minmax(0,1fr) auto}
 .lan-observe-canvas{height:min(48dvh,calc(var(--app-height,100dvh) - 230px),360px)}
 
 .lan-address-share{display:grid;gap:6px;flex:none;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--panel)}
 .lan-address-copy-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:end}.lan-address-copy-row input{font-family:Consolas,monospace;user-select:all}.lan-address-copy-row button{padding:8px 12px;white-space:nowrap}.lan-address-share p{margin:0;font-size:11px;line-height:1.4}.lan-address-share [hidden]{display:none!important}
-.lan-next-preview{height:36px;flex:0 0 36px;display:flex;justify-content:flex-end;align-items:center;gap:10px;width:100%;max-width:560px;color:var(--mint)}.lan-next-preview small{font-size:11px}.lan-next-preview .dom-orb{width:28px;height:28px;box-shadow:inset 3px 3px 0 #ffffff24}.lan-next-preview .dom-orb:before{font-size:14px}.lan-next-preview .dom-orb:after{display:none}.lan-observe-canvas{border-radius:var(--board-corner-radius,24px)}
 @media(max-height:650px){.lan-lobby .lan-content{gap:6px}.lan-lobby .lan-body{gap:6px}.lan-lobby .lan-players{gap:6px}.lan-lobby .lan-player{min-height:50px;padding:6px 8px;gap:2px}.lan-lobby .lan-player strong{font-size:12px}.lan-lobby .lan-player small{font-size:10px}.lan-lobby .lan-address-share{padding:6px 8px;gap:4px}.lan-lobby .lan-content>.lan-muted{font-size:11px;line-height:1.4}.lan-lobby .lan-actions button{font-size:12px;padding:6px 8px}}
+
+/* Named match regions share one height budget. Preview artwork comes from next-orb-preview. */
+.lan-screen :is(.primary-button,.quiet-button){justify-content:center;text-align:center}
+.lan-body>h1,.lan-body h2,.lan-confirm h2{text-align:center}
+.lan-in-game .lan-body{max-width:1280px;grid-template-rows:minmax(0,1fr) auto;gap:4px}
+.lan-in-game .lan-body>h1{display:none}
+.lan-in-game .lan-content{display:grid;grid-template-rows:auto minmax(0,1fr) auto;gap:6px}
+.lan-match-hud{display:grid;grid-template-columns:minmax(0,1fr) 88px minmax(0,1fr);grid-template-areas:"self time actions" "self time network";gap:2px 12px;align-items:center;min-width:0}
+.lan-self-summary{grid-area:self;min-width:0;display:flex;flex-wrap:wrap;gap:1px 8px;align-items:baseline}
+#lan-self-name{flex:0 0 100%;min-width:0;font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#lan-self-score{font-size:26px;line-height:1.15;font-variant-numeric:tabular-nums}
+#lan-self-wave{font-size:11px;color:var(--muted);white-space:nowrap}
+.lan-time{grid-area:time;display:flex;flex-direction:column;align-items:center;gap:1px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.lan-time small{font-size:10px;line-height:1.3;color:var(--muted);white-space:nowrap}
+.lan-time strong{font-size:26px;line-height:1.1;white-space:nowrap}
+.lan-network{grid-area:network;justify-self:end;font-size:10px;line-height:1.3;color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
+.lan-hud-actions{grid-area:actions;display:flex;gap:6px;justify-self:end;min-width:0}
+.lan-hud-actions button{padding:6px 12px;min-width:52px;font-size:12px}
+.lan-play-space{display:grid;grid-template-columns:minmax(0,1fr) 210px;grid-template-rows:auto minmax(0,1fr);gap:6px 12px;min-height:0;min-width:0}
+.lan-status-slot{grid-column:1/-1;grid-row:1;min-width:0;min-height:0;align-self:start}
+.lan-attack-bar{display:flex;justify-content:center;align-items:center;flex-wrap:wrap;gap:2px 14px;min-height:22px;font-size:12px;line-height:1.5;color:var(--mint);font-variant-numeric:tabular-nums}
+.lan-attack-bar>span{white-space:nowrap}
+.lan-attack-warning{color:var(--gold)}
+.lan-status-slot [hidden]{display:none!important}
+#lan-pause-request{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 12px;align-items:center;padding:6px 8px;border:1px solid var(--line);border-radius:10px;background:var(--panel)}
+#lan-request-message{font-size:12px;line-height:1.4;color:var(--gold);overflow-wrap:anywhere;white-space:normal;text-align:center}
+#lan-pause-request .lan-actions{flex-wrap:nowrap;gap:6px}
+#lan-pause-request button{min-height:44px;padding:6px 10px;font-size:12px;white-space:normal}
+.lan-game-layout{display:contents}
+.lan-own-column{grid-column:1;grid-row:2;min-height:0;min-width:0;display:flex;justify-content:center;align-items:flex-start}
+.lan-board-wrap{position:relative;flex:none;min-height:0;max-height:100%;max-width:100%;aspect-ratio:640/760;width:min(100%,560px)}
+.lan-board-wrap>canvas{display:block;width:100%;height:100%;border-radius:var(--board-corner-radius,24px);touch-action:none}
+.lan-side{grid-column:2;grid-row:2;display:flex;flex-direction:column;gap:8px;min-width:0;min-height:0}
+.lan-preview-slot{flex:none;display:flex;align-items:center;justify-content:center;gap:6px;min-width:0}
+.lan-preview-slot>.orb-preview-card{min-width:0;flex:1}
+#lan-watch-self{flex:none;max-width:76px;padding:4px 6px;font-size:11px;white-space:normal}
+.lan-opponents{min-width:0;min-height:0;display:grid;grid-template-columns:minmax(0,1fr);align-content:start;gap:6px}
+.lan-opponent{display:grid;grid-template-columns:52px minmax(0,1fr);align-items:center;gap:8px;padding:6px;background:var(--panel);color:var(--cream);border:1px solid var(--line);border-radius:9px;min-width:0;text-align:left}
+.lan-opponent[aria-pressed=true]{border-color:var(--mint);background:#63d7bd12}
+.lan-opponent canvas{display:block;width:52px;height:61.75px;border-radius:6px}
+.lan-opponent-info{display:grid;min-width:0;gap:3px}
+.lan-opponent-info>strong{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lan-opponent-meta{display:flex;flex-wrap:wrap;gap:2px 8px;min-width:0}
+.lan-opponent-meta small{font-size:10px;color:var(--muted);white-space:nowrap}
+.lan-controls{display:none;min-width:0;min-height:0}
+.lan-game-notice{margin:0;font-size:11px;line-height:18px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lan-observe-canvas{border-radius:var(--board-corner-radius,24px)}
+@media(max-width:900px){
+ .lan-screen{padding:10px 14px;gap:8px}.lan-body{gap:10px}.lan-top .brand-name{font-size:14px}.lan-label{font-size:10px;padding-left:7px;margin-left:7px}
+ .lan-play-space{grid-template-columns:minmax(0,1fr) 164px;gap:6px 8px}.lan-opponent{grid-template-columns:40px minmax(0,1fr);gap:6px}.lan-opponent canvas{width:40px;height:47.5px}
+}
+.lan-screen.game-shell--touch{padding:max(6px,var(--safe-area-top,env(safe-area-inset-top))) max(12px,var(--safe-area-right,env(safe-area-inset-right))) max(6px,var(--safe-area-bottom,env(safe-area-inset-bottom))) max(12px,var(--safe-area-left,env(safe-area-inset-left)));gap:6px}
+.lan-screen.game-shell--touch .lan-body{max-width:650px}
+.game-shell--touch .lan-match-hud{grid-template-columns:minmax(0,1fr) 72px 92px;gap:2px 6px}
+.game-shell--touch #lan-self-name{font-size:10px}.game-shell--touch #lan-self-score{font-size:clamp(15px,4.5vw,21px)}.game-shell--touch #lan-self-wave{font-size:10px}
+.game-shell--touch .lan-time strong{font-size:23px}.game-shell--touch .lan-time small{font-size:10px}
+.game-shell--touch .lan-hud-actions{gap:4px}.game-shell--touch .lan-hud-actions button{min-width:44px;padding:5px;font-size:11px}
+.game-shell--touch .lan-network{font-size:10px}
+.game-shell--touch .lan-play-space{grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto auto minmax(0,1fr) 88px;gap:4px}
+.game-shell--touch .lan-status-slot{grid-column:1;grid-row:1}
+.game-shell--touch .lan-attack-bar{font-size:10px;gap:2px 10px;min-height:20px}
+.game-shell--touch .lan-side{display:contents}
+.game-shell--touch .lan-opponents{grid-column:1;grid-row:2;grid-template-columns:repeat(var(--lan-opponent-count,1),minmax(0,1fr));gap:4px}
+.game-shell--touch .lan-opponent{grid-template-columns:30px minmax(0,1fr);gap:5px;padding:4px;border-radius:7px}
+.game-shell--touch .lan-opponent canvas{width:30px;height:35.625px}
+.game-shell--touch .lan-opponent-info{gap:1px}.game-shell--touch .lan-opponent-info>strong{font-size:10px}
+.game-shell--touch .lan-opponent-meta{flex-direction:column;gap:0}.game-shell--touch .lan-opponent-meta small{font-size:9px;line-height:1.25}
+.game-shell--touch .lan-preview-slot{grid-column:1;grid-row:3;justify-content:flex-end;min-width:0}
+.game-shell--touch .lan-preview-slot>.orb-preview-card{flex:0 1 auto}
+.game-shell--touch .lan-own-column{grid-column:1;grid-row:4}
+.game-shell--touch .lan-controls{grid-column:1;grid-row:5;display:grid;grid-template-columns:minmax(0,1fr) var(--lan-fire-width,92px);gap:10px}
+.game-shell--touch .lan-controls>#lan-turn-left,.game-shell--touch .lan-controls>#lan-turn-right{display:none}
+.lan-sliders{display:grid;grid-template-rows:1fr 1fr;gap:4px;min-width:0}
+.lan-sliders label{border:1px solid var(--line);background:var(--panel);border-radius:8px;padding:1px 8px;display:grid;grid-template-columns:minmax(0,1fr) auto;font-size:10px;line-height:12px;color:var(--muted);touch-action:none;min-height:42px}
+.lan-sliders input{grid-column:1/-1;width:100%;height:27px;margin:0;accent-color:var(--mint)}
+.lan-controls #lan-fire{justify-content:center;font-size:15px;padding:8px;min-height:44px}
+.lan-swapped .lan-controls{grid-template-columns:var(--lan-fire-width,92px) minmax(0,1fr)}
+.lan-swapped .lan-controls #lan-fire{grid-column:1;grid-row:1}.lan-swapped .lan-controls .lan-sliders{grid-column:2;grid-row:1}
+.game-shell--touch .lan-game-notice{font-size:10px;line-height:16px}
+.game-shell--touch .lan-game-overlay{padding:8px;gap:6px}.game-shell--touch .lan-game-overlay strong{font-size:19px}.game-shell--touch .lan-game-overlay p,.game-shell--touch .lan-game-overlay small{font-size:10px;line-height:1.3}.game-shell--touch .lan-game-overlay .lan-actions{gap:5px;flex-wrap:wrap}.game-shell--touch .lan-game-overlay button{font-size:11px;min-height:44px;padding:6px}
+.game-shell--touch.game-shell--immersive .lan-play-space,.game-shell--touch.lan-watching .lan-play-space{grid-template-rows:auto auto auto minmax(0,1fr)}
+.game-shell--immersive .lan-controls,.lan-watching .lan-controls{display:none!important}
+@media(max-width:600px){
+ #lan-pause-request{grid-template-columns:minmax(0,1fr)}
+ #lan-pause-request .lan-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%}
+ #lan-pause-request .lan-actions>button:only-child{grid-column:1/-1}
+}
+@media(max-height:450px){
+ .game-shell--desktop .lan-opponent{grid-template-columns:32px minmax(0,1fr);padding:4px;gap:6px}
+ .game-shell--desktop .lan-opponent canvas{width:32px;height:38px}
+}
+@media(orientation:landscape) and (max-height:500px){
+ .game-shell--touch.lan-screen{padding:max(4px,var(--safe-area-top,0px)) max(10px,var(--safe-area-right,0px)) max(4px,var(--safe-area-bottom,0px)) max(10px,var(--safe-area-left,0px));gap:4px}
+ .lan-screen.game-shell--touch .lan-body{max-width:none}
+ .game-shell--touch .lan-play-space{grid-template-columns:minmax(118px,148px) minmax(0,1fr) 140px;grid-template-rows:auto minmax(0,1fr);gap:4px 8px}
+ .game-shell--touch .lan-status-slot{grid-column:2;grid-row:1}
+ .game-shell--touch .lan-own-column{grid-column:2;grid-row:2}
+ .game-shell--touch .lan-side{display:flex;grid-column:3;grid-row:1/-1;gap:4px}
+ .game-shell--touch .lan-preview-slot{flex:none;justify-content:center}
+ .game-shell--touch .lan-opponents{grid-template-columns:minmax(0,1fr);gap:4px}
+ .game-shell--touch .lan-opponent{grid-template-columns:30px minmax(0,1fr);min-height:44px;padding:3px;gap:4px}
+ .game-shell--touch .lan-opponent-meta{flex-direction:row;gap:0 4px}
+ .game-shell--touch .lan-controls{grid-column:1;grid-row:1/-1;grid-template-columns:minmax(0,1fr);grid-template-rows:88px 44px;gap:6px;align-content:center}
+ .game-shell--touch .lan-controls #lan-fire{grid-row:2;grid-column:1}.game-shell--touch .lan-controls .lan-sliders{grid-row:1;grid-column:1}
+ .game-shell--touch .lan-game-notice{display:none}
+ .game-shell--touch.game-shell--immersive .lan-play-space,.game-shell--touch.lan-watching .lan-play-space{grid-template-columns:minmax(0,1fr) 176px;grid-template-rows:auto minmax(0,1fr)}
+ .game-shell--touch.game-shell--immersive .lan-own-column,.game-shell--touch.lan-watching .lan-own-column{grid-column:1}
+ .game-shell--touch.game-shell--immersive .lan-status-slot,.game-shell--touch.lan-watching .lan-status-slot{grid-column:1}
+ .game-shell--touch.game-shell--immersive .lan-side,.game-shell--touch.lan-watching .lan-side{grid-column:2}
+}
+@media(orientation:landscape) and (max-height:500px) and (min-width:480px){
+ .game-shell--touch .lan-match-hud{grid-template-columns:minmax(0,1fr) 72px minmax(0,1fr);grid-template-areas:"self time actions"}
+ .game-shell--touch .lan-network{grid-area:actions;justify-self:start}
+}

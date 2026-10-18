@@ -73,16 +73,25 @@ export function loadHistory(): HistoryData {
     return cachedData = { recent, top: ranked([...new Map(candidates.map(r => [r.id,r])).values()]) };
   } catch { return { recent: [], top: [] }; }
 }
-export function recordRound(state: GameState, abandoned = false): void {
-  if (state.mode === 'campaign') return;
-  if (!abandoned && state.status === 'READY') return;
-  if (!state.sessionId || (abandoned && state.step === 0)) return;
+export function recordRound(state: GameState, abandoned = false): boolean {
+  if (state.mode === 'campaign') return false;
+  if (!abandoned && state.status === 'READY') return false;
+  if (!state.sessionId || (abandoned && state.step === 0)) return false;
+  const history = loadHistory();
+  const previous = [...history.recent, ...history.top].find(record => record.id === state.sessionId);
+  // A committed result is immutable. Retrying persistence must not change its rank or finish time.
+  if (previous && (previous.result !== 'ABANDONED' || abandoned)) return true;
   const multiplier = scoreMultiplier(state.difficultyId);
   const record: RoundRecord = { id: state.sessionId, score: Math.round(state.score * multiplier), rawScore: state.score, multiplier,
     mode: state.mode ?? 'endless', durationMs: state.durationMs, difficulty: state.difficultyId, rulesVersion: state.rulesVersion,
     startedAt: state.startedAt ?? Date.now(), endedAt: Date.now(), elapsedMs: state.elapsedMs ?? 0,
     shots: state.step, result: abandoned ? 'ABANDONED' : state.endReason === 'timeout' ? 'TIMEOUT' : state.endReason === 'settled' ? 'SETTLED' : state.status === 'WON' ? 'WON' : 'LOST' };
-  writeStorage(KEY, JSON.stringify(mergeRecord(loadHistory(), record)));
+  return writeStorage(KEY, JSON.stringify(mergeRecord(history, record)));
+}
+export function hasCompletedRound(state: Pick<GameState, 'mode' | 'sessionId'>): boolean {
+  if (state.mode === 'campaign' || !state.sessionId) return false;
+  const history = loadHistory();
+  return [...history.recent, ...history.top].some(record => record.id === state.sessionId && record.result !== 'ABANDONED');
 }
 export function formatDuration(ms: number): string {
   const seconds = Math.floor(ms / 1000);

@@ -25,11 +25,12 @@ export function loadLegacyProgress(): CampaignProgress {
 export function isUnlocked(id: number, progress = loadProgress()): boolean {
   return CAMPAIGN_LEVELS.some(level => level.id === id) && (id === 1 || !!progress[String(id - 1)] || (id <= 13 && Object.keys(loadLegacyProgress()).some(key => Number(key) >= id - 1)));
 }
-export function recordCampaign(state: GameState): void {
+export function recordCampaign(state: GameState): boolean {
   const stars = campaignStars(state);
-  if (!stars) return;
+  // Losses and unfinished boards have no new campaign progress to commit.
+  if (!stars) return true;
   const progress = loadProgress(), key = String(state.levelId), previous = progress[key];
   progress[key] = { stars: Math.max(stars, previous?.stars ?? 0), shots: Math.min(state.step, previous?.shots ?? Infinity),
     elapsedMs: Math.min(state.elapsedMs ?? 0, previous?.elapsedMs ?? Infinity) };
-  writeStorage(CAMPAIGN_PROGRESS_KEY, JSON.stringify(progress));
+  return writeStorage(CAMPAIGN_PROGRESS_KEY, JSON.stringify(progress));
 }

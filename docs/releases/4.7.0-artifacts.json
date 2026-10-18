@@ -1,0 +1,19 @@
+{
+  "version": "4.7.0",
+  "title": "界面排版与关闭返回修复（测试版）",
+  "prerelease": true,
+  "artifacts": [
+    {
+      "platform": "Android",
+      "file": "Orbbound-4.7.0-Android.apk",
+      "bytes": 1381151,
+      "sha256": "50b3826a767ba5e44cad185c421b808f0ebdf555740c3b875f19a60f13bc8489"
+    },
+    {
+      "platform": "Windows",
+      "file": "Orbbound-Windows-4.7.0-x64.zip",
+      "bytes": 723649,
+      "sha256": "2ddf156b064dfaa2ffb928fb98f0d78f26693e6d9ab984d3b95c40eee93040ab"
+    }
+  ]
+}

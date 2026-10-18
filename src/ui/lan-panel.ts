@@ -8,6 +8,7 @@ import { escapeText } from './progress-feedback';
 import { bindModalFocus } from './modal-focus';
 import { bindLanBoard } from './lan-board';
 import { roomEndpoints, copyRoomAddress } from './lan-address';
+import { lanMatchLayoutMarkup, lanNetworkLabel, lanStatusSummary } from './lan-match-layout';
 import { gameAudio } from '../game/audio';
 import { usesButtonControls } from '../game/input-mode';
 import { shortcutAction } from '../game/shortcuts';
@@ -258,9 +259,10 @@ export function installLan(openHome: () => void): { isActive: () => boolean; bac
         }
       } else if (nextKey.startsWith('game:')) {
         const others = view.snapshot!.playerIds.filter(id => id !== view.selfId);
-        base(modeName(view.snapshot!.mode), `<div class="lan-match-hud"><div><span id="lan-self-name"></span><strong id="lan-self-score">0</strong><small id="lan-self-wave"></small></div><div class="lan-clock"><small>剩余时间</small><strong id="lan-clock">3:00</strong><span id="lan-network"></span></div><div class="lan-hud-actions">${button('lan-pause', '暂停')}${button('lan-settings', '设置')}</div></div><div class="lan-status-slot"><p id="lan-attack-bar" class="lan-attack-bar"></p><div id="lan-pause-request" hidden></div></div><div class="lan-game-layout"><div class="lan-own-column"><div class="lan-next-preview"><small>下一球</small><div id="lan-next-orb-preview" class="dom-orb" aria-label="下一球"></div></div><div class="lan-board-wrap"><canvas id="lan-self-board" width="640" height="760" aria-label="自己的联机棋盘"></canvas><div id="lan-game-overlay" class="lan-game-overlay" hidden></div></div></div><aside class="lan-opponents" aria-label="其他选手">${others.map((id, index) => `<button class="lan-opponent" data-watch="${escape(id)}" aria-label="查看${escape(view.players.find(p => p.id === id)?.name ?? id)}的棋盘"><canvas ${index === 0 ? 'id="lan-other-board"' : ''} data-lan-player-board="${escape(id)}" width="128" height="152" aria-label="对方棋盘缩略图"></canvas><span><strong data-player-name="${escape(id)}"></strong><small data-player-score="${escape(id)}"></small><small data-player-state="${escape(id)}"></small></span></button>`).join('')}</aside></div><div class="lan-controls"><button id="lan-turn-left" class="quiet-button" aria-label="向左快转30度">↶ 30°</button><div class="lan-sliders"><label>瞄准 <output id="lan-angle-value">0.0°</output><input id="lan-angle" type="range" min="-78" max="78" step="0.1" value="0" aria-label="瞄准角度"></label><label>微调<input id="lan-fine" type="range" min="-100" max="100" step="1" value="0" aria-label="按住微调，松开停止"></label></div><button id="lan-turn-right" class="quiet-button" aria-label="向右快转30度">30° ↷</button><button id="lan-fire" class="primary-button">发射 ↑</button></div><p id="lan-notice" class="lan-game-notice" role="status"></p>`, true);
+        base(modeName(view.snapshot!.mode), lanMatchLayoutMarkup(others.map(id => ({ id, name: view.players.find(p => p.id === id)?.name ?? id }))), true);
         q('#lan-pause').onclick = () => session!.requestPause('pause');
         q('#lan-settings').onclick = () => { if (view.phase === 'paused') openSettings(); else session!.requestPause('settings'); };
+        q('#lan-watch-self').onclick = () => { delete root.dataset.watchPlayer; render(); };
         root.querySelectorAll<HTMLElement>('[data-watch]').forEach(item => { item.onclick = () => {
           if (!view.snapshot!.players[view.selfId].sealed) { openObservation(item.dataset.watch!); return; }
           root.dataset.watchPlayer = item.dataset.watch; render();
@@ -370,12 +372,15 @@ export function installLan(openHome: () => void): { isActive: () => boolean; bac
     root.classList.toggle('lan-watching', self.sealed); root.classList.toggle('lan-battle', snapshot.mode === 'battle');
     text('#lan-self-name', `${view.players.find(p => p.id === view.selfId)?.name ?? '你'} · ${self.sealed ? '观战' : '你'}`);
     text('#lan-self-score', self.score.toLocaleString('zh-CN')); text('#lan-self-wave', self.sealed ? '已结束操作' : `第 ${self.waveIndex + 1} 波`);
-    text('#lan-clock', formatLanDuration(Math.max(0, snapshot.durationMs - session!.displayElapsed()))); text('#lan-network', view.rtt ? `${view.rtt} ms` : '局域网');
+    text('#lan-clock', formatLanDuration(Math.max(0, snapshot.durationMs - session!.displayElapsed()))); text('#lan-network', lanNetworkLabel(view.rtt));
+    q('#lan-watch-self').hidden = !self.sealed || !root.dataset.watchPlayer;
+    root.querySelectorAll<HTMLElement>('[data-watch]').forEach(item => item.setAttribute('aria-pressed', String(self.sealed && item.dataset.watch === root.dataset.watchPlayer)));
     for (const id of snapshot.playerIds.filter(id => id !== view.selfId)) {
-      const p = snapshot.players[id]; text(`[data-player-name="${id}"]`, view.players.find(item => item.id === id)?.name ?? '选手'); text(`[data-player-score="${id}"]`, `${p.score} 分`); text(`[data-player-state="${id}"]`, p.forfeited ? '弃权' : p.sealed ? snapshot.mode === 'score' ? '已封盘' : '已淘汰' : `第 ${p.waveIndex + 1} 波`);
+      const p = snapshot.players[id], peer = view.players.find(item => item.id === id); text(`[data-player-name="${id}"]`, peer?.name ?? '选手'); text(`[data-player-score="${id}"]`, `${p.score} 分`); text(`[data-player-state="${id}"]`, p.forfeited ? '弃权' : p.sealed ? snapshot.mode === 'score' ? '已封盘' : '已淘汰' : peer?.connected === false ? '掉线' : `第 ${p.waveIndex + 1} 波`);
     }
-    const battle = self.battle;
-    text('#lan-attack-bar', battle ? `来袭 ${battle.incomingBalls}/${battle.threshold} 球 · 排队 ${battle.pendingAttacks.length} 行 · 防御 ${battle.defenseRemainder}/12${battle.pendingAttacks[0] ? ` · ${Math.max(0, Math.ceil((battle.pendingAttacks[0].notBeforeAtMs - snapshot.startedAtMs - session!.displayElapsed()) / 1000))} 秒预告` : ''}` : `自然压力 ${self.state.danger}% · ${snapshot.playerIds.length} 人同图竞分`);
+    const status = lanStatusSummary(self, snapshot.playerIds.length, snapshot.startedAtMs + session!.displayElapsed());
+    text('#lan-status-progress', status.progress); text('#lan-status-defense', status.defense); text('#lan-status-queue', status.queue); text('#lan-attack-warning', status.warning);
+    q('#lan-status-defense').hidden = !status.defense; q('#lan-attack-warning').hidden = !status.warning;
     const outcome = view.pauseOutcome && (view.pauseOutcome.status !== 'approved' || view.phase === 'paused') ? view.pauseOutcome.message : '';
     text('#lan-notice', view.notice || outcome || (self.sealed ? '点击其他选手切换观战。' : usesButtonControls() ? loadSettings().immersiveMode ? '按住瞄准，松手发射。' : '方向与微调；支持双指操作。' : '鼠标左右键松开发射 · 沿用自定义快捷键'));
     if (observeId && q<HTMLCanvasElement>('#lan-observe-board')) {
@@ -385,6 +390,7 @@ export function installLan(openHome: () => void): { isActive: () => boolean; bac
     q<HTMLButtonElement>('#lan-pause').disabled = view.phase !== 'playing' || !!view.pauseRequest || self.sealed;
     q<HTMLButtonElement>('#lan-settings').disabled = view.forceCloseSettings || !['paused', 'playing'].includes(view.phase) || view.phase === 'playing' && (!!view.pauseRequest || self.sealed);
     const request = view.pauseRequest, requestBox = q('#lan-pause-request'); requestBox.hidden = !request; q('#lan-attack-bar').hidden = !!request;
+    root.classList.toggle('lan-voting', !!request);
     if (request) {
       if (requestKey !== request.requestId) {
         requestKey = request.requestId;

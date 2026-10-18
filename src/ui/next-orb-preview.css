@@ -1,0 +1,43 @@
+.orb-preview-card {
+  --orb-preview-size:36px; --orb-preview-symbol-size:18px; --orb-preview-box-size:48px; --orb-preview-label-size:9px;
+  display:flex; align-items:center; justify-content:space-between; gap:10px; padding:12px;
+  border:1px solid rgba(152,161,184,.18); border-radius:18px; background:rgba(21,30,52,.78);
+  min-width:0; flex:none;
+}
+.orb-preview-card .card-kicker { margin:0; color:var(--mint); font-size:var(--orb-preview-label-size); font-weight:800; white-space:nowrap; }
+.orb-preview-card .card-kicker::after { content:none; }
+.orb-preview-card .next-preview {
+  display:grid; place-items:center; width:var(--orb-preview-box-size); height:var(--orb-preview-box-size);
+  flex:0 0 var(--orb-preview-box-size); margin:0; border-radius:16px;
+  background:radial-gradient(circle at center,rgba(99,215,189,.13),transparent 70%),#111a2d;
+}
+.orb-preview-card .dom-orb {
+  width:var(--orb-preview-size); height:var(--orb-preview-size); position:relative; border-radius:50%; background:var(--gold);
+  box-shadow:2px 5px 0 rgba(0,0,0,.25),inset 6px 6px 0 rgba(255,255,255,.14); transition:background 180ms ease;
+}
+.orb-preview-card .dom-orb::before {
+  content:attr(data-symbol); position:absolute; inset:0; display:grid; place-items:center;
+  color:var(--orb-ink,#493521); font-size:var(--orb-preview-symbol-size); font-weight:800;
+}
+.orb-preview-card .dom-orb::after {
+  content:""; position:absolute; width:62.5%; height:10.417%; top:16.667%; left:18.75%;
+  border-radius:50%; background:rgba(255,255,255,.2); transform:rotate(-20deg);
+}
+.orb-preview-card p { display:none; }
+.mobile-ui .orb-preview-card {
+  --orb-preview-size:40px; --orb-preview-symbol-size:18px; --orb-preview-box-size:44px; --orb-preview-label-size:10px;
+  justify-content:center; gap:6px; padding:0; margin:0; border:0; background:transparent; box-shadow:none;
+}
+.mobile-ui .orb-preview-card .next-preview { background:transparent; }
+.mobile-ui .orb-preview-card .dom-orb::after { display:none; }
+@media(max-height:450px) {
+  .desktop-ui .orb-preview-card {
+    --orb-preview-size:26px; --orb-preview-symbol-size:16px; --orb-preview-box-size:28px;
+    padding:6px 10px;
+  }
+}
+@media(max-height:700px) and (orientation:portrait) {
+  .mobile-ui:not(.immersive-mode) .orb-preview-card {
+    --orb-preview-size:30px; --orb-preview-symbol-size:17px; --orb-preview-box-size:32px;
+  }
+}
