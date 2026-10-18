@@ -13,6 +13,7 @@ import { shortcutAction } from '../game/shortcuts';
 import { loadSettings } from '../storage/storage';
 import { subscribeSettings } from '../storage/settings-store';
 import { syncGameShell } from './game-shell';
+import { getKeyboardState, subscribeKeyboardState } from './keyboard-state';
 import './lan.css';
 
 const escape = (value: unknown) => escapeText(String(value ?? ''));
@@ -76,7 +77,7 @@ export function installLan(openHome: () => void): { isActive: () => boolean; bac
   }
   const startSession = () => { session = new LanSession(simulated ? new MockLanTransport() : new NativeLanTransport()); unsubscribe = session.subscribe(render); };
   const open = () => {
-    if (!root.hidden || closing) return;
+    if (!root.hidden) return;
     generation++; busy = false; selectedEndpoints.clear(); form.name = nickname();
     openHome(); document.querySelector<HTMLElement>('#home-screen')!.hidden = true;
     root.hidden = false; document.documentElement.classList.add('lan-active');
@@ -93,7 +94,6 @@ export function installLan(openHome: () => void): { isActive: () => boolean; bac
         mode: snapshot.mode, playerCount: snapshot.playerIds.length, protocolVersion: LAN_PROTOCOL_VERSION, reason: self.sealed ? 'left-spectating' : 'left-active' });
     }
     session = undefined; root.hidden = true; document.documentElement.classList.remove('lan-active');
-    entryButton.disabled = true; entryButton.setAttribute('aria-busy', 'true');
     let closeResult = '';
     const captureCloseResult = previous?.subscribe(() => {
       const snapshot = previous.view.snapshot, result = snapshot?.result;
@@ -102,9 +102,9 @@ export function installLan(openHome: () => void): { isActive: () => boolean; bac
       saveLanRecord({ resultId: result.resultId, matchId: result.matchId, endedAt: Date.now(), difficultyId: snapshot.difficultyId,
         durationMs: snapshot.durationMs, rulesHash: snapshot.rulesHash, selfId: previous.view.selfId, names: Object.fromEntries(previous.view.players.map(p => [p.id, p.name])), mode: snapshot.mode, protocolVersion: LAN_PROTOCOL_VERSION, result });
     });
-    const cleanup = Promise.resolve().then(() => previous?.close()); closing = cleanup;
+    const cleanup = previous?.close() ?? Promise.resolve(); closing = cleanup;
     gameAudio.setPressure(0); gameAudio.setScene('menu'); openHome(); entryButton.focus();
-    try { await cleanup; } finally { captureCloseResult?.(); if (closing === cleanup) { closing = undefined; entryButton.disabled = false; entryButton.removeAttribute('aria-busy'); } }
+    try { await cleanup; } finally { captureCloseResult?.(); if (closing === cleanup) closing = undefined; }
   };
   const leave = () => { void exit().catch(() => {}); };
   const confirmLeave = () => {
@@ -358,14 +358,15 @@ export function installLan(openHome: () => void): { isActive: () => boolean; bac
   const resize = () => {
     if (root.hidden) return;
     const focused = document.activeElement as HTMLInputElement | null;
-    if (window.visualViewport && window.innerHeight - window.visualViewport.height > 120 && focused?.tagName === 'INPUT' && !focused.closest('#modal-root') && focused.closest('#lan-screen') && !keyboardField) {
+    if (getKeyboardState().visible && focused?.tagName === 'INPUT' && !focused.closest('#modal-root') && focused.closest('#lan-screen') && !keyboardField) {
       const label = focused.closest<HTMLElement>('.lan-field');
       if (label) { const marker = document.createComment('field'); label.replaceWith(marker); const overlay = document.createElement('div'); overlay.className = 'lan-field-editor'; overlay.append(label); const done = document.createElement('button'); done.className = 'primary-button'; done.textContent = '完成输入'; done.onclick = closeKeyboard; overlay.append(done); root.append(overlay); root.classList.add('lan-editing'); keyboardField = { label, marker, overlay }; focused.focus(); }
-    } else if (keyboardField && (!window.visualViewport || window.innerHeight - window.visualViewport.height < 120)) closeKeyboard();
+    } else if (keyboardField && !getKeyboardState().visible) closeKeyboard();
     if (!keyboardField) render();
   };
   entryButton.addEventListener('click', open);
   window.addEventListener('resize', resize); window.visualViewport?.addEventListener('resize', resize);
+  subscribeKeyboardState(resize);
   subscribeSettings(settings => { if (!root.hidden) syncGameShell(root, { touch: usesButtonControls(), immersive: settings.immersiveMode, mode: session?.view.snapshot?.mode ?? 'lan' }); });
   window.addEventListener('keydown', event => {
     if (root.hidden || event.defaultPrevented || event.repeat || settingsVisible || root.querySelector('.lan-confirm')) return;

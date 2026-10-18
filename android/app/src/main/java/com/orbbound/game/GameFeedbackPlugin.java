@@ -36,6 +36,8 @@ import org.json.JSONObject;
 public class GameFeedbackPlugin extends Plugin {
     private volatile Insets safeInsets = Insets.NONE;
     private volatile boolean insetsReady;
+    private volatile boolean keyboardReady, keyboardVisible;
+    private volatile int keyboardHeight;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService documents = Executors.newSingleThreadExecutor();
     private DisplayManager displayManager;
@@ -94,6 +96,7 @@ public class GameFeedbackPlugin extends Plugin {
     }
 
     public void updateInsets(Insets insets) {
+        if (insetsReady && safeInsets.equals(insets)) return;
         safeInsets = insets;
         insetsReady = true;
         notifyListeners("safeAreaChanged", insetData(), true);
@@ -103,6 +106,28 @@ public class GameFeedbackPlugin extends Plugin {
     public void getSafeArea(PluginCall call) {
         if (!insetsReady) main.post(() -> ViewCompat.requestApplyInsets(getActivity().findViewById(android.R.id.content)));
         call.resolve(insetData());
+    }
+
+    private JSObject keyboardData() {
+        return new JSObject().put("visible", keyboardVisible).put("height", keyboardHeight).put("ready", keyboardReady);
+    }
+
+    /** Read-only IME state. SystemBars remains the sole window-layout owner. */
+    public void updateKeyboardState(boolean visible, int height) {
+        int nextHeight = visible ? Math.max(0, height) : 0;
+        if (keyboardReady && keyboardVisible == visible && keyboardHeight == nextHeight) return;
+        keyboardVisible = visible;
+        keyboardHeight = nextHeight;
+        keyboardReady = true;
+        notifyListeners("keyboardStateChanged", keyboardData(), true);
+    }
+
+    @PluginMethod
+    public void getKeyboardState(PluginCall call) {
+        main.post(() -> {
+            if (!keyboardReady) ViewCompat.requestApplyInsets(getActivity().findViewById(android.R.id.content));
+            call.resolve(keyboardData());
+        });
     }
 
     @SuppressWarnings("deprecation")

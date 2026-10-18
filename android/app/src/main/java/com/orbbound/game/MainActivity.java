@@ -37,12 +37,20 @@ public class MainActivity extends BridgeActivity {
         WindowCompat.getInsetsController(getWindow(), content).setAppearanceLightStatusBars(false);
         WindowCompat.getInsetsController(getWindow(), content).setAppearanceLightNavigationBars(false);
         ViewCompat.setOnApplyWindowInsetsListener(content, (view, windowInsets) -> {
-            Insets safe = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars()
+            // SystemBars owns padding and CSS safe areas. Observe the original
+            // window state only; consuming it here breaks WebView recalculation.
+            WindowInsetsCompat rootInsets = ViewCompat.getRootWindowInsets(view);
+            WindowInsetsCompat observed = rootInsets != null ? rootInsets : windowInsets;
+            Insets safe = observed.getInsets(WindowInsetsCompat.Type.systemBars()
                 | WindowInsetsCompat.Type.displayCutout() | WindowInsetsCompat.Type.systemGestures());
-            view.setPadding(0, 0, 0, 0);
             com.getcapacitor.PluginHandle handle = getBridge().getPlugin("GameFeedback");
-            if (handle != null) ((GameFeedbackPlugin) handle.getInstance()).updateInsets(safe);
-            return WindowInsetsCompat.CONSUMED;
+            if (handle != null) {
+                GameFeedbackPlugin feedback = (GameFeedbackPlugin) handle.getInstance();
+                feedback.updateInsets(safe);
+                feedback.updateKeyboardState(observed.isVisible(WindowInsetsCompat.Type.ime()),
+                    observed.getInsets(WindowInsetsCompat.Type.ime()).bottom);
+            }
+            return windowInsets;
         });
         ViewCompat.requestApplyInsets(content);
     }

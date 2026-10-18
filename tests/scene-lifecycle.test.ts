@@ -5,6 +5,19 @@ import { createGameState } from '../src/core/engine';
 import { cellKey } from '../src/core/grid';
 import { createRound } from '../src/core/modes';
 import { createCampaign } from '../src/core/campaign';
+import { DEFAULT_SETTINGS } from '../src/storage/storage';
+
+it('can cancel or background an engine before Phaser has created its scene objects', () => {
+  const scene = new PlayScene();
+  const stopRotation = vi.fn();
+  Object.assign(scene, { stopRotation });
+  expect(() => {
+    scene.setSettings({ ...DEFAULT_SETTINGS, aimAssist: false });
+    scene.pauseGame(); scene.resumeGame(); scene.persistGame();
+  }).not.toThrow();
+  expect(stopRotation).not.toHaveBeenCalled();
+  expect(scene.ready).toBe(false);
+});
 
 it('campaign clock only counts READY decision time and cannot be settled for an unlock', () => {
   const scene = new PlayScene();

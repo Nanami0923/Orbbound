@@ -15,6 +15,7 @@ import { bindSteeringControl } from '../game/steering-control';
 import { shortcutAction } from '../game/shortcuts';
 import { loadSettings } from '../storage/storage';
 import { subscribeSettings } from '../storage/settings-store';
+import { settingsEffects, snapshotSettings } from './settings-effects';
 import { insideInputSurface, isFirePointerButton } from '../game/input-controller';
 import { syncGameShell } from './game-shell';
 import type { LanSession } from '../lan/session';
@@ -156,38 +157,54 @@ export function bindLanBoard(root: HTMLElement, session: LanSession): () => void
     const wrap = canvas.parentElement, available = wrap?.parentElement;
     if (wrap && available) {
       const space = available.getBoundingClientRect();
-      if (space.width > 0 && space.height > 0) wrap.style.width = `${Math.min(space.width, space.height * 640 / 760)}px`;
+      const width = Math.min(space.width, space.height * 640 / 760);
+      if (width > 0 && Math.abs((Number.parseFloat(wrap.style.width) || 0) - width) >= 0.5) wrap.style.width = `${width}px`;
     }
     const rect = canvas.getBoundingClientRect(), scale = settings.quality === 'auto' ? Math.min(2, devicePixelRatio || 1) : settings.quality;
-    if (rect.width > 0) { canvas.width = Math.max(1, Math.round(rect.width * scale)); canvas.height = Math.max(1, Math.round(rect.height * scale)); }
+    let changed = false;
+    const size = (target: HTMLCanvasElement, width: number, height: number) => {
+      if (width <= 0 || height <= 0) return;
+      const pixelsWide = Math.max(1, Math.round(width * scale)), pixelsHigh = Math.max(1, Math.round(height * scale));
+      if (target.width !== pixelsWide) { target.width = pixelsWide; changed = true; }
+      if (target.height !== pixelsHigh) { target.height = pixelsHigh; changed = true; }
+    };
+    size(canvas, rect.width, rect.height);
     for (const target of opponentCanvases()) {
       const otherRect = target.getBoundingClientRect();
-      if (otherRect.width > 0) { target.width = Math.max(1, Math.round(otherRect.width * scale)); target.height = Math.max(1, Math.round(otherRect.height * scale)); }
+      size(target, otherRect.width, otherRect.height);
     }
-    opponentRevisions.clear();
-    dirty = true;
+    if (changed) { opponentRevisions.clear(); dirty = true; }
   };
-  const observer = new ResizeObserver(resize); observer.observe(canvas); observer.observe(other);
+  let resizeFrame = 0;
+  const scheduleResize = () => {
+    if (resizeFrame) return;
+    resizeFrame = requestAnimationFrame(() => { resizeFrame = 0; resize(); });
+  };
+  const observer = new ResizeObserver(scheduleResize); observer.observe(canvas); observer.observe(other);
   if (canvas.parentElement?.parentElement) observer.observe(canvas.parentElement.parentElement);
   resize();
   if (root.classList) syncGameShell(root, { touch, immersive: settings.immersiveMode, mode: session.view.snapshot?.mode ?? 'score' });
+  let appliedSettings = snapshotSettings(settings);
   const unsubscribeSettings = subscribeSettings(value => {
-    resetInput(); animation = undefined; settings = value;
-    governor.setRequested(value.frameRate); budget.reset();
-    gameAudio.setMix(value.volume, value.musicVolume); gameAudio.setAdaptiveMusic(value.adaptiveMusic);
-    if (root.classList) {
+    const changed = settingsEffects(appliedSettings, value); appliedSettings = snapshotSettings(value);
+    if (changed.controls || changed.quality) { resetInput(); animation = undefined; }
+    settings = value;
+    if (changed.frameRate) { governor.setRequested(value.frameRate); budget.reset(); }
+    if (changed.audio) { gameAudio.setMix(value.volume, value.musicVolume); gameAudio.setAdaptiveMusic(value.adaptiveMusic); }
+    if (changed.layout && root.classList) {
       syncGameShell(root, { touch, immersive: value.immersiveMode, mode: session.view.snapshot?.mode ?? 'score' });
       root.classList.toggle('lan-swapped', value.controlsSwapped);
       root.style.setProperty('--lan-fire-width', `${value.fireSize}px`);
       root.style.setProperty('--lan-control-offset', `${value.controlOffset}px`);
     }
-    resize();
+    if (changed.quality || changed.layout) resize();
+    if (changed.visual) { dirty = true; opponentRevisions.clear(); }
   });
-  window.addEventListener('orbbound-performance-capabilities', event => { governor.setCapabilities((event as CustomEvent).detail); resize(); }, { signal: abort.signal });
+  window.addEventListener('orbbound-performance-capabilities', event => { governor.setCapabilities((event as CustomEvent).detail); scheduleResize(); }, { signal: abort.signal });
   const cachedCapabilities = (window as unknown as { __orbboundPerformanceCapabilities?: unknown }).__orbboundPerformanceCapabilities;
   if (cachedCapabilities) governor.setCapabilities(cachedCapabilities);
   window.dispatchEvent(new Event('orbbound-performance-request'));
-  window.addEventListener('resize', resize, { signal: abort.signal });
+  window.addEventListener('resize', scheduleResize, { signal: abort.signal });
   let previousPhase = session.view.phase;
   let previousInputActive = active();
   const unsubscribe = session.subscribe(() => {
@@ -261,5 +278,5 @@ export function bindLanBoard(root: HTMLElement, session: LanSession): () => void
     paintedFrames++; costs.push(Math.max(0, performance.now() - workStarted));
   };
   raf = requestAnimationFrame(frame);
-  return () => { resetInput(); presentation.reset(); gameAudio.setPressure(0); gameAudio.setScene('menu'); directControl.dispose(); fineControl.dispose(); abort.abort(); cancelAnimationFrame(raf); observer.disconnect(); unsubscribe(); unsubscribeSettings(); };
+  return () => { resetInput(); presentation.reset(); gameAudio.setPressure(0); gameAudio.setScene('menu'); directControl.dispose(); fineControl.dispose(); abort.abort(); cancelAnimationFrame(raf); cancelAnimationFrame(resizeFrame); observer.disconnect(); unsubscribe(); unsubscribeSettings(); };
 }

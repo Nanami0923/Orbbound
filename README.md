@@ -1,27 +1,27 @@
 # Orbbound
 
-Android 与 Windows 最新测试版均为 **4.4.0**，正式版保留 **4.3.0**。本次支持两种玩法的 2–4 人局域网联机，修复暂停申请并接入局内设置，调整多人对战规则，统一首页、分页和双端操作。保留单机模式、30 个高难度关卡与旧存档。
+Android 与 Windows 最新测试版均为 **4.5.0**，正式版保留 **4.3.0**。本次恢复 Android 首页演示，修复 Windows 模式卡圆角裁切和过长菜单，重做语义分页，并处理已定位的联机等待、设置重绘和加载竞态。保留单机模式、30 个高难度关卡、2–4 人局域网联机与旧存档。
 
 ## 交付位置
 
 | 平台 | 最新版本 | 交付目录 | 主要文件 |
 | --- | --- | --- | --- |
-| Android | 4.4.0 测试版 | [Android 交付目录](最终交付/Android/Orbbound-4.4.0/) | APK、SHA-256、更新说明 |
-| Windows | 4.4.0 测试版 | [Windows 交付目录](最终交付/Windows/Orbbound-Windows-4.4.0/) | 轻量 ZIP、SHA-256、完整 Orbbound 运行目录 |
+| Android | 4.5.0 测试版 | [Android 交付目录](最终交付/Android/Orbbound-4.5.0/) | APK、SHA-256、更新说明 |
+| Windows | 4.5.0 测试版 | [Windows 交付目录](最终交付/Windows/Orbbound-Windows-4.5.0/) | 轻量 ZIP、SHA-256、完整 Orbbound 运行目录 |
 
 所有旧版本保留在对应平台目录内。Windows 1.0.0 的两个不同本地构建按原来源分别保存，不将其视作同一文件。
 
-测试版下载：[Windows 4.4.0 ZIP](https://github.com/Nanami0923/Orbbound/releases/download/v4.4.0/Orbbound-Windows-4.4.0-x64.zip) · [Android 4.4.0 APK](https://github.com/Nanami0923/Orbbound/releases/download/v4.4.0/Orbbound-4.4.0-Android.apk) · [4.4.0 发布页](https://github.com/Nanami0923/Orbbound/releases/tag/v4.4.0)。[4.3.0 正式版](https://github.com/Nanami0923/Orbbound/releases/tag/v4.3.0)仍可下载。
+测试版下载：[Windows 4.5.0 ZIP](https://github.com/Nanami0923/Orbbound/releases/download/v4.5.0/Orbbound-Windows-4.5.0-x64.zip) · [Android 4.5.0 APK](https://github.com/Nanami0923/Orbbound/releases/download/v4.5.0/Orbbound-4.5.0-Android.apk) · [4.5.0 发布页](https://github.com/Nanami0923/Orbbound/releases/tag/v4.5.0)。[4.3.0 正式版](https://github.com/Nanami0923/Orbbound/releases/tag/v4.3.0)仍可下载。
 
-[4.4.0 更新说明](docs/releases/4.4.0-notes.md) · [验证记录](docs/releases/4.4.0-validation.md) · [本次实现方案](docs/design/4.4.0双端四人联机与界面优化方案.md)
+[4.5.0 更新说明](docs/releases/4.5.0-notes.md) · [验证记录](docs/releases/4.5.0-validation.md) · [本次实施方案](docs/design/4.5.0双端布局与稳定性修复方案.md)
 
 Windows 请完整解压 ZIP 后运行 `Orbbound/Orbbound.exe`。轻量包不包含运行环境，使用本机 .NET Framework 4.8 和共享 WebView2 Evergreen Runtime；具备环境后可离线游玩。缺少 WebView2 时程序提供[微软官方补装入口](https://developer.microsoft.com/en-us/microsoft-edge/webview2#download-section)，本次发布不上传环境安装包。
 
-本版联机需所有人安装 **4.4.0**，连接同一路由器或可互通热点，在首页选择「局域网联机」。房间容量可选 2 / 3 / 4，至少两人且全员准备即可开局；同图竞分和连锁对战均支持四人。协议升级到 v3，不能与 4.3.x 混用。扫描后可在房间卡片「填入地址」或「加入」；找不到时输入房主 IPv4 并选择「按地址检索」，也可直接输入完整地址与端口。Windows 防火墙需允许应用在专用网络通信；手动地址不能绕过网络隔离。普通网页预览不提供原生联网。
+联机建议所有人安装 **4.5.0**，连接同一路由器或可互通热点，在首页选择「局域网联机」。房间容量可选 2 / 3 / 4，至少两人且全员准备即可开局；同图竞分和连锁对战均支持四人。协议仍为 v3，不能与 4.3.x 混用；4.4.0 与 4.5.0 混用尚未验证。扫描后可在房间卡片「填入地址」或「加入」；找不到时输入房主 IPv4 并选择「按地址检索」，也可直接输入完整地址与端口。Windows 防火墙需允许应用在专用网络通信；手动地址不能绕过网络隔离。普通网页预览不提供原生联网。
 
 局内选择「暂停 / 设置」后，其他在赛选手会收到投票。全员同意后申请者自动进入设置；完成设置返回暂停面板，全员准备后倒计时恢复。设置分为「声音与音乐」「操作与辅助」「画面与性能」「数据与维护」，修改实时应用。首页采用四入口 2×2 排列；选关、记录及普通弹层使用分页，只有设置详情允许纵向滚动。Windows 联机沿用桌面的左右键按住瞄准、松开发射和键盘操作。
 
-已通过 395 项共用测试（36 个测试文件）、22 项 Android JVM 测试和 125 项 Windows 原生检查，并完成桌面四进程网络互通、浏览器四端联机流程及 320×568 布局检查。**本版发布时没有实体手机在线，尚未完成四台实体设备的混合联机矩阵及 20 局真人试玩，因此标为测试版。** 浏览器四端开发模拟和桌面 Java / C# 四进程测试不等同于 Android ↔ Windows 真机验收，范围详见[验证记录](docs/releases/4.4.0-validation.md)。
+已通过 **439 项共用测试（41 个文件）、22 项 Android JVM 测试和 125 项 Windows 原生检查**。Android 16 实体机从 4.4.0 同签名覆盖成功，旧存档、首页演示、菜单与真实键盘编辑复测通过；320×568 浏览器完成四类页面共 200 次往返及按钮边界/命中检查。Windows 模式五个 CSS 视口检查通过，原生程序已启动并读到旧存档，但截图/输入几何接口受限，未完成原生视觉和完整 DPI 验收。本次手机没有可用局域网，未完成跨端对局；低性能机、字体放大、横屏重复压力及四实体网络范围见[验证记录](docs/releases/4.5.0-validation.md)。**本版保持 prerelease 测试版，尚不能宣称所有卡死反馈均已解决。**
 
 Windows 旧版数据迁移入口现为「设置 → 数据与维护 → 导入旧 Windows 存档」。旧目录 `%APPDATA%/orbbound` 保留，新版数据位于 `%LOCALAPPDATA%/Orbbound`。迁移前关闭旧版，导入前会保留恢复备份；也可导出 JSON 备份用于换机。Android 沿用原签名，可直接覆盖安装保留数据。
 

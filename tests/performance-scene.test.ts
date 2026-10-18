@@ -43,7 +43,7 @@ it('retains the same resolution/descent firing lock with reduced motion',()=>{
 
 it('settles campaign decision time between static frames before pause and excludes menu time',()=>{
   let now=1000;vi.spyOn(Date,'now').mockImplementation(()=>now);
-  const {scene}=setup();Object.assign(scene,{gameState:createCampaign(18),decisionClockAt:1000,
+  const {scene}=setup();Object.assign(scene,{ready:true,gameState:createCampaign(18),decisionClockAt:1000,
     tweens:{pauseAll:vi.fn(),resumeAll:vi.fn()},time:{paused:false},persistGame:vi.fn(),statusText:{setText:vi.fn()}});
   now=1090;scene.pauseGame();expect(scene.activeState.elapsedMs).toBe(90);
   now=5000;scene.resumeGame();now=5010;scene.update(0,2000);

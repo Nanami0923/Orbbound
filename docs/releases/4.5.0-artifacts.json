@@ -1,0 +1,19 @@
+{
+  "version": "4.5.0",
+  "title": "双端布局与稳定性修复（测试版）",
+  "prerelease": true,
+  "artifacts": [
+    {
+      "platform": "Android",
+      "file": "Orbbound-4.5.0-Android.apk",
+      "bytes": 1372959,
+      "sha256": "7b3c5d9f8c79a36cbae46a2f9b9323549e71970d574a1aba3b92cfd7291ab4c2"
+    },
+    {
+      "platform": "Windows",
+      "file": "Orbbound-Windows-4.5.0-x64.zip",
+      "bytes": 716818,
+      "sha256": "9e1d0860e4b599da3b287c34875b4ebcbc93e305ac678f49e850103c6ef1693e"
+    }
+  ]
+}

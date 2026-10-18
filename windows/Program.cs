@@ -199,8 +199,8 @@ internal sealed class GameWindow : Form {
         Interlocked.Increment(ref lanGeneration);
         if(lan!=null)lan.Dispose();
         lock(lanEventsLock) { lanEvents.Clear();lanEventsScheduled=false; }
-        int generation=lanGeneration;
-        lan=new LanService(delegate(Dictionary<string,object> evt) { QueueLanEvent(evt,generation); });
+        int generation=lanGeneration;string owner=lanClientId;
+        lan=new LanService(delegate(Dictionary<string,object> evt) { evt["clientId"]=owner;QueueLanEvent(evt,generation); });
     }
     void QueueLanEvent(Dictionary<string,object> evt,int generation) {
         bool schedule=false;LanService overflowService=null;
@@ -208,7 +208,7 @@ internal sealed class GameWindow : Form {
             if(closing||generation!=lanGeneration)return;
             if(lanEvents.Count>=256) {
                 lanEvents.Clear();overflowService=lan;
-                evt=new Dictionary<string,object> { {"type","lan-event"},{"event","error"},{"error","联机消息积压，连接已关闭，请重新进入房间"} };
+                evt=new Dictionary<string,object> { {"type","lan-event"},{"event","error"},{"error","联机消息积压，连接已关闭，请重新进入房间"},{"clientId",lanClientId} };
             }
             lanEvents.Enqueue(evt);
             if(!lanEventsScheduled) { lanEventsScheduled=true;schedule=true; }
@@ -230,6 +230,7 @@ internal sealed class GameWindow : Form {
         // Yield the UI thread even when a remote sender continuously produces packets.
         if(!closing&&IsHandleCreated)BeginInvoke(new Action(delegate { DrainLanEvents(generation); }));
     }
+    string lanClientId="";
     async Task HandleLan(Dictionary<string,object> message,int rawLength) {
         object raw;string requestId=message.TryGetValue("requestId",out raw)?raw as string:null;
         if(String.IsNullOrEmpty(requestId)||requestId.Length>128)return;
@@ -241,6 +242,14 @@ internal sealed class GameWindow : Form {
             if(String.IsNullOrEmpty(action)||action.Length>32)throw new ArgumentException("无效的联机操作");
             Dictionary<string,object> payload=null;
             if(message.TryGetValue("payload",out raw)) { payload=raw as Dictionary<string,object>;if(payload==null)throw new ArgumentException("无效的联机参数"); }
+            string clientId=payload!=null&&payload.TryGetValue("_clientId",out raw)?raw as string:null;
+            if(action=="claim") {
+                if(String.IsNullOrEmpty(clientId)||clientId.Length>128)throw new ArgumentException("无效的联机会话");
+                lanClientId=clientId;ResetLan();
+                source.PostWebMessageAsJson(Program.Json.Serialize(new {type="lan-response",requestId=requestId,ok=true,result=(object)null}));
+                return;
+            }
+            if(clientId!=lanClientId&&!(String.IsNullOrEmpty(clientId)&&String.IsNullOrEmpty(lanClientId)))throw new ArgumentException("联机会话已更换，请重新进入");
             object result=await service.Handle(action,payload);
             response=new {type="lan-response",requestId=requestId,ok=true,result=result};
             // A disposed transport can be recreated when the user opens LAN again.

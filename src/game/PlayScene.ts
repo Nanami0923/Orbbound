@@ -17,6 +17,7 @@ import { insideInputSurface, isFirePointerButton } from './input-controller';
 import { shortcutAction, shortcutLabel } from './shortcuts';
 import { heldRotationDegrees } from './rotation';
 import { rebaseTweenClock } from './tween-clock';
+import { settingsEffects, snapshotSettings } from '../ui/settings-effects';
 import { advanceTimed, createRound, descentInterval, freezeTimed, resumeTimed, resetDescent } from '../core/modes';
 
 type ScenePhase = 'READY' | 'FLYING' | 'RESOLVING' | 'PAUSED' | 'WON' | 'LOST';
@@ -256,18 +257,19 @@ export class PlayScene extends Phaser.Scene {
   }
 
   public setSettings(settings: Settings): void {
-    const visualChanged = this.settings.aimAssist !== settings.aimAssist;
-    this.settings = { ...settings };
-    this.pointerActive = false;
-    this.stopRotation();
+    const changed = settingsEffects(this.settings, settings);
+    this.settings = snapshotSettings(settings);
+    if (!this.ready) return;
+    if (changed.controls || changed.quality) { this.pointerActive = false; this.stopRotation(); }
     if (this.phase === 'READY') this.statusText?.setText(this.controlHint());
     this.audio.setMix(settings.volume, settings.musicVolume);
-    if (visualChanged) { this.renderLauncher(); this.drawAim(); }
+    if (changed.visual) { this.renderLauncher(); this.drawAim(); }
     sendWindowEvent('snood-settings-applied', this.settings);
-    sendWindowEvent('snood-performance-settings', this.settings);
+    if (changed.quality || changed.frameRate) sendWindowEvent('snood-performance-settings', this.settings);
   }
 
   public pauseGame(): void {
+    if (!this.ready) return;
     this.stopRotation();
     this.syncTimedClock();
     this.syncCampaignClock();
@@ -287,7 +289,7 @@ export class PlayScene extends Phaser.Scene {
   }
 
   public resumeGame(): void {
-    if (this.phase !== 'PAUSED') return;
+    if (!this.ready || this.phase !== 'PAUSED') return;
     this.gameState = resumeTimed(this.gameState);
     this.phase = this.pausedFrom;
     this.decisionClockAt = this.gameState.mode === 'campaign' && this.phase === 'READY' ? Date.now() : null;

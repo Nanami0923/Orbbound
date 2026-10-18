@@ -498,7 +498,11 @@ export class LanSession {
     } else this.send(this.view.isHost ? 'CLOSED' : 'LEAVE', { reason: '玩家已离开房间' });
     await this.reset(); this.view.phase = 'idle'; this.changed();
   }
-  async close(): Promise<void> { await this.leave(); this.closed = true; clearInterval(this.timer); this.unsubscribe(); this.listeners.clear(); await this.transport.close(); }
+  async close(): Promise<void> {
+    clearInterval(this.timer);
+    try { await this.leave(); }
+    finally { this.closed = true; this.unsubscribe(); this.listeners.clear(); await this.transport.close(); }
+  }
   private event(event: LanEvent): void {
     if (this.closed) return;
     if (event.event === 'background' || event.event === 'foreground') { this.foregroundChanged(event.event === 'foreground'); return; }

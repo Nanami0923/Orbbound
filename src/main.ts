@@ -33,7 +33,8 @@ import { bindSteeringControl } from './game/steering-control';
 import { directAimDegrees } from './game/rotation';
 import { settingsMarkup, bindSettingsPanel, settingsBack } from './ui/settings-panel';
 import { getSettings, updateSettings, subscribeSettings, reloadSettings } from './storage/settings-store';
-import { bindViewportShell, bindModalPages } from './ui/viewport-shell';
+import { bindViewportShell, bindModalPages, type ModalLayout } from './ui/viewport-shell';
+import { settingsEffects, snapshotSettings } from './ui/settings-effects';
 import { syncGameShell } from './ui/game-shell';
 import { formatHeadings } from './ui/typography';
 import { loadHistory, recordRound, formatDuration, rankingKey, leaderboard, recordRules, roundStanding, type HistoryDifficulty, type HistoryRules } from './storage/history';
@@ -127,6 +128,7 @@ let onModalDismiss: (() => void) | undefined;
 let releaseModalFocus:(()=>void)|null=null;
 let modalReturnFocus:HTMLElement|null=null;
 let roundBootTimer:number|undefined;
+let roundReadyTimer:number|undefined;
 let previousUiDetail:SceneStateDetail|undefined;
 let pendingFire=false;
 let practiceSeen=readStorage('orbbound-practice-seen')==='1';
@@ -157,8 +159,11 @@ const singleBoardSize = new ResizeObserver(() => {
   const heading = singleBoardWrap.querySelector<HTMLElement>('.board-heading');
   const available = Math.max(0, singleBoardWrap.clientHeight - (heading?.getBoundingClientRect().height ?? 0));
   const width = Math.max(1, Math.min(singleBoardWrap.clientWidth, available * 640 / 760));
-  singleBoardWrap.style.setProperty('--single-board-width', `${width}px`);
-  game?.scale.refresh();
+  const previous = Number.parseFloat(singleBoardWrap.style.getPropertyValue('--single-board-width'));
+  if (!Number.isFinite(previous) || Math.abs(previous - width) >= 0.5) {
+    singleBoardWrap.style.setProperty('--single-board-width', `${width}px`);
+    game?.scale.refresh();
+  }
 });
 singleBoardSize.observe(singleBoardWrap);
 
@@ -180,6 +185,7 @@ async function ensureGame(): Promise<void> {
 function showHome(): void {
   roundRequest++;
   window.clearTimeout(roundBootTimer); roundBootTimer=undefined;
+  window.clearTimeout(roundReadyTimer); roundReadyTimer=undefined;
   document.documentElement.classList.remove('game-loading');
   gameAudio.setScene('menu');
   const scene = getScene();
@@ -216,12 +222,13 @@ async function startRound(state: Parameters<PlayScene['begin']>[0] | null, diffi
   try { await ensureGame(); }
   catch { fail(); return; }
   if (request !== roundRequest) return;
+  game?.loop.wake();
   showGame();
   const beginWhenReady = () => {
     if (request !== roundRequest) return;
     const scene = getScene();
     if (!scene?.ready) {
-      window.setTimeout(beginWhenReady, 30);
+      roundReadyTimer = window.setTimeout(beginWhenReady, 30);
       return;
     }
     scene.setSettings(settings);
@@ -230,6 +237,7 @@ async function startRound(state: Parameters<PlayScene['begin']>[0] | null, diffi
     gameAudio.setScene('play'); gameAudio.unlock();
     document.documentElement.classList.remove('game-loading');
     window.clearTimeout(roundBootTimer);roundBootTimer=undefined;
+    window.clearTimeout(roundReadyTimer);roundReadyTimer=undefined;
     performance.mark('orbbound-round-ready');
     game?.loop.wake();
   };
@@ -370,7 +378,7 @@ function showToast(message: string): void {
   toastTimer = window.setTimeout(() => toast.classList.remove('show'), 2200);
 }
 
-function openModal(content: string, className = '', onDismiss?: () => void): void {
+function openModal(content: string, className = '', onDismiss?: () => void, layout: ModalLayout = 'compact'): void {
   if (!modalRoot) return;
   resizeModal = undefined;
   disposeModal?.(); disposeModal = null;
@@ -388,7 +396,7 @@ function openModal(content: string, className = '', onDismiss?: () => void): voi
   document.documentElement.classList.add('modal-open');
   formatHeadings(modalRoot);
   releaseModalFocus=bindModalFocus(modalRoot.querySelector<HTMLElement>('.modal-card')!,[homeScreen,gameScreen,document.querySelector<HTMLElement>('#lan-screen')].filter((element):element is HTMLElement=>!!element));
-  disposeModalPages = bindModalPages(modalRoot.querySelector<HTMLElement>('.modal-card')!);
+  disposeModalPages = bindModalPages(modalRoot.querySelector<HTMLElement>('.modal-card')!, layout);
   game?.loop.sleep();
   modalRoot.querySelectorAll<HTMLElement>('[data-close-modal]').forEach(button => button.addEventListener('click', dismissModal));
   modalRoot.onclick = handleModalBackdrop;
@@ -426,7 +434,7 @@ function closeModal(): void {
 
 function showHistory(top = true, page = 0, board = 'endless', difficulty:HistoryDifficulty='all', rules:HistoryRules=RULES_VERSION): void {
   const data = loadHistory(), capacity = historyPageSize(usesButtonControls());
-  openModal(historyMarkup(data, top, board, page, usesButtonControls(),difficulty,rules), 'history-card');
+  openModal(historyMarkup(data, top, board, page, usesButtonControls(),difficulty,rules), 'history-card', undefined, 'custom');
   resizeModal = () => showHistory(top,Math.floor(page * capacity / historyPageSize(usesButtonControls())),board,difficulty,rules);
   document.querySelector('#history-toggle')?.addEventListener('click', () => showHistory(!top,0,board,difficulty,rules));
   document.querySelector('#history-prev')?.addEventListener('click', () => showHistory(top,page-1,board,difficulty,rules));
@@ -436,7 +444,7 @@ function showHistory(top = true, page = 0, board = 'endless', difficulty:History
   document.querySelector<HTMLSelectElement>('#history-rules')?.addEventListener('change', event => showHistory(top,0,board,difficulty,(event.target as HTMLSelectElement).value as HistoryRules));
   document.querySelector('#history-explain')?.addEventListener('click', () => {
     const back = () => showHistory(top,page,board,difficulty,rules);
-    openModal(`<button class="modal-close" data-close-modal>返回记录</button><h2>排名规则与趋势</h2><p>结算分 = 基础分 × 难度系数。简单 ×1，普通 ×1.5，困难 ×2。</p><p>同分时用时较短者优先，再同分按较早结算排序。重开不入榜，新旧规则分开排名。</p>${historyTrend(data,board,difficulty,rules)}`, '', back);
+    openModal(`<button class="modal-close" data-close-modal>返回记录</button><h2>排名规则与趋势</h2><p>结算分 = 基础分 × 难度系数。简单 ×1，普通 ×1.5，困难 ×2。</p><p>同分时用时较短者优先，再同分按较早结算排序。重开不入榜，新旧规则分开排名。</p>${historyTrend(data,board,difficulty,rules)}`, '', back, 'paged');
   });
 }
 
@@ -452,30 +460,35 @@ function showTutorial(): void {
       <div class="tutorial-step"><b>03</b><div><strong>让悬空小球掉落</strong><span>切断顶部支撑，悬空球就会掉落。掉落 1、2、3 球，额外加 30、70、120 分；掉落越多，加分越高。</span></div></div>
     </div>
     <div class="modal-footer"><button id="help-practice" class="primary-button" type="button">动手练习 →</button><button class="quiet-button" data-close-modal type="button">继续游戏</button></div>
-  `);
+  `, '', undefined, 'paged');
   document.querySelector('#help-practice')?.addEventListener('click',()=>showPractice());
 }
 
 function showPractice(onReturn?:()=>void,onCancel:()=>void=showTutorial):void {
   const controlMode:PracticeControlMode=usesButtonControls() ? settings.immersiveMode ? 'immersive' : 'buttons' : 'desktop';
   const finish=()=>{practiceSeen=true;writeStorage('orbbound-practice-seen','1');if(onReturn)onReturn();else closeModal();};
-  openModal(practiceMarkup(controlMode),'practice-card',onCancel);
+  openModal(practiceMarkup(controlMode),'practice-card',onCancel,'custom');
   if(modalRoot)disposeModal=bindPracticePanel(modalRoot,{controlMode,shortcuts:settings.shortcuts,sensitivity:settings.sensitivity,onComplete:finish,onSkip:finish,onClose:onCancel});
 }
 
 function showSettings(onClosed?: () => void): void {
   if (document.documentElement.classList.contains('settings-open')) return;
-  openModal(settingsMarkup(settings, usesButtonControls(), lan.isActive() || !gameScreen?.hidden), 'settings-card');
+  openModal(settingsMarkup(settings, usesButtonControls(), lan.isActive() || !gameScreen?.hidden), 'settings-card', undefined, 'custom');
   if (!modalRoot) return;
   settingsOnClosed = onClosed;
   document.documentElement.classList.add('settings-open');
   disposeModal = bindSettingsPanel(modalRoot, settings, commit => updateSettings(settings, { persist: commit }));
   window.dispatchEvent(new Event('orbbound-settings-open'));
 }
+let appliedSettings = snapshotSettings(settings);
 subscribeSettings(value => {
-  settings = value; immersiveControl?.reset();
-  gameAudio.setMix(settings.volume, settings.musicVolume); gameAudio.setAdaptiveMusic(settings.adaptiveMusic);
-  getScene()?.setSettings(settings); syncMobileLayout(); void refreshPlatformPerformance(settings);
+  const changed = settingsEffects(appliedSettings, value); appliedSettings = snapshotSettings(value);
+  settings = value;
+  if (changed.controls) immersiveControl?.reset();
+  if (changed.audio) { gameAudio.setMix(settings.volume, settings.musicVolume); gameAudio.setAdaptiveMusic(settings.adaptiveMusic); }
+  getScene()?.setSettings(settings);
+  if (changed.controls || changed.visual) syncMobileLayout();
+  if (changed.frameRate) void refreshPlatformPerformance(settings);
 });
 window.addEventListener('orbbound-open-settings', event => {
   showSettings((event as CustomEvent<{ onClosed?: () => void }>).detail?.onClosed);
@@ -487,7 +500,7 @@ window.addEventListener('orbbound-close-settings', () => {
 let campaignPage = 0, campaignChapter = '';
 function showCampaign(): void {
   const capacity = campaignPageSize();
-  openModal(campaignMarkup(loadProgress(), loadGame('campaign'), campaignPage, campaignChapter), 'campaign-panel campaign-picker');
+  openModal(campaignMarkup(loadProgress(), loadGame('campaign'), campaignPage, campaignChapter), 'campaign-panel campaign-picker', undefined, 'custom');
   resizeModal = () => { campaignPage = Math.floor(campaignPage * capacity / campaignPageSize()); showCampaign(); };
   const chapterSelect = modalRoot?.querySelector<HTMLSelectElement>('#campaign-chapter');
   campaignChapter = chapterSelect?.value ?? '';
@@ -498,7 +511,7 @@ function showCampaign(): void {
   modalRoot?.querySelectorAll<HTMLButtonElement>('[data-level]').forEach(button => button.addEventListener('click', () => {
     const id = Number(button.dataset.level);
     if (!isUnlocked(id)) return;
-    openModal(levelMarkup(getLevel(id), loadProgress(), loadGame('campaign')), 'campaign-panel');
+    openModal(levelMarkup(getLevel(id), loadProgress(), loadGame('campaign')), 'campaign-panel', undefined, 'paged');
     modalRoot?.querySelector('#campaign-back')?.addEventListener('click', showCampaign);
     modalRoot?.querySelector('#campaign-begin')?.addEventListener('click', () => beginCampaign(id));
   }));
@@ -516,7 +529,7 @@ function showCampaignResult(state: GameState): void {
   recordCampaign(state); clearGame('campaign');
   const level = getLevel(state.levelId!), won = state.status === 'WON', stars = campaignStars(state);
   const next = CAMPAIGN_LEVELS.find(candidate => candidate.id === level.id + 1);
-  openModal(`<button class="modal-close" data-close-modal>关闭</button><p class="eyebrow">第 ${level.id} 关 / ${level.name}</p><h2>${won ? next ? '目标完成，继续向前' : '三十关，全部走过' : state.endReason === 'shots' ? '发数用尽，再想一步' : state.endReason === 'timeout' ? '时间到了，再试一次' : '棋盘触底，再试一次'}</h2><div class="campaign-result-stars" aria-label="${stars} 星">${'★'.repeat(stars)}${'☆'.repeat(3 - stars)}</div><p>${state.step} 次发射 · 操作用时 ${formatDuration(state.elapsedMs ?? 0)}</p><p>${won ? starRules(level) : escapeText(failureAdvice(state,level))}</p>${won && stars<3 ? `<p>${escapeText(starBudget(level,state.step,state.elapsedMs??0))}。重试同一布局，争取更少发数或更短操作时间。</p>` : ''}${won && !next ? `<p>你已完成本篇章。可以返回选关，挑战全部 ${CAMPAIGN_LEVELS.length * 3} 星。</p>` : ''}<div class="modal-footer">${won && next ? '<button id="campaign-next" class="primary-button">下一关 →</button>' : ''}<button id="campaign-retry" class="${won && next ? 'quiet-button' : 'primary-button'}">重试本关</button><button id="campaign-select" class="quiet-button">返回选关</button><button id="campaign-home" class="quiet-button">首页</button></div>`, 'result-card', () => { showHome(); showCampaign(); });
+  openModal(`<button class="modal-close" data-close-modal>关闭</button><p class="eyebrow">第 ${level.id} 关 / ${level.name}</p><h2>${won ? next ? '目标完成，继续向前' : '三十关，全部走过' : state.endReason === 'shots' ? '发数用尽，再想一步' : state.endReason === 'timeout' ? '时间到了，再试一次' : '棋盘触底，再试一次'}</h2><div class="campaign-result-stars" aria-label="${stars} 星">${'★'.repeat(stars)}${'☆'.repeat(3 - stars)}</div><p>${state.step} 次发射 · 操作用时 ${formatDuration(state.elapsedMs ?? 0)}</p><p>${won ? starRules(level) : escapeText(failureAdvice(state,level))}</p>${won && stars<3 ? `<p>${escapeText(starBudget(level,state.step,state.elapsedMs??0))}。重试同一布局，争取更少发数或更短操作时间。</p>` : ''}${won && !next ? `<p>你已完成本篇章。可以返回选关，挑战全部 ${CAMPAIGN_LEVELS.length * 3} 星。</p>` : ''}<div class="modal-footer">${won && next ? '<button id="campaign-next" class="primary-button">下一关 →</button>' : ''}<button id="campaign-retry" class="${won && next ? 'quiet-button' : 'primary-button'}">重试本关</button><button id="campaign-select" class="quiet-button">返回选关</button><button id="campaign-home" class="quiet-button">首页</button></div>`, 'result-card', () => { showHome(); showCampaign(); }, 'paged');
   modalRoot?.querySelector('#campaign-next')?.addEventListener('click', () => beginCampaign(next!.id));
   modalRoot?.querySelector('#campaign-retry')?.addEventListener('click', () => beginCampaign(level.id));
   modalRoot?.querySelector('#campaign-select')?.addEventListener('click', () => { showHome(); showCampaign(); });
@@ -544,7 +557,7 @@ function showResult(state: GameState): void {
     <div class="result-meta">基础分 ${state.score} × 难度 ${scoreMultiplier(state.difficultyId)}<br>${state.step} 次发射 · 已计入${state.mode === 'timed' ? `限时 ${state.durationMs! / 60000} 分钟` : '无尽'}排行榜</div>
     <p class="result-progress">${standing.newRecord ? '新纪录！' : standing.difference===0 ? '追平个人最佳' : `距个人最佳 ${Math.abs(standing.difference).toLocaleString('zh-CN')} 分`}${standing.rank ? ` · 本榜第 ${standing.rank}` : ' · 本榜前十之外'}</p>
     <div class="modal-footer"><button id="result-retry" class="primary-button" type="button"><span>${won ? '再开一局' : '再试一次'}</span><b>↗</b></button><button id="result-ranking" class="quiet-button" type="button">查看本榜</button><button id="result-home" class="quiet-button" type="button">返回首页</button></div>
-  `, `result-card${won ? '' : ' lost'}`);
+  `, `result-card${won ? '' : ' lost'}`, undefined, 'paged');
   modalRoot?.querySelector<HTMLButtonElement>('#result-retry')?.addEventListener('click', () => {
     resumeAfterModal = false;
     closeModal();
@@ -566,7 +579,7 @@ function showModeSetup(mode: GameMode): void {
     <div class="mode-tabs">${['easy','normal','hard'].map(id => `<button class="quiet-button ${id === selectedDifficulty ? 'active' : ''}" data-setup-difficulty="${id}">${getDifficulty(id).label.split(' · ')[0]} ×${scoreMultiplier(id)}</button>`).join('')}</div>
     ${mode === 'timed' ? `<div class="mode-tabs"><button data-duration="300000" class="quiet-button ${selectedDuration === 300000 ? 'active' : ''}">5 分钟</button><button data-duration="600000" class="quiet-button ${selectedDuration === 600000 ? 'active' : ''}">10 分钟</button></div><p class="mode-note">下落会逐渐加快：简单 36→18 秒，普通 30→15 秒，困难 24→12 秒。</p>` : ''}
     ${loadGame(mode) ? '<button id="mode-continue" class="quiet-button mode-continue">读取此模式存档</button>' : ''}
-    <div class="modal-footer"><button id="mode-begin" class="primary-button">开始挑战 ↗</button><button id="mode-ranking" class="quiet-button">查看排行榜</button></div>`);
+    <div class="modal-footer"><button id="mode-begin" class="primary-button">开始挑战 ↗</button><button id="mode-ranking" class="quiet-button">查看排行榜</button></div>`, '', undefined, 'paged');
   document.querySelector('#mode-continue')?.addEventListener('click', () => { closeModal(); continueSaved(mode); });
   document.querySelectorAll<HTMLElement>('[data-setup-difficulty]').forEach(button => button.addEventListener('click', () => {
     selectedDifficulty = button.dataset.setupDifficulty!; showModeSetup(mode); updateHomeState();
@@ -633,7 +646,7 @@ function showGameMenu(): void {
   const campaign = getScene()?.activeState.mode === 'campaign';
   openModal(`<button class="modal-close" data-close-modal type="button">继续游戏</button><h2>游戏菜单</h2>
     <p>本局已暂停并存档。</p><p>${campaign ? '完成目标获得星级，可随时重试本关。' : '继续游玩，或结算成绩后入榜。'}</p>
-    <div class="mobile-menu-actions"><button id="menu-settings" class="quiet-button">设置</button><button id="menu-history" class="quiet-button">历史与排行</button>${campaign ? '' : '<button id="menu-settle" class="quiet-button">结算并入榜</button>'}<button id="menu-restart" class="quiet-button">放弃本局…</button><button id="menu-home" class="quiet-button">存档并返回首页</button></div>`);
+    <div class="mobile-menu-actions"><button id="menu-settings" class="quiet-button">设置</button><button id="menu-history" class="quiet-button">历史与排行</button>${campaign ? '' : '<button id="menu-settle" class="quiet-button">结算并入榜</button>'}<button id="menu-restart" class="quiet-button">放弃本局…</button><button id="menu-home" class="quiet-button">存档并返回首页</button></div>`, '', undefined, 'paged');
   document.querySelector('#menu-settle')?.addEventListener('click', () => { closeModal(); getScene()?.settleGame(); });
   document.querySelector('#menu-settings')?.addEventListener('click', () => showSettings());
   document.querySelector('#menu-history')?.addEventListener('click', () => showHistory());

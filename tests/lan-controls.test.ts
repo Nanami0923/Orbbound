@@ -70,6 +70,17 @@ beforeEach(() => { options.touch = true; options.immersive = true; options.reduc
 afterEach(() => { disposals.splice(0).forEach(dispose => dispose()); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe('LAN actual control event lifecycle', () => {
+  it('keeps an active aim and canvas allocation while dragging audio settings', () => {
+    const { board, session } = setup();
+    updateSettings({ immersiveMode: true, quality: 'auto', frameRate: 'auto' }, { persist: false });
+    let backingWidth = board.width, backingHeight = board.height, allocations = 0;
+    Object.defineProperty(board, 'width', { configurable: true, get: () => backingWidth, set: value => { backingWidth = value; allocations++; } });
+    Object.defineProperty(board, 'height', { configurable: true, get: () => backingHeight, set: value => { backingHeight = value; allocations++; } });
+    send(board, 'pointerdown');
+    for (let volume = 0; volume <= 100; volume++) updateSettings({ volume, musicVolume: 100 - volume }, { persist: false });
+    expect(allocations).toBe(0); expect(board.owner).toBe(1);
+    send(board, 'pointerup'); expect(session.shoot).toHaveBeenCalledOnce();
+  });
   it('applies quality now and releases the old immersive gesture when settings change', () => {
     const { board, session } = setup();
     send(board, 'pointerdown'); expect(board.owner).toBe(1);
