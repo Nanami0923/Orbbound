@@ -3,6 +3,16 @@ $ErrorActionPreference = 'Stop'
 Import-Module "$PSHOME/Modules/Microsoft.PowerShell.Security/Microsoft.PowerShell.Security.psd1"
 Set-Location (Split-Path $PSScriptRoot -Parent)
 function Check-Exit { if ($LASTEXITCODE -ne 0) { throw "Build command failed: $LASTEXITCODE" } }
+$packageVersion = (Get-Content package.json -Raw | ConvertFrom-Json).version
+$versionParts = $packageVersion.Split('.') | ForEach-Object { [int]$_ }
+if ($versionParts.Count -ne 3) { throw "Expected a numeric major.minor.patch version, got $packageVersion" }
+$expectedVersionCode = $versionParts[0] * 10000 + $versionParts[1] * 100 + $versionParts[2]
+$gradleConfig = Get-Content android/app/build.gradle -Raw
+$gradleVersionName = [regex]::Match($gradleConfig, 'versionName\s+"([^"]+)"').Groups[1].Value
+$gradleVersionCode = [regex]::Match($gradleConfig, 'versionCode\s+(\d+)').Groups[1].Value
+if ($gradleVersionName -ne $packageVersion -or $gradleVersionCode -ne "$expectedVersionCode") {
+    throw "Android Gradle version $gradleVersionName/$gradleVersionCode does not match package $packageVersion/$expectedVersionCode."
+}
 if (!$env:JAVA_HOME) { throw 'Set JAVA_HOME to JDK 21 or newer.' }
 if (!$SdkPath -and (Test-Path android/local.properties)) {
     $SdkPath = ((Get-Content android/local.properties | Where-Object { $_ -match '^sdk.dir=' }) -replace '^sdk.dir=', '')

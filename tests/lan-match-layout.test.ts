@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { createMatch } from '../src/lan/authority';
 import { lanMatchLayoutMarkup, lanNetworkLabel, lanStatusSummary } from '../src/ui/lan-match-layout';
 
@@ -23,6 +23,19 @@ it('gives the time label and digits a separate group from the network sample and
   expect(markup).toContain('id="lan-network" class="lan-network">延迟待测');
   expect(markup).toContain('class="lan-play-space"');
   expect(markup).toContain('id="lan-pause-request" hidden');
+});
+
+it('places the Android 5.0 next orb beside the LAN score HUD and keeps only one preview', () => {
+  vi.stubGlobal('document', { documentElement: { classList: { contains: (name: string) => name === 'android-v5' } } });
+  try {
+    const markup = lanMatchLayoutMarkup([{ id: 'guest', name: '朋友' }]);
+    const hud = markup.slice(markup.indexOf('<div class="lan-match-hud">'), markup.indexOf('</div>\n  <div class="lan-play-space">'));
+    expect(hud).toContain('<div class="lan-next-slot"><div class="next-card orb-preview-card">');
+    expect(markup.match(/id="lan-next-orb-preview"/g)).toHaveLength(1);
+    expect(markup).toContain('aria-label="其他选手"');
+  } finally {
+    vi.unstubAllGlobals();
+  }
 });
 
 it('reports only valid RTT samples and keeps unknown delay distinct from zero', () => {

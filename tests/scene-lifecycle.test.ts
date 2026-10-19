@@ -150,6 +150,30 @@ it('keeps firing locked while allowing held steering until the descent tween com
   expect(runtime.phase).toBe('READY');
 });
 
+it('counts one combo per consecutive clearing shot and resets only after an empty shot', () => {
+  const events: CustomEvent[] = [];
+  vi.stubGlobal('window', { dispatchEvent: (event: CustomEvent) => { events.push(event); return true; } });
+  try {
+    const scene = new PlayScene();
+    Object.assign(scene, { phase: 'RESOLVING', time: { delayedCall: vi.fn() }, boardBalls: new Map() });
+    const runtime = scene as unknown as { animateResolution(previous: unknown, events: unknown[]): void; comboCount: number };
+    const state = createGameState('easy', 42);
+    const clear = [{ type: 'match', cells: [{ row: 1, col: 1 }, { row: 1, col: 2 }, { row: 1, col: 3 }] }];
+    runtime.animateResolution(state, clear);
+    expect(runtime.comboCount).toBe(1);
+    expect(events.filter(event => event.type === 'snood-combo')).toHaveLength(0);
+    runtime.animateResolution(state, clear);
+    expect(runtime.comboCount).toBe(2);
+    expect(events.filter(event => event.type === 'snood-combo').map(event => event.detail)).toEqual([{ count: 2, removed: 3 }]);
+    runtime.animateResolution(state, [{ type: 'board-drop' }]);
+    expect(runtime.comboCount).toBe(2);
+    runtime.animateResolution(state, []);
+    expect(runtime.comboCount).toBe(0);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
 it('freezes timed gameplay and resumes both clocks with the same remaining budgets', () => {
   const scene = new PlayScene();
   const now=vi.spyOn(Date,'now').mockReturnValue(11000);

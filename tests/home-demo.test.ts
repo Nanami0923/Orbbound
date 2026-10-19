@@ -22,6 +22,15 @@ it('generates each SVG route endpoint and animated displacement from the same ge
   expect(homeDemoMarkup(false)).toContain('点击重播');
 });
 
+it('uses a non-interactive, automatic loop for the 5.0 design while keeping legacy replay markup available', () => {
+  const markup = homeDemoMarkup(true, true);
+  expect(markup).toContain('<figure class="mechanism-demo mechanism-demo--auto"');
+  expect(markup).toContain('自动循环演示');
+  expect(markup).not.toContain('<button');
+  expect(markup).not.toContain('重播');
+  expect(homeDemoMarkup(true)).toContain('轻触重播');
+});
+
 it('approaches the left pair without overlap and keeps the right hanging ball tangent to both supports', () => {
   const { launch, leftLanding, leftPair, rightPair, falling, radius } = HOME_DEMO;
   for (let step = 0; step <= 100; step++) {

@@ -1,0 +1,899 @@
+/* Android 5.0 visual layer. The platform branch adds .android-v5 to <html>. */
+html.android-v5 {
+  color-scheme: dark;
+  font-family: "Segoe UI", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+  --bg: #0d1421;
+  --panel: #192335;
+  --panel-2: #202d42;
+  --line: #39485b;
+  --muted: #a7b2c1;
+  --soft: #78869a;
+  --cream: #f3f1eb;
+  --mint: #83cdb5;
+  --gold: #ddba62;
+  --coral: #e18a89;
+  --hud-label: #a7b2c1;
+  --hud-radius: 12px;
+  --hud-gap: 8px;
+  --board-corner-radius: 20px;
+  --orb-coral: #df827e;
+  --orb-mint: #76bdab;
+  --orb-gold: #d7b86c;
+  --orb-violet: #a18bd3;
+  --orb-blue: #77a5cf;
+  --orb-rose: #ca8da9;
+}
+
+html.android-v5 body {
+  background: var(--bg);
+}
+
+html.android-v5 button:focus-visible,
+html.android-v5 :focus-visible {
+  outline-color: var(--gold);
+}
+
+html.android-v5 .primary-button {
+  border-radius: 12px;
+  background: var(--mint);
+  color: #172c30;
+  box-shadow: none;
+}
+
+html.android-v5 .primary-button:hover {
+  background: #91d8c1;
+  transform: none;
+}
+
+html.android-v5 .quiet-button,
+html.android-v5 .side-button {
+  border: 1px solid rgba(167, 178, 193, .16);
+  border-radius: 10px;
+  background: rgba(243, 241, 235, .055);
+  color: #c4ccd5;
+  box-shadow: none;
+}
+
+html.android-v5 .quiet-button:hover:not(:disabled),
+html.android-v5 .side-button:hover {
+  background: rgba(243, 241, 235, .09);
+  color: var(--cream);
+  transform: none;
+}
+
+/* Portrait play layout: the viewport budget follows the measured HUD height. */
+html.android-v5.mobile-ui .game-screen {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: 48px auto minmax(0, 1fr) 104px;
+  gap: 8px;
+  height: var(--app-height, 100dvh);
+  min-height: 0;
+  padding: max(8px, var(--safe-area-top, env(safe-area-inset-top)))
+    max(12px, var(--safe-area-right, env(safe-area-inset-right)))
+    calc(max(8px, var(--safe-area-bottom, env(safe-area-inset-bottom))) + var(--control-offset, 0px))
+    max(12px, var(--safe-area-left, env(safe-area-inset-left)));
+}
+
+html.android-v5.mobile-ui .game-screen .mobile-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  min-height: 48px;
+  gap: 8px;
+}
+
+html.android-v5.mobile-ui .game-screen .mobile-topbar button {
+  min-width: 44px;
+  min-height: 44px;
+  height: 44px;
+  border-radius: 10px;
+  background: transparent;
+  color: #c4ccd5;
+  box-shadow: none;
+}
+
+html.android-v5.mobile-ui .game-screen .mobile-menu {
+  align-items: center;
+  gap: 6px;
+}
+
+html.android-v5.mobile-ui .game-screen .mobile-topbar .header-stat:has(#round-clock) {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 0;
+  margin: 0 0 0 auto;
+  padding: 0;
+  border: 0;
+}
+
+html.android-v5.mobile-ui .game-screen .mobile-topbar .header-stat:has(#round-clock) small {
+  display: none;
+}
+
+html.android-v5.mobile-ui .game-screen .mobile-topbar #round-clock {
+  color: var(--cream);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+html.android-v5.mobile-ui .game-screen .game-header {
+  display: grid;
+  grid-template-columns: minmax(144px, 1.44fr) minmax(92px, .92fr) minmax(100px, 1fr);
+  grid-template-rows: minmax(64px, auto);
+  align-items: stretch;
+  gap: 0;
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  min-height: 64px;
+  margin: 0;
+  padding: 0;
+  border-block: 1px solid rgba(167, 178, 193, .12);
+}
+
+html.android-v5.mobile-ui .game-screen .game-header > .score-stat {
+  grid-column: 1;
+}
+
+html.android-v5.mobile-ui .game-screen .game-header > .danger-stat {
+  grid-column: 2;
+}
+
+html.android-v5.mobile-ui .game-screen .game-header > .next-card {
+  grid-column: 3;
+}
+
+html.android-v5.mobile-ui .game-screen .game-header > .header-stat:has(#round-clock) {
+  display: none;
+}
+
+html.android-v5.mobile-ui .game-screen .game-header > .header-stat,
+html.android-v5.mobile-ui .game-screen .game-header > .danger-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  min-width: 0;
+  margin: 0;
+  padding: 6px;
+  gap: 6px;
+  border: 0;
+}
+
+html.android-v5.mobile-ui .game-screen .game-header .header-stat strong {
+  order: 1;
+  min-width: 0;
+  color: var(--cream);
+  font-size: 26px;
+  font-weight: 650;
+  line-height: 1.05;
+  letter-spacing: -.025em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+html.android-v5.mobile-ui .game-screen .game-header .header-stat > small {
+  order: 2;
+  color: var(--hud-label);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+html.android-v5.mobile-ui .game-screen .game-header > .danger-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 4px;
+  padding-inline: 6px;
+}
+
+html.android-v5.mobile-ui .game-screen .danger-stat > #descent-caption {
+  order: 2;
+  margin: 0;
+  color: var(--hud-label);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+html.android-v5.mobile-ui .game-screen .danger-stat > .countdown-label {
+  order: 1;
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-start;
+  gap: 4px;
+  min-width: 0;
+  margin: 0;
+}
+
+html.android-v5.mobile-ui .game-screen .danger-stat .countdown-label > small {
+  color: var(--hud-label);
+  font-size: 11px;
+  line-height: 1;
+}
+
+html.android-v5.mobile-ui .game-screen .danger-stat #danger-value {
+  min-width: 0;
+  margin: 0;
+  color: var(--cream);
+  font-size: 24px;
+  font-weight: 650;
+  line-height: 1.05;
+  letter-spacing: -.025em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+html.android-v5.mobile-ui .game-screen .danger-stat #danger-value:not(:has(small, .unit)) {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+
+html.android-v5.mobile-ui .game-screen .danger-stat #danger-value small,
+html.android-v5.mobile-ui .game-screen .danger-stat #danger-value .unit {
+  margin-left: 3px;
+  color: var(--hud-label);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+html.android-v5.mobile-ui .game-screen .danger-stat .danger-meter {
+  order: 3;
+  width: min(100%, 64px);
+  height: 3px;
+  margin: 1px 0 0;
+  border-radius: 999px;
+  background: rgba(167, 178, 193, .14);
+}
+
+html.android-v5.mobile-ui .game-screen .danger-stat #danger-fill {
+  border-radius: inherit;
+  background: var(--mint);
+}
+
+html.android-v5.mobile-ui .game-screen .danger-stat #descent-time-row {
+  order: 4;
+  width: 100%;
+  min-width: 0;
+  margin-top: 2px;
+}
+
+html.android-v5.mobile-ui .game-screen .danger-stat #descent-time-row .countdown-label {
+  justify-content: flex-start;
+  gap: 5px;
+  margin-bottom: 2px;
+}
+
+html.android-v5.mobile-ui .game-screen .danger-stat #descent-time-value {
+  color: var(--gold);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+html.android-v5.mobile-ui .game-screen .danger-stat #descent-time-row .danger-meter {
+  width: 100%;
+}
+
+html.android-v5.mobile-ui .game-screen .next-card,
+html.android-v5 .lan-screen .next-card {
+  --orb-preview-size: 28px;
+  --orb-preview-symbol-size: 16px;
+  --orb-preview-box-size: 28px;
+  --orb-preview-label-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 44px;
+  margin: 0;
+  padding: 6px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+html.android-v5 .game-screen .next-card .card-kicker,
+html.android-v5 .lan-screen .next-card .card-kicker {
+  order: 1;
+  margin: 0;
+  color: var(--hud-label);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0;
+  line-height: 1.2;
+}
+
+html.android-v5 .game-screen .next-card .next-preview,
+html.android-v5 .lan-screen .next-card .next-preview {
+  order: 2;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  margin: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+html.android-v5 .game-screen .next-card .dom-orb,
+html.android-v5 .lan-screen .next-card .dom-orb {
+  width: 28px;
+  height: 28px;
+  box-shadow: 1px 2px 0 rgba(3, 8, 14, .24), inset 1px 1px 0 rgba(255, 255, 255, .045);
+}
+
+html.android-v5 .game-screen .next-card .dom-orb::after,
+html.android-v5 .lan-screen .next-card .dom-orb::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 37.5% 66.667%, var(--orb-ink, #392936) 0 1px, transparent 1.1px),
+    radial-gradient(circle at 62.5% 66.667%, var(--orb-ink, #392936) 0 1px, transparent 1.1px);
+  pointer-events: none;
+}
+
+html.android-v5.mobile-ui .game-screen .game-layout {
+  display: contents;
+}
+
+html.android-v5.mobile-ui .game-screen .board-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  align-self: stretch;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+}
+
+html.android-v5.mobile-ui .game-screen .board-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: 0 0 20px;
+  width: 100%;
+  height: 20px;
+  min-width: 0;
+  margin: 0;
+  padding: 0 2px 4px;
+  color: var(--hud-label);
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+html.android-v5.mobile-ui .game-screen .board-heading > .orb-preview-card {
+  align-self: center;
+}
+
+html.android-v5.mobile-ui .game-screen .game-container {
+  flex: 0 0 auto;
+  width: var(--single-board-width, min(100%, 240px)) !important;
+  height: auto !important;
+  max-width: 100%;
+  aspect-ratio: 640 / 760;
+  border-radius: var(--board-corner-radius);
+}
+
+html.android-v5.mobile-ui .game-screen .mobile-controls {
+  display: grid;
+  grid-template-columns: var(--fire-width, 96px) minmax(0, 1fr);
+  grid-template-rows: 104px;
+  align-self: stretch;
+  align-items: stretch;
+  min-width: 0;
+  min-height: 104px;
+  margin: 0;
+  gap: 10px;
+  transform: none;
+}
+
+html.android-v5.mobile-ui.controls-swapped .game-screen .mobile-controls {
+  grid-template-columns: minmax(0, 1fr) var(--fire-width, 96px);
+}
+
+html.android-v5.mobile-ui .game-screen .steering-sliders {
+  grid-template-rows: minmax(44px, 1fr) minmax(44px, 1fr);
+  min-width: 0;
+  gap: 4px;
+}
+
+html.android-v5.mobile-ui .game-screen .steering-control {
+  min-width: 0;
+  min-height: 44px;
+  padding: 2px 8px;
+  border-color: rgba(167, 178, 193, .15);
+  border-radius: 9px;
+  background: #192335;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+html.android-v5.mobile-ui .game-screen .steering-control input {
+  height: 28px;
+  accent-color: var(--mint);
+}
+
+html.android-v5.mobile-ui .game-screen #mobile-fire {
+  align-self: center;
+  width: 100%;
+  min-width: 0;
+  min-height: 88px;
+  height: 88px;
+  padding: 8px;
+  border-radius: 12px;
+}
+
+html.android-v5.mobile-ui.immersive-mode .game-screen {
+  grid-template-rows: 48px auto minmax(0, 1fr);
+}
+
+html.android-v5.mobile-ui.immersive-mode .game-screen .mobile-controls {
+  display: none;
+}
+
+html.android-v5.mobile-ui.immersive-mode .game-screen .game-container,
+html.android-v5.mobile-ui.immersive-mode .game-screen .game-container canvas {
+  pointer-events: auto;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* LAN keeps its established match fields and player strip, with the same HUD type. */
+html.android-v5 .lan-screen.game-shell--touch {
+  padding: max(8px, var(--safe-area-top, env(safe-area-inset-top)))
+    max(12px, var(--safe-area-right, env(safe-area-inset-right)))
+    max(8px, var(--safe-area-bottom, env(safe-area-inset-bottom)))
+    max(12px, var(--safe-area-left, env(safe-area-inset-left)));
+  gap: 6px;
+}
+
+html.android-v5 .lan-screen.game-shell--touch .lan-body {
+  max-width: 720px;
+  gap: 6px;
+}
+
+html.android-v5 .lan-screen.game-shell--touch .lan-top {
+  min-height: 44px;
+  gap: 8px;
+}
+
+html.android-v5 .lan-screen.game-shell--touch .lan-top > .quiet-button {
+  min-width: 44px;
+  min-height: 44px;
+  padding-inline: 10px;
+}
+
+html.android-v5 .lan-screen.game-shell--touch.lan-in-game .lan-content {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 6px;
+}
+
+html.android-v5 .lan-screen.game-shell--touch .lan-match-hud {
+  grid-template-columns: minmax(144px, 1.44fr) minmax(92px, .92fr) minmax(100px, 1fr);
+  grid-template-rows: minmax(64px, auto) auto;
+  grid-template-areas: "self time next" "self network actions";
+  align-items: center;
+  min-width: 0;
+  min-height: 64px;
+  gap: 0;
+  border-block: 1px solid rgba(167, 178, 193, .12);
+  font-variant-numeric: tabular-nums;
+}
+
+html.android-v5 .lan-screen.game-shell--touch .lan-self-summary {
+  display: grid;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  grid-template-areas: "score wave" "name name";
+  align-content: center;
+  align-items: baseline;
+  min-width: 0;
+  gap: 3px 6px;
+  padding: 6px;
+}
+
+html.android-v5 .lan-screen.game-shell--touch #lan-self-score {
+  grid-area: score;
+  color: var(--cream);
+  font-size: 26px;
+  font-weight: 650;
+  line-height: 1.05;
+  letter-spacing: -.025em;
+}
+
+html.android-v5 .lan-screen.game-shell--touch #lan-self-name {
+  grid-area: name;
+  min-width: 0;
+  font-size: 11px;
+  line-height: 1.2;
+  color: var(--hud-label);
+}
+
+html.android-v5 .lan-screen.game-shell--touch #lan-self-wave {
+  grid-area: wave;
+  justify-self: start;
+  min-width: 0;
+  color: var(--hud-label);
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+html.android-v5 .lan-screen.game-shell--touch .lan-time {
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 6px;
+}
+
+html.android-v5 .lan-screen.game-shell--touch .lan-next-slot {
+  grid-area: next;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: 64px;
+}
+
+html.android-v5 .lan-screen.game-shell--touch .lan-next-slot > .next-card {
+  width: 100%;
+  min-width: 0;
+}
+
+html.android-v5 .lan-screen.game-shell--touch .lan-time strong {
+  order: 1;
+  color: var(--cream);
+  font-size: 24px;
+  font-weight: 650;
+  line-height: 1.05;
+}
+
+html.android-v5 .lan-screen.game-shell--touch .lan-time small {
+  order: 2;
+  color: var(--hud-label);
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+html.android-v5 .lan-screen.game-shell--touch .lan-hud-actions {
+  align-self: center;
+  justify-content: flex-end;
+  gap: 4px;
+  min-width: 0;
+  padding-inline: 0;
+}
+
+html.android-v5 .lan-screen.game-shell--touch .lan-hud-actions button {
+  min-width: 44px;
+  min-height: 44px;
+  height: 44px;
+  padding: 4px;
+  font-size: 11px;
+}
+
+html.android-v5 .lan-screen.game-shell--touch .lan-network {
+  align-self: center;
+  justify-self: end;
+  padding-inline: 4px;
+  color: var(--hud-label);
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+html.android-v5 .lan-screen.game-shell--touch .lan-play-space {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto auto auto minmax(0, 1fr) 100px;
+  gap: 4px;
+  min-height: 0;
+}
+
+html.android-v5 .lan-screen.game-shell--touch .lan-status-slot {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+html.android-v5 .lan-screen.game-shell--touch .lan-attack-bar {
+  justify-content: flex-start;
+  min-height: 22px;
+  gap: 2px 10px;
+  color: var(--mint);
+  font-size: 10px;
+}
+
+html.android-v5 .lan-screen.game-shell--touch .lan-opponents {
+  grid-column: 1;
+  grid-row: 2;
+  grid-template-columns: repeat(var(--lan-opponent-count, 1), minmax(0, 1fr));
+  gap: 4px;
+}
+
+html.android-v5 .lan-screen.game-shell--touch .lan-opponent {
+  grid-template-columns: 30px minmax(0, 1fr);
+  min-height: 44px;
+  gap: 5px;
+  padding: 4px;
+  border-color: rgba(167, 178, 193, .14);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+html.android-v5 .lan-screen.game-shell--touch .lan-opponent canvas {
+  width: 30px;
+  height: 35.625px;
+  border-radius: 5px;
+}
+
+html.android-v5 .lan-screen.game-shell--touch .lan-opponent-info {
+  gap: 1px;
+}
+
+html.android-v5 .lan-screen.game-shell--touch .lan-opponent-info > strong {
+  font-size: 10px;
+}
+
+html.android-v5 .lan-screen.game-shell--touch .lan-opponent-meta {
+  flex-direction: column;
+  gap: 0;
+}
+
+html.android-v5 .lan-screen.game-shell--touch .lan-opponent-meta small {
+  color: var(--hud-label);
+  font-size: 9px;
+  line-height: 1.25;
+}
+
+html.android-v5 .lan-screen.game-shell--touch .lan-side {
+  display: contents;
+}
+
+html.android-v5 .lan-screen.game-shell--touch .lan-preview-slot {
+  grid-column: 1;
+  grid-row: 3;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  min-width: 0;
+  min-height: 44px;
+  gap: 8px;
+}
+
+html.android-v5 .lan-screen.game-shell--touch .lan-preview-slot:not(:has(.next-card)) {
+  display: none;
+}
+
+html.android-v5 .lan-screen.game-shell--touch .lan-preview-slot > .next-card {
+  flex: 0 1 auto;
+  justify-content: flex-end;
+  min-height: 44px;
+}
+
+html.android-v5 .lan-screen.game-shell--touch .lan-own-column {
+  grid-column: 1;
+  grid-row: 4;
+  min-height: 0;
+}
+
+html.android-v5 .lan-screen.game-shell--touch .lan-controls {
+  grid-column: 1;
+  grid-row: 5;
+  grid-template-columns: minmax(0, 1fr) var(--lan-fire-width, 92px);
+  grid-template-rows: 100px;
+  gap: 10px;
+}
+
+html.android-v5 .lan-screen.game-shell--touch .lan-sliders {
+  grid-template-rows: minmax(44px, 1fr) minmax(44px, 1fr);
+  gap: 4px;
+}
+
+html.android-v5 .lan-screen.game-shell--touch .lan-sliders label {
+  min-height: 44px;
+  padding: 2px 8px;
+  border-color: rgba(167, 178, 193, .15);
+  border-radius: 9px;
+  background: var(--panel);
+  color: var(--muted);
+}
+
+html.android-v5 .lan-screen.game-shell--touch .lan-sliders input {
+  height: 28px;
+  accent-color: var(--mint);
+}
+
+html.android-v5 .lan-screen.game-shell--touch .lan-controls #lan-fire {
+  align-self: center;
+  min-width: 0;
+  min-height: 88px;
+  height: 88px;
+  border-radius: 12px;
+}
+
+html.android-v5 .lan-screen.game-shell--touch.lan-swapped .lan-controls {
+  grid-template-columns: var(--lan-fire-width, 92px) minmax(0, 1fr);
+}
+
+html.android-v5 .lan-screen.game-shell--touch.game-shell--immersive .lan-play-space,
+html.android-v5 .lan-screen.game-shell--touch.lan-watching .lan-play-space {
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+}
+
+html.android-v5 .lan-screen.game-shell--touch.game-shell--immersive .lan-controls,
+html.android-v5 .lan-screen.game-shell--touch.lan-watching .lan-controls {
+  display: none !important;
+}
+
+@media (max-width: 360px) and (orientation: portrait) {
+  html.android-v5.mobile-ui .game-screen .game-header {
+    grid-template-columns: minmax(126px, 1.44fr) minmax(82px, .92fr) minmax(88px, 1fr);
+  }
+
+  html.android-v5.mobile-ui .game-screen .game-header > .header-stat,
+  html.android-v5.mobile-ui .game-screen .game-header > .danger-stat {
+    padding-inline: 4px;
+  }
+
+  html.android-v5.mobile-ui .game-screen .next-card {
+    gap: 6px;
+    padding-inline: 4px;
+  }
+
+  html.android-v5 .lan-screen.game-shell--touch .lan-match-hud {
+    grid-template-columns: minmax(126px, 1.44fr) minmax(78px, .92fr) minmax(92px, 1fr);
+  }
+
+  html.android-v5 .lan-screen.game-shell--touch .lan-next-slot > .next-card {
+    gap: 6px;
+    padding-inline: 4px;
+  }
+}
+
+@media (max-height: 700px) and (orientation: portrait) {
+  html.android-v5.mobile-ui .game-screen {
+    grid-template-rows: 48px auto minmax(0, 1fr) 100px;
+    gap: 6px;
+  }
+
+  html.android-v5.mobile-ui .game-screen .mobile-controls {
+    grid-template-rows: 100px;
+    min-height: 100px;
+  }
+
+  html.android-v5.mobile-ui .game-screen .board-heading {
+    flex-basis: 20px;
+    height: 20px;
+  }
+}
+
+@media (orientation: landscape) and (max-height: 600px) {
+  html.android-v5.mobile-ui .game-screen,
+  html.android-v5.mobile-ui.immersive-mode .game-screen {
+    grid-template-columns: minmax(0, 1fr) minmax(244px, 40vw);
+    grid-template-rows: 48px auto minmax(0, 1fr);
+    column-gap: 12px;
+    row-gap: 6px;
+    padding-inline: max(10px, var(--safe-area-left, env(safe-area-inset-left)))
+      max(10px, var(--safe-area-right, env(safe-area-inset-right)));
+  }
+
+  html.android-v5.mobile-ui .game-screen .board-wrap {
+    grid-column: 1;
+    grid-row: 1 / 4;
+    justify-content: center;
+  }
+
+  html.android-v5.mobile-ui .game-screen .mobile-topbar {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  html.android-v5.mobile-ui .game-screen .game-header {
+    grid-column: 2;
+    grid-row: 2;
+    grid-template-columns: minmax(100px, 1.2fr) minmax(72px, .8fr) minmax(72px, .9fr);
+  }
+
+  html.android-v5.mobile-ui .game-screen .mobile-controls {
+    grid-column: 2;
+    grid-row: 3;
+    grid-template-rows: 96px;
+    min-height: 96px;
+    align-self: end;
+  }
+
+  html.android-v5.mobile-ui.immersive-mode .game-screen {
+    grid-template-rows: 48px auto minmax(0, 1fr);
+  }
+
+  html.android-v5 .lan-screen.game-shell--touch {
+    padding-inline: max(10px, var(--safe-area-left, 0px)) max(10px, var(--safe-area-right, 0px));
+  }
+
+  html.android-v5 .lan-screen.game-shell--touch .lan-play-space {
+    grid-template-columns: minmax(118px, 148px) minmax(0, 1fr) 140px;
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: 4px 8px;
+  }
+
+  html.android-v5 .lan-screen.game-shell--touch .lan-status-slot,
+  html.android-v5 .lan-screen.game-shell--touch .lan-own-column {
+    grid-column: 2;
+  }
+
+  html.android-v5 .lan-screen.game-shell--touch .lan-status-slot {
+    grid-row: 1;
+  }
+
+  html.android-v5 .lan-screen.game-shell--touch .lan-own-column {
+    grid-row: 2;
+  }
+
+  html.android-v5 .lan-screen.game-shell--touch .lan-side {
+    grid-column: 3;
+    grid-row: 1 / -1;
+    display: flex;
+  }
+
+  html.android-v5 .lan-screen.game-shell--touch .lan-preview-slot {
+    flex: 0 0 auto;
+    justify-content: center;
+  }
+
+  html.android-v5 .lan-screen.game-shell--touch .lan-opponents {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  html.android-v5 .lan-screen.game-shell--touch .lan-controls {
+    grid-column: 1;
+    grid-row: 1 / -1;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 88px 44px;
+    align-content: center;
+  }
+
+  html.android-v5 .lan-screen.game-shell--touch .lan-controls #lan-fire {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  html.android-v5 .lan-screen.game-shell--touch .lan-controls .lan-sliders {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  html.android-v5 .lan-screen.game-shell--touch .lan-match-hud {
+    grid-template-columns: minmax(112px, 1.2fr) minmax(76px, .8fr) minmax(92px, .9fr);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.android-v5 *,
+  html.android-v5 *::before,
+  html.android-v5 *::after {
+    scroll-behavior: auto !important;
+    transition-duration: .01ms !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

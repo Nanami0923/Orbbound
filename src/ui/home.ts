@@ -9,7 +9,7 @@ export function buildHome(touch: boolean): void {
   document.querySelector('.hero-notes')?.remove();
   document.querySelector('.hero-description')!.textContent = '同色连接 · 切断支撑 · 连锁坠落';
   document.querySelector('.home-card')!.innerHTML = `
-    ${homeDemoMarkup(touch)}
+    ${homeDemoMarkup(touch, document.documentElement.classList.contains('windows-v5') || document.documentElement.classList.contains('android-v5'))}
     <div class="home-actions mobile-mode-cards">
       <div class="mode-card campaign"><button id="campaign-button" class="mode-main" type="button"><b class="mode-symbol">◇</b><span><strong>闯关模式</strong><small>固定棋盘 · 逐关解锁 · 星级挑战</small><small id="campaign-progress" class="mode-best"></small></span><b class="mode-action">选关 →</b></button></div>
       ${(['endless', 'timed'] as const).map(mode => `<div class="mode-card ${mode}">
@@ -22,7 +22,7 @@ export function buildHome(touch: boolean): void {
   document.querySelector('.home-footer')!.innerHTML = `<div><button id="tutorial-button" class="text-button" type="button">? 玩法</button><button id="settings-button" class="text-button" type="button">⚙ 设置</button><button data-history class="text-button" type="button">◉ 记录</button></div>`;
   const demo = document.querySelector<HTMLElement>('.mechanism-demo')!;
   document.querySelector('.hero-copy')?.append(demo);
-  demo.addEventListener('click', () => {
+  if (!demo.classList.contains('mechanism-demo--auto')) demo.addEventListener('click', () => {
     for (const animation of demo.getAnimations({ subtree: true })) { animation.currentTime = 0; animation.play(); }
   });
 }

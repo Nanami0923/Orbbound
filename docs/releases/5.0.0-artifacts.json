@@ -1,0 +1,19 @@
+{
+  "version": "5.0.0",
+  "title": "双端界面重做与 Android 竖屏信息栏优化（候选测试版）",
+  "prerelease": true,
+  "artifacts": [
+    {
+      "platform": "Android",
+      "file": "Orbbound-5.0.0-Android.apk",
+      "bytes": 1385247,
+      "sha256": "c047ae64769a7c7fdcda19476b0501be1dd0765b0cea35bc50438198113a698f"
+    },
+    {
+      "platform": "Windows",
+      "file": "Orbbound-Windows-5.0.0-x64.zip",
+      "bytes": 730482,
+      "sha256": "b09557c15e574954a957006eccf064fde9cbd57997a14bf515d455d00f07465d"
+    }
+  ]
+}

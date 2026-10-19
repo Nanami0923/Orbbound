@@ -1,6 +1,6 @@
 # Orbbound
 
-Android 与 Windows 最新测试版均为 **4.7.0**，稳定正式版保留 **4.3.0**。本次修正首页演示落点，统一结算与菜单关闭返回、标题和按钮居中、四模式下一球预览，并重排联机顶部信息。补充终局记录幂等与保存失败保护，保留单机模式、30 个高难度关卡、2–4 人局域网联机与旧存档。
+Windows 与 Android **5.0.0** 双端候选版已完成构建，Android 16 真机覆盖安装与核心界面检查通过；更新目前在 GitHub PR #1 等待合并，公开可下载的测试包仍为 **4.7.0**。稳定正式版保留 **4.3.0**，4.7.0 的功能、兼容记录与下载入口继续保留。
 
 ## 交付位置
 
@@ -14,6 +14,8 @@ Android 与 Windows 最新测试版均为 **4.7.0**，稳定正式版保留 **4.
 测试版下载：[Windows 4.7.0 ZIP](https://github.com/Nanami0923/Orbbound/releases/download/v4.7.0/Orbbound-Windows-4.7.0-x64.zip) · [Android 4.7.0 APK](https://github.com/Nanami0923/Orbbound/releases/download/v4.7.0/Orbbound-4.7.0-Android.apk) · [4.7.0 发布入口](https://github.com/Nanami0923/Orbbound/releases/tag/v4.7.0)。[4.3.0 稳定正式版](https://github.com/Nanami0923/Orbbound/releases/tag/v4.3.0)继续保留。
 
 [4.7.0 更新说明](docs/releases/4.7.0-notes.md) · [验证记录](docs/releases/4.7.0-validation.md) · [本次实施方案](docs/design/4.7.0界面排版与关闭返回逻辑更新方案.md)
+
+[5.0.0 更新说明](docs/releases/5.0.0-notes.md) · [验证记录](docs/releases/5.0.0-validation.md) · [双端实施方案](docs/design/)
 
 Windows 请完整解压 ZIP 后运行 `Orbbound/Orbbound.exe`。轻量包不包含运行环境，使用本机 .NET Framework 4.8 和共享 WebView2 Evergreen Runtime；具备环境后可离线游玩。缺少 WebView2 时程序提供[微软官方补装入口](https://developer.microsoft.com/en-us/microsoft-edge/webview2#download-section)，本次发布不上传环境安装包。
 

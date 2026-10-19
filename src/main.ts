@@ -26,6 +26,9 @@ import type { PlayScene } from './game/PlayScene';
 import { updateOrbPreview } from './ui/next-orb-preview';
 import { clearGame, hasLegacySave, loadGame, setHighScore, type Settings } from './storage/storage';
 import './style.css';
+import './ui/windows-v5.css';
+import './ui/android-v5.css';
+import './ui/v5-components.css';
 import { buildHome, updateHome } from './ui/home';
 import { gameAudio } from './game/audio';
 import { bindFireButton } from './game/fire-control';
@@ -40,6 +43,7 @@ import { formatHeadings, prepareModalHeader } from './ui/typography';
 import { createModalNavigation, type ModalPage } from './ui/modal-navigation';
 import { loadHistory, recordRound, hasCompletedRound, formatDuration, rankingKey, leaderboard, recordRules, roundStanding, type HistoryDifficulty, type HistoryRules } from './storage/history';
 import { installLan } from './ui/lan-panel';
+import { dangerValueParts } from './ui/danger-value';
 
 interface SceneStateDetail {
   levelId?: number;
@@ -61,6 +65,12 @@ interface SceneStateDetail {
   step: number;
   elapsedMs: number;
 }
+
+const requestedV5Platform = import.meta.env.DEV ? new URLSearchParams(window.location.search).get('platform') : null;
+const windowsV5 = import.meta.env.MODE === 'windows' || requestedV5Platform === 'windows';
+const androidV5 = Capacitor.getPlatform() === 'android' || requestedV5Platform === 'android';
+document.documentElement.classList.toggle('windows-v5', windowsV5);
+document.documentElement.classList.toggle('android-v5', androidV5);
 
 bindViewportShell();
 buildHome(usesButtonControls());
@@ -88,7 +98,9 @@ const timedContinueButton = document.querySelector<HTMLButtonElement>('#timed-co
 const launchButton = document.querySelector<HTMLButtonElement>('#launch-button');
 const scoreValue = document.querySelector<HTMLElement>('#score-value');
 const dangerValue = document.querySelector<HTMLElement>('#danger-value');
+const dangerStat = document.querySelector<HTMLElement>('.danger-stat');
 const dangerFill = document.querySelector<HTMLElement>('#danger-fill');
+const comboFeedback = document.querySelector<HTMLOutputElement>('#combo-feedback');
 const descentTimeRow = document.querySelector<HTMLElement>('#descent-time-row');
 const descentTimeValue = document.querySelector<HTMLElement>('#descent-time-value');
 const descentTimeFill = document.querySelector<HTMLElement>('#descent-time-fill');
@@ -119,6 +131,7 @@ let selectedMode: GameMode = 'endless';
 let selectedDuration = 300000;
 let game: Phaser.Game | null = null;
 let toastTimer: number | undefined;
+let comboFeedbackTimer: number | undefined;
 let resumeAfterModal = false;
 let disposeModal: (() => void) | null = null;
 let disposeModalPages: (() => void) | undefined;
@@ -137,12 +150,29 @@ let previousUiDetail:SceneStateDetail|undefined;
 let pendingFire=false;
 let practiceSeen=readStorage('orbbound-practice-seen')==='1';
 
+function syncAndroidV5Hud(): void {
+  if (!androidV5) return;
+  const header = gameScreen?.querySelector<HTMLElement>('.game-header');
+  const topbar = gameScreen?.querySelector<HTMLElement>('.mobile-topbar');
+  const next = gameScreen?.querySelector<HTMLElement>('.next-card');
+  const danger = header?.querySelector<HTMLElement>('.danger-stat');
+  if (header && next && danger && next.parentElement !== header) danger.after(next);
+
+  const clock = header?.querySelector<HTMLElement>('#round-clock')?.closest<HTMLElement>('.header-stat');
+  const help = topbar?.querySelector<HTMLElement>('#mobile-help-button');
+  if (topbar && clock && help && clock.parentElement !== topbar) {
+    clock.classList.add('android-v5-round-clock');
+    topbar.insertBefore(clock, help);
+  }
+}
+
 function syncMobileLayout(): void {
   if (usesButtonControls()) {
     const preview = document.querySelector('.next-card');
     const target = document.querySelector('.board-heading');
     if (preview && target && preview.parentElement !== target) target.append(preview);
   }
+  syncAndroidV5Hud();
   document.documentElement.classList.toggle('immersive-mode', usesButtonControls() && settings.immersiveMode);
   if (gameScreen) syncGameShell(gameScreen, { touch: usesButtonControls(), immersive: settings.immersiveMode, mode: previousUiDetail?.mode ?? selectedMode });
   document.querySelectorAll<HTMLElement>('[data-shortcut]').forEach(label => { label.textContent = shortcutLabel(settings.shortcuts[label.dataset.shortcut as ShortcutAction]); });
@@ -307,15 +337,38 @@ function updateGameState(detail: SceneStateDetail): void {
   const remaining = shotsUntilDescent(detail.difficultyId, detail.danger);
   if (dangerValue) {
     const label = detail.status !== 'READY' ? '本局结束' : level ? (level.timeLimitMs ? '限时清空' : `剩余 ${Math.max(0, level.maxShots - detail.step)} 发`) : timed ? `${remaining} 次` : remaining === 1 ? '下一发后下降' : `再发射 ${remaining} 次`;
-    if (dangerValue.textContent !== label) dangerValue.textContent = label;
-    dangerValue.style.color = (level ? !level.timeLimitMs && level.maxShots - detail.step <= 2 : remaining <= 2) ? 'var(--coral)' : 'var(--cream)';
+    const accessibleLabel = label;
+    const visualLabel = androidV5 && label === '下一发后下降' ? '1 次' : label;
+    if (androidV5) {
+      const parts = dangerValueParts(visualLabel);
+      if (parts) {
+        if (dangerValue.getAttribute('aria-label') !== accessibleLabel) {
+          const number = document.createElement('span');
+          number.className = 'danger-value-number';
+          number.textContent = parts.number;
+          const unit = document.createElement('small');
+          unit.className = 'unit';
+          unit.textContent = parts.unit;
+          dangerValue.replaceChildren(number, unit);
+          dangerValue.setAttribute('aria-label', accessibleLabel);
+        }
+      } else if (dangerValue.textContent !== visualLabel || dangerValue.hasAttribute('aria-label')) {
+        dangerValue.textContent = visualLabel;
+        dangerValue.removeAttribute('aria-label');
+      }
+    } else if (dangerValue.textContent !== label) dangerValue.textContent = label;
+    const shotsLeft = level ? (level.timeLimitMs ? Number.POSITIVE_INFINITY : Math.max(0, level.maxShots - detail.step)) : remaining;
+    const critical = detail.status === 'READY' && shotsLeft <= 2;
+    const immediate = detail.status === 'READY' && shotsLeft <= 1;
+    dangerStat?.classList.toggle('near', critical && !immediate);
+    dangerStat?.classList.toggle('urgent', immediate);
   }
   if (dangerFill) {
     const progress = level ? (level.timeLimitMs ? Math.max(0, 100 * (1 - detail.elapsedMs / level.timeLimitMs)) : Math.max(0, 100 * (1 - detail.step / level.maxShots))) : timed ? (detail.status === 'READY' ? bars.shotPercent : 0) : Math.max(0, Math.min(100, detail.danger / DANGER_MAX * 100));
     dangerFill.style.transform = `scaleX(${progress/100})`;
     if(roundChanged)dangerFill.parentElement?.setAttribute('aria-label', level ? '闯关剩余资源' : '下落次数倒计时');
     setAttributeIfChanged(dangerFill.parentElement,'aria-valuenow',String(Math.round(progress)));
-    setAttributeIfChanged(dangerFill.parentElement,'aria-valuetext',dangerValue?.textContent ?? '');
+    setAttributeIfChanged(dangerFill.parentElement,'aria-valuetext',dangerValue?.getAttribute('aria-label') ?? dangerValue?.textContent ?? '');
   }
   if (timed && descentTimeFill && descentTimeValue) {
     const label = detail.status === 'READY' ? `${Math.ceil(detail.descentRemainingMs / 1000)} 秒` : '本局结束';
@@ -326,7 +379,7 @@ function updateGameState(detail: SceneStateDetail): void {
     descentTimeFill.parentElement?.setAttribute('aria-valuetext', label);
     descentTimeRow?.classList.toggle('urgent', detail.status === 'READY' && detail.descentRemainingMs <= 5000);
   }
-  if (descentCaption) setTextIfChanged(descentCaption,level ? `${level.targets ? `目标剩余 ${detail.targetsRemaining ?? 0}` : '清空棋盘'}${level.descentEvery ? ` · ${level.descentEvery - detail.step % level.descentEvery} 发后下移` : ' · 不下压'}` : '距离棋盘下降');
+  if (descentCaption) setTextIfChanged(descentCaption,level ? `${level.targets ? `目标剩余 ${detail.targetsRemaining ?? 0}` : '清空棋盘'}${level.descentEvery ? ` · ${level.descentEvery - detail.step % level.descentEvery} 发后下移` : ' · 不下压'}` : androidV5 ? '距下压' : '距离棋盘下降');
   const budget=document.querySelector<HTMLElement>('#campaign-budget');
   if(budget){budget.hidden=!level;if(level)setTextIfChanged(budget,starBudget(level,detail.step,detail.elapsedMs));}
   const difficultyText = level ? `第 ${level.id} 关 · ${level.name}` : `${detail.mode === 'timed' ? '限时' : '无尽'} · ${getDifficulty(detail.difficultyId).label} ×${scoreMultiplier(detail.difficultyId)}`;
@@ -549,7 +602,8 @@ function showCampaignResult(state: GameState): void {
   const saved = getScene()?.lastPersistenceResult?.ok === true;
   const level = getLevel(state.levelId!), won = state.status === 'WON', stars = campaignStars(state);
   const next = CAMPAIGN_LEVELS.find(candidate => candidate.id === level.id + 1);
-  openModal(`<button class="modal-close" data-close-modal>关闭</button><p class="eyebrow">第 ${level.id} 关 / ${level.name}</p><h2>${won ? next ? '目标完成，继续向前' : '三十关，全部走过' : state.endReason === 'shots' ? '发数用尽，再想一步' : state.endReason === 'timeout' ? '时间到了，再试一次' : '棋盘触底，再试一次'}</h2><div class="campaign-result-stars" aria-label="${stars} 星">${'★'.repeat(stars)}${'☆'.repeat(3 - stars)}</div><p>${state.step} 次发射 · 操作用时 ${formatDuration(state.elapsedMs ?? 0)}</p><p>${won ? starRules(level) : escapeText(failureAdvice(state,level))}</p>${won && stars<3 ? `<p>${escapeText(starBudget(level,state.step,state.elapsedMs??0))}。重试同一布局，争取更少发数或更短操作时间。</p>` : ''}${won && !next ? `<p>你已完成本篇章。可以返回选关，挑战全部 ${CAMPAIGN_LEVELS.length * 3} 星。</p>` : ''}<div class="modal-footer">${won && next ? '<button id="campaign-next" class="primary-button">下一关 →</button>' : ''}<button id="campaign-retry" class="${won && next ? 'quiet-button' : 'primary-button'}">重试本关</button><button id="campaign-select" class="quiet-button">返回选关</button><button id="campaign-home" class="quiet-button">首页</button></div>`, 'result-card', showHome, 'paged');
+  const starMarkup = Array.from({ length: 3 }, (_, index) => `<span class="campaign-result-star${index < stars ? ' earned' : ''}" style="--star-delay:${index * 140}ms" aria-hidden="true">${index < stars ? '★' : '☆'}</span>`).join('');
+  openModal(`<button class="modal-close" data-close-modal>关闭</button><p class="eyebrow">第 ${level.id} 关 / ${level.name}</p><h2>${won ? next ? '目标完成，继续向前' : '三十关，全部走过' : state.endReason === 'shots' ? '发数用尽，再想一步' : state.endReason === 'timeout' ? '时间到了，再试一次' : '棋盘触底，再试一次'}</h2><div class="campaign-result-stars" aria-label="${stars} 星">${starMarkup}</div><p>${state.step} 次发射 · 操作用时 ${formatDuration(state.elapsedMs ?? 0)}</p><p>${won ? starRules(level) : escapeText(failureAdvice(state,level))}</p>${won && stars<3 ? `<p>${escapeText(starBudget(level,state.step,state.elapsedMs??0))}。重试同一布局，争取更少发数或更短操作时间。</p>` : ''}${won && !next ? `<p>你已完成本篇章。可以返回选关，挑战全部 ${CAMPAIGN_LEVELS.length * 3} 星。</p>` : ''}<div class="modal-footer">${won && next ? '<button id="campaign-next" class="primary-button">下一关 →</button>' : ''}<button id="campaign-retry" class="${won && next ? 'quiet-button' : 'primary-button'}">重试本关</button><button id="campaign-select" class="quiet-button">返回选关</button><button id="campaign-home" class="quiet-button">首页</button></div>`, 'result-card', showHome, 'paged');
   modalRoot?.querySelector('#campaign-next')?.addEventListener('click', modalAction(() => beginCampaign(next!.id)));
   modalRoot?.querySelector('#campaign-retry')?.addEventListener('click', modalAction(() => beginCampaign(level.id)));
   modalRoot?.querySelector('#campaign-select')?.addEventListener('click', modalAction(() => { showHome(); showCampaign(); }));
@@ -752,6 +806,26 @@ document.querySelector<HTMLButtonElement>('#back-home-button')?.addEventListener
 
 window.addEventListener('snood-state', (event) => {
   updateGameState((event as CustomEvent<SceneStateDetail>).detail);
+});
+window.addEventListener('snood-combo', (event) => {
+  if ((!windowsV5 && !androidV5) || !comboFeedback) return;
+  const count = Number((event as CustomEvent<{ count: number }>).detail?.count);
+  if (!Number.isInteger(count) || count < 2) return;
+  window.clearTimeout(comboFeedbackTimer);
+  comboFeedback.textContent = `连击 ×${count}`;
+  comboFeedback.hidden = false;
+  comboFeedback.classList.remove('is-active');
+  void comboFeedback.offsetWidth;
+  comboFeedback.classList.add('is-active');
+  comboFeedbackTimer = window.setTimeout(() => {
+    comboFeedback.classList.remove('is-active');
+    comboFeedbackTimer = window.setTimeout(() => { comboFeedback.hidden = true; }, 220);
+  }, 1030);
+});
+window.addEventListener('snood-round-start', () => {
+  window.clearTimeout(comboFeedbackTimer);
+  comboFeedback?.classList.remove('is-active');
+  if (comboFeedback) comboFeedback.hidden = true;
 });
 window.addEventListener('snood-persistence-result', (event) => {
   const detail = (event as CustomEvent<{ ok: boolean; kind: 'save' | 'result' | 'clear' }>).detail;

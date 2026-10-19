@@ -11,6 +11,11 @@ export const BOARD_APPEARANCE = {
   descentMs: 360, recoilDistance: 9, recoilMs: 140, landingFlashMs: 220,
 } as const;
 
+function isV5Artwork(): boolean {
+  const root = typeof document !== 'undefined' ? document.documentElement : undefined;
+  return root?.classList?.contains('windows-v5') === true || root?.classList?.contains('android-v5') === true;
+}
+
 /** Phaser Graphics and the Canvas adapter consume this same drawing recipe. */
 export interface BoardGraphics {
   fillStyle(color: number, alpha?: number): BoardGraphics;
@@ -39,12 +44,19 @@ export function drawArena(graphics: BoardGraphics): void {
 }
 
 export function drawDangerLine(graphics: BoardGraphics, pressure: number, geometry: BoardGeometry): void {
-  graphics.lineStyle(2, UI_COLORS.danger, .18 + pressure * .65).lineBetween(48, 608, 592, 608);
-  if (geometry.ceilingRow) graphics.lineStyle(2, UI_COLORS.accent, .6).lineBetween(48, geometry.top, 592, geometry.top);
+  const v5 = isV5Artwork();
+  graphics.lineStyle(v5 ? 1 : 2, UI_COLORS.danger, v5 ? .12 + pressure * .24 : .18 + pressure * .65).lineBetween(48, 608, 592, 608);
+  if (geometry.ceilingRow) graphics.lineStyle(1, UI_COLORS.accent, v5 ? .34 : .6).lineBetween(48, geometry.top, 592, geometry.top);
 }
 
 export function drawLauncherBase(graphics: BoardGraphics): void {
   const { launcherX: x, launcherY: y } = BOARD_GEOMETRY;
+  if (isV5Artwork()) {
+    graphics.fillStyle(0x101a29, .96).fillCircle(x, y + 3, 38);
+    graphics.lineStyle(1, UI_COLORS.line, .48).strokeCircle(x, y + 3, 38);
+    graphics.fillStyle(0x283449, .88).fillCircle(x, y + 3, 26);
+    return;
+  }
   graphics.fillStyle(0x0b1120, .95).fillCircle(x, y + 3, 42);
   graphics.lineStyle(2, UI_COLORS.line, .9).strokeCircle(x, y + 3, 42);
   graphics.fillStyle(0x253451, .9).fillCircle(x, y + 3, 29);
@@ -52,6 +64,13 @@ export function drawLauncherBase(graphics: BoardGraphics): void {
 }
 
 export function drawLauncherBarrel(graphics: BoardGraphics, color: number): void {
+  if (isV5Artwork()) {
+    graphics.fillStyle(0x111a28).fillRoundedRect(-16, -58, 32, 64, 9);
+    graphics.lineStyle(1, 0x708197, .46).strokeRoundedRect(-16, -58, 32, 64, 9);
+    graphics.fillStyle(0x29384c, .92).fillRoundedRect(-11, -53, 22, 47, 6);
+    graphics.fillStyle(getOrbTheme(color).color).fillRoundedRect(-10, -57, 20, 7, 3);
+    return;
+  }
   graphics.fillStyle(0x080e1a).fillRoundedRect(-17, -62, 34, 68, 10);
   graphics.lineStyle(2, 0x7d91ad).strokeRoundedRect(-17, -62, 34, 68, 10);
   graphics.fillStyle(0x304763).fillRoundedRect(-12, -57, 24, 51, 7);
@@ -73,14 +92,15 @@ export function aimMarkers(trace: ShotTrace, geometry: BoardGeometry): { dots: P
 }
 
 export function drawAimMarkers(graphics: BoardGraphics, trace: ShotTrace, geometry: BoardGeometry, color: number, landing?: Point): void {
+  const v5 = isV5Artwork();
   const { dots, bounce } = aimMarkers(trace, geometry);
   for (const point of dots) {
     graphics.fillStyle(0x0b1120, .9).fillCircle(point.x, point.y, 3.5);
-    graphics.fillStyle(0xc5d7e0, .65).fillCircle(point.x, point.y, 2.2);
+    graphics.fillStyle(0xc5d7e0, v5 ? .34 : .65).fillCircle(point.x, point.y, v5 ? 1.8 : 2.2);
   }
-  if (bounce) graphics.fillStyle(UI_COLORS.warning, .9).fillCircle(bounce.x, bounce.y, 4);
+  if (bounce) graphics.fillStyle(UI_COLORS.warning, v5 ? .62 : .9).fillCircle(bounce.x, bounce.y, v5 ? 3 : 4);
   if (landing) {
-    graphics.lineStyle(2, 0xffffff, .85).strokeCircle(landing.x, landing.y, geometry.radius);
-    graphics.lineStyle(1, getOrbTheme(color).color, .9).strokeCircle(landing.x, landing.y, geometry.radius - 4);
+    graphics.lineStyle(v5 ? 1 : 2, v5 ? 0x9aaabb : 0xffffff, v5 ? .38 : .85).strokeCircle(landing.x, landing.y, geometry.radius);
+    graphics.lineStyle(1, getOrbTheme(color).color, v5 ? .55 : .9).strokeCircle(landing.x, landing.y, geometry.radius - 4);
   }
 }

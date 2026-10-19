@@ -73,6 +73,7 @@ export class PlayScene extends Phaser.Scene {
   private get canSteer(): boolean { return ['READY', 'FLYING', 'RESOLVING'].includes(this.phase); }
   private pausedFrom: ScenePhase = 'READY';
   private roundEpoch = 0;
+  private comboCount = 0;
   private boardGroup!: Phaser.GameObjects.Container;
   private aimGraphics!: Phaser.GameObjects.Graphics;
   private boardBalls = new Map<string, Phaser.GameObjects.Container>();
@@ -241,6 +242,7 @@ export class PlayScene extends Phaser.Scene {
   }
 
   public begin(state: GameState): void {
+    this.comboCount = 0;
     sendWindowEvent('snood-round-start', undefined);
     this.abandoned = false;
     this.terminalPersistedId = undefined; this.persistenceResult = undefined;
@@ -637,6 +639,11 @@ export class PlayScene extends Phaser.Scene {
     const matched = events.find((event) => event.type === 'match')?.cells ?? [];
     const dropped = events.find((event) => event.type === 'drop')?.cells ?? [];
     const removed = [...matched, ...dropped];
+    const boardDrop = events.some((event) => event.type === 'board-drop');
+    if (!boardDrop) this.comboCount = removed.length > 0 ? this.comboCount + 1 : 0;
+    if (!boardDrop && removed.length > 0 && this.comboCount >= 2) {
+      sendWindowEvent('snood-combo', { count: this.comboCount, removed: removed.length });
+    }
     const removeDuration = dropped.length ? BOARD_APPEARANCE.removal.fallMs : BOARD_APPEARANCE.removal.matchMs;
     const removeDelay = BOARD_APPEARANCE.removal.delay;
 
@@ -678,7 +685,7 @@ export class PlayScene extends Phaser.Scene {
     const wait = animationGroups.size ? removeDuration + Math.max(...animationGroups.keys()) + 20 : 60;
     this.time.delayedCall(wait, () => {
       if (epoch !== this.roundEpoch) return;
-      const droppedBoard = events.some((event) => event.type === 'board-drop');
+      const droppedBoard = boardDrop;
       this.renderBoard(droppedBoard ? -BOARD_GEOMETRY.rowStep : 0);
       this.renderLauncher();
       this.emitState();

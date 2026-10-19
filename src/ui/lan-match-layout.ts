@@ -18,15 +18,18 @@ export function lanStatusSummary(player: PlayerMatchState, playerCount: number, 
 
 export function lanMatchLayoutMarkup(opponents: ReadonlyArray<{ id: string; name: string }>): string {
   const escape = (value: string) => escapeText(value);
+  const androidV5 = typeof document !== 'undefined' && document.documentElement.classList.contains('android-v5');
+  const nextOrb = nextOrbPreviewMarkup('lan-next-orb-preview');
   return `<div class="lan-match-hud">
     <div class="lan-self-summary"><span id="lan-self-name"></span><strong id="lan-self-score">0</strong><small id="lan-self-wave"></small></div>
+    ${androidV5 ? `<div class="lan-next-slot">${nextOrb}</div>` : ''}
     <div class="lan-time"><small>剩余时间</small><strong id="lan-clock">3:00</strong></div>
     <span id="lan-network" class="lan-network">延迟待测</span>
     <div class="lan-hud-actions"><button id="lan-pause" class="quiet-button" type="button">暂停</button><button id="lan-settings" class="quiet-button" type="button">设置</button></div>
   </div>
   <div class="lan-play-space"><div class="lan-status-slot"><div id="lan-attack-bar" class="lan-attack-bar"><span id="lan-status-progress"></span><span id="lan-status-defense" hidden></span><span id="lan-status-queue"></span><span id="lan-attack-warning" class="lan-attack-warning" role="status" hidden></span></div><div id="lan-pause-request" hidden></div></div>
   <div class="lan-game-layout"><div class="lan-own-column"><div class="lan-board-wrap"><canvas id="lan-self-board" width="640" height="760" aria-label="自己的联机棋盘"></canvas><div id="lan-game-overlay" class="lan-game-overlay" hidden></div></div></div>
-    <aside class="lan-side" aria-label="下一球与其他选手"><div class="lan-preview-slot"><button id="lan-watch-self" class="quiet-button" type="button" hidden>返回自己</button>${nextOrbPreviewMarkup('lan-next-orb-preview')}</div>
+    <aside class="lan-side" aria-label="${androidV5 ? '其他选手' : '下一球与其他选手'}"><div class="lan-preview-slot"><button id="lan-watch-self" class="quiet-button" type="button" hidden>返回自己</button>${androidV5 ? '' : nextOrb}</div>
       <div class="lan-opponents" style="--lan-opponent-count:${Math.max(1, Math.min(3, opponents.length))}" aria-label="其他选手">${opponents.map(({ id, name }, index) => `<button class="lan-opponent" type="button" data-watch="${escape(id)}" aria-pressed="false" aria-label="查看${escape(name)}的棋盘"><canvas ${index === 0 ? 'id="lan-other-board"' : ''} data-lan-player-board="${escape(id)}" width="128" height="152" aria-label="对方棋盘缩略图"></canvas><span class="lan-opponent-info"><strong data-player-name="${escape(id)}"></strong><span class="lan-opponent-meta"><small data-player-score="${escape(id)}"></small><small data-player-state="${escape(id)}"></small></span></span></button>`).join('')}</div>
     </aside>
   </div>

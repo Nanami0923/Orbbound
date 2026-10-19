@@ -1,0 +1,614 @@
+/*
+ * Windows 5.0 presentation layer.
+ * The host must add `windows-v5` to <html> only for MODE=windows.
+ * This file changes visual tokens and paint only; shared layout geometry stays in style.css.
+ */
+
+html.windows-v5 {
+  color-scheme: dark;
+  font-family: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+  font-size: 14px;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  font-variant-numeric: proportional-nums;
+  color: #e7ebef;
+  background: #0d1421;
+
+  --bg: #0d1421;
+  --panel: #192335;
+  --panel-2: #202d40;
+  --line: #344257;
+  --muted: #a7b1c0;
+  --soft: #78869a;
+  --cream: #e7ebef;
+  --mint: #83cdb5;
+  --gold: #ddba62;
+  --coral: #e18a89;
+  --shadow: 0 18px 48px rgba(0, 0, 0, 0.24);
+  --board-corner-radius: 20px;
+
+  /* Shared starting colors for DOM and renderer-side Windows appearance work. */
+  --orb-coral: #df827e;
+  --orb-mint: #76bdab;
+  --orb-gold: #d7b86c;
+  --orb-purple: #a18bd3;
+  --orb-blue: #77a5cf;
+  --orb-rose: #ca8da9;
+}
+
+html.windows-v5 body {
+  color: var(--cream);
+  background: var(--bg);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+html.windows-v5 :is(button, input, select, textarea) {
+  font-family: inherit;
+}
+
+html.windows-v5 button:focus-visible,
+html.windows-v5 :is(input, select, textarea):focus-visible,
+html.windows-v5 .game-screen button:focus-visible,
+html.windows-v5 .modal-card :focus-visible {
+  outline: 2px solid var(--mint);
+  outline-offset: 2px;
+}
+
+/* Quiet brand marks and typography. */
+html.windows-v5 .brand-mark i {
+  box-shadow: none;
+}
+
+html.windows-v5 .brand-mark i:nth-child(2) {
+  background: var(--gold);
+}
+
+html.windows-v5 .brand-mark i:nth-child(3) {
+  background: var(--coral);
+}
+
+html.windows-v5 .brand-name,
+html.windows-v5 .header-brand {
+  letter-spacing: 0.13em;
+}
+
+html.windows-v5 .eyebrow,
+html.windows-v5 .card-kicker,
+html.windows-v5 .header-stat small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+
+html.windows-v5 .version-pill {
+  color: var(--soft);
+  border-color: var(--line);
+}
+
+/* Shared button paint. Dimensions stay with the existing platform layout. */
+html.windows-v5 :is(.primary-button, .quiet-button, .side-button, .text-button, .difficulty-option, .icon-button, .modal-close, .history-close, .level-tile, .settings-categories button) {
+  transition: transform 140ms ease, background-color 140ms ease, border-color 140ms ease, color 140ms ease;
+}
+
+html.windows-v5 .primary-button {
+  background: var(--mint);
+  color: #102a29;
+  font-size: 13px;
+  font-weight: 650;
+  box-shadow: none;
+}
+
+html.windows-v5 .primary-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  background: #91d6c1;
+}
+
+html.windows-v5 .quiet-button,
+html.windows-v5 .modal-close {
+  background: #222e41;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+html.windows-v5 .quiet-button:hover:not(:disabled),
+html.windows-v5 .modal-close:hover {
+  transform: translateY(-1px);
+  background: #29374b;
+  color: var(--cream);
+}
+
+html.windows-v5 .text-button {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+html.windows-v5 .text-button:hover {
+  color: var(--mint);
+}
+
+html.windows-v5 .difficulty-option:hover,
+html.windows-v5 .difficulty-option.active {
+  border-color: rgba(131, 205, 181, 0.38);
+  background: rgba(131, 205, 181, 0.1);
+  color: var(--mint);
+}
+
+html.windows-v5 .icon-button {
+  border-color: var(--line);
+  background: #1a2638;
+  color: var(--cream);
+}
+
+html.windows-v5 .icon-button:hover {
+  transform: translateY(-1px);
+  background: #263448;
+}
+
+/* Home: one calm mint entry, with the other modes held in the same navy tier. */
+html.windows-v5 .home-screen,
+html.windows-v5 .home-content,
+html.windows-v5 .hero-copy,
+html.windows-v5 .home-card {
+  color: var(--cream);
+}
+
+html.windows-v5 .hero-copy h1 {
+  color: var(--cream);
+  font-weight: 700;
+  letter-spacing: -0.045em;
+}
+
+html.windows-v5 .hero-copy h1 em {
+  color: var(--mint);
+}
+
+html.windows-v5 .hero-description,
+html.windows-v5 .home-footer,
+html.windows-v5 .mechanism-demo > span {
+  color: var(--muted);
+}
+
+html.windows-v5 .home-footer {
+  border-top: 1px solid rgba(120, 134, 154, 0.18);
+}
+
+html.windows-v5 .mode-card {
+  --mode-accent: var(--mint);
+  border-color: #2b394d;
+  border-left-color: var(--mode-accent);
+  background: #192335;
+}
+
+html.windows-v5 .mode-card.endless {
+  border-color: #315248;
+  border-left-color: var(--mint);
+  background: #1b302e;
+}
+
+html.windows-v5 .mode-card.campaign {
+  --mode-accent: var(--gold);
+}
+
+html.windows-v5 .mode-card.timed {
+  --mode-accent: var(--coral);
+}
+
+html.windows-v5 .mode-card.lan-mode {
+  --mode-accent: #9aabc0;
+}
+
+html.windows-v5 .mode-main {
+  color: var(--cream);
+  font-size: 13px;
+}
+
+html.windows-v5 .mode-main:hover {
+  background: rgba(231, 235, 239, 0.035);
+}
+
+html.windows-v5 .mode-card.endless .mode-main:hover {
+  background: rgba(131, 205, 181, 0.06);
+}
+
+html.windows-v5 .mode-main strong {
+  font-size: 15px;
+  font-weight: 650;
+}
+
+html.windows-v5 .mode-main small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+html.windows-v5 .mode-main .mode-best,
+html.windows-v5 .mode-action {
+  font-size: 12px;
+}
+
+html.windows-v5 .mode-action {
+  color: var(--mode-accent);
+}
+
+html.windows-v5 .mechanism-demo {
+  color: var(--muted);
+  cursor: default;
+}
+
+html.windows-v5 .mechanism-demo .demo-orbits {
+  opacity: 0.07;
+}
+
+html.windows-v5 .mechanism-demo .demo-route-left,
+html.windows-v5 .mechanism-demo .demo-route-right {
+  stroke: #a7b1c0;
+  stroke-opacity: 0.2;
+}
+
+html.windows-v5 .mechanism-demo .demo-match-left text,
+html.windows-v5 .mechanism-demo .demo-match-right text,
+html.windows-v5 .mechanism-demo .demo-shot text,
+html.windows-v5 .mechanism-demo .demo-falling text {
+  fill: #18312d;
+}
+
+html.windows-v5.reduce-motion .mechanism-demo :is(.demo-orbits, .demo-shot, .demo-match-left, .demo-match-right, .demo-falling) {
+  animation-play-state: paused;
+}
+
+html.windows-v5 .hero-orb,
+html.windows-v5 .dom-orb {
+  box-shadow: none;
+}
+
+html.windows-v5 .hero-orb::after,
+html.windows-v5 .dom-orb::after {
+  display: none;
+}
+
+/* Gameplay HUD, next-ball seat and right-side actions. */
+html.windows-v5 .game-header,
+html.windows-v5 .game-sidebar,
+html.windows-v5 .board-wrap {
+  color: var(--cream);
+}
+
+html.windows-v5 .header-stat small,
+html.windows-v5 .current-card,
+html.windows-v5 .current-card p,
+html.windows-v5 .board-heading {
+  color: var(--muted);
+}
+
+html.windows-v5 .header-stat strong,
+html.windows-v5 .score-stat strong,
+html.windows-v5 #round-clock,
+html.windows-v5 #danger-value,
+html.windows-v5 .result-score {
+  font-variant-numeric: tabular-nums;
+}
+
+html.windows-v5 .score-stat strong {
+  color: var(--cream);
+  font-size: 32px;
+}
+
+html.windows-v5 .danger-meter {
+  background: #273448;
+}
+
+html.windows-v5 .danger-meter span {
+  background: linear-gradient(90deg, var(--mint), var(--gold), var(--coral));
+}
+
+html.windows-v5 .danger-stat strong,
+html.windows-v5 #game-status-label {
+  color: var(--mint);
+}
+
+html.windows-v5 .sidebar-card {
+  border-color: #2b394d;
+  border-radius: 16px;
+  background: var(--panel);
+}
+
+html.windows-v5 .sidebar-card .card-kicker {
+  color: var(--muted);
+}
+
+html.windows-v5 .orb-preview-card .next-preview {
+  background: #121c2a;
+}
+
+html.windows-v5 .legend-icon {
+  border-color: rgba(131, 205, 181, 0.28);
+  color: var(--mint);
+}
+
+html.windows-v5 .legend-icon.slash {
+  border-color: rgba(221, 186, 98, 0.28);
+  color: var(--gold);
+}
+
+html.windows-v5 .legend-icon.warn {
+  border-color: rgba(225, 138, 137, 0.28);
+  color: var(--coral);
+}
+
+html.windows-v5 .legend-row small,
+html.windows-v5 .side-button > span,
+html.windows-v5 .side-button > kbd {
+  color: var(--soft);
+}
+
+html.windows-v5 .sidebar-actions .side-button {
+  border-color: transparent;
+  border-radius: 10px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+html.windows-v5 .sidebar-actions .side-button:hover {
+  transform: translateY(-1px);
+  border-color: transparent;
+  background: #222e41;
+  color: var(--cream);
+}
+
+html.windows-v5 .sidebar-actions .side-button > kbd {
+  display: inline-grid;
+  place-items: center;
+  min-height: 20px;
+  border: 1px solid rgba(120, 134, 154, 0.22);
+  border-radius: 4px;
+  background: rgba(13, 20, 33, 0.28);
+  color: var(--mint);
+  font-size: 11px;
+}
+
+html.windows-v5 .game-container {
+  background: #111a28;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.22);
+}
+
+html.windows-v5 .pending-fire {
+  border-color: var(--mint);
+  background: #1b302e;
+  color: var(--cream);
+}
+
+/* One modal surface shared by pause, settings, help, results, records and LAN. */
+html.windows-v5 .modal-root {
+  background: rgba(7, 11, 18, 0.84);
+}
+
+html.windows-v5 .modal-card,
+html.windows-v5 .modal-root .history-card,
+html.windows-v5 .modal-root .settings-card,
+html.windows-v5 .modal-root .campaign-panel,
+html.windows-v5 .modal-root .practice-card {
+  border-color: #344257;
+  border-radius: 16px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+html.windows-v5 .modal-card h2 {
+  color: var(--cream);
+  font-weight: 650;
+}
+
+html.windows-v5 .modal-card h3,
+html.windows-v5 .settings-detail h4 {
+  color: var(--mint);
+}
+
+html.windows-v5 .modal-card > p,
+html.windows-v5 .modal-page p,
+html.windows-v5 .modal-card .tutorial-step span,
+html.windows-v5 .setting-row small,
+html.windows-v5 .settings-context {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+html.windows-v5 .modal-close,
+html.windows-v5 .history-close {
+  background: #222e41;
+  color: var(--muted);
+}
+
+html.windows-v5 .history-close:hover {
+  background: #29374b;
+  color: var(--cream);
+}
+
+html.windows-v5 .modal-footer {
+  border-color: var(--line);
+}
+
+html.windows-v5 .setting-row {
+  border-color: rgba(120, 134, 154, 0.2);
+}
+
+html.windows-v5 .setting-row select,
+html.windows-v5 .history-filters select,
+html.windows-v5 .lan-screen :is(input, select, textarea) {
+  border-color: var(--line);
+  background: #111b2a;
+  color: var(--cream);
+}
+
+html.windows-v5 input[type="range"] {
+  accent-color: var(--mint);
+}
+
+html.windows-v5 .switch span {
+  background: #344257;
+}
+
+html.windows-v5 .switch input:checked + span {
+  background: var(--mint);
+}
+
+html.windows-v5 .switch input:checked + span::before {
+  background: #17332e;
+}
+
+html.windows-v5 .tutorial-step b,
+html.windows-v5 .result-mark {
+  background: rgba(131, 205, 181, 0.12);
+  color: var(--mint);
+}
+
+html.windows-v5 .result-card.lost .result-mark {
+  background: rgba(225, 138, 137, 0.12);
+  color: var(--coral);
+}
+
+html.windows-v5 .result-score {
+  color: var(--gold);
+}
+
+html.windows-v5 .result-meta,
+html.windows-v5 .result-card .result-description {
+  color: var(--muted);
+}
+
+/* Records and campaign screens use the same low-contrast panel and data colors. */
+html.windows-v5 .history-card,
+html.windows-v5 .campaign-panel,
+html.windows-v5 .practice-card {
+  color: var(--cream);
+}
+
+html.windows-v5 .history-title .text-button,
+html.windows-v5 .history-rules,
+html.windows-v5 .rank-status,
+html.windows-v5 .rank-meta,
+html.windows-v5 .rank-score small,
+html.windows-v5 .rank-status small,
+html.windows-v5 .history-empty {
+  color: var(--muted);
+}
+
+html.windows-v5 .history-segments {
+  border-color: var(--line);
+}
+
+html.windows-v5 .history-segments button {
+  color: var(--muted);
+}
+
+html.windows-v5 .history-segments [aria-pressed="true"] {
+  background: rgba(131, 205, 181, 0.12);
+  color: var(--mint);
+}
+
+html.windows-v5 .ranking-row,
+html.windows-v5 .history-scroll th,
+html.windows-v5 .history-scroll td {
+  border-color: rgba(120, 134, 154, 0.2);
+}
+
+html.windows-v5 .rank-number,
+html.windows-v5 .rank-score strong.recent-best,
+html.windows-v5 .result-progress {
+  color: var(--mint);
+}
+
+html.windows-v5 .recent-best,
+html.windows-v5 .history-scroll tr.recent-best {
+  background: rgba(131, 205, 181, 0.055);
+}
+
+html.windows-v5 .level-tile {
+  border-color: #344257;
+  border-radius: 10px;
+  background: #202d40;
+  color: var(--cream);
+}
+
+html.windows-v5 .level-tile:hover:not(:disabled),
+html.windows-v5 .level-tile:focus-visible {
+  border-color: var(--mint);
+  background: #26384a;
+}
+
+html.windows-v5 .level-number {
+  color: #9eb7d2;
+  font-variant-numeric: tabular-nums;
+}
+
+html.windows-v5 .level-stars,
+html.windows-v5 .campaign-result-stars,
+html.windows-v5 .campaign-star-rules {
+  color: var(--gold);
+}
+
+html.windows-v5 .level-preview,
+html.windows-v5 .practice-board {
+  background: #111b2a;
+}
+
+/* LAN routes are mounted outside #modal-root but share the same theme tokens. */
+html.windows-v5 .lan-screen {
+  color: var(--cream);
+  background: var(--bg);
+}
+
+html.windows-v5 .lan-screen :is(.lan-card, .lan-room, .lan-player) {
+  border-color: #2b394d;
+  background: var(--panel);
+}
+
+html.windows-v5 .lan-screen :is(.lan-muted, .lan-section-title > p, .lan-pagination span, .lan-room small, .lan-player small) {
+  color: var(--muted);
+}
+
+html.windows-v5 .lan-screen :is(.lan-label, .lan-status, .lan-rank-row strong) {
+  color: var(--mint);
+}
+
+html.windows-v5 .lan-screen .lan-error {
+  color: var(--coral);
+}
+
+html.windows-v5 .lan-screen .lan-notice {
+  color: var(--gold);
+}
+
+html.windows-v5 .lan-screen .lan-winner {
+  border-color: rgba(131, 205, 181, 0.42);
+  background: rgba(131, 205, 181, 0.08);
+}
+
+html.windows-v5 .lan-screen :is(button, .lan-field input, .lan-field select) {
+  font-size: 13px;
+}
+
+html.windows-v5 .lan-screen .lan-game-overlay {
+  background: rgba(13, 20, 33, 0.9);
+}
+
+html.windows-v5 .toast,
+html.windows-v5 .loading-panel {
+  border-color: var(--line);
+  background: #192335;
+  color: var(--cream);
+  box-shadow: var(--shadow);
+}
+
+html.windows-v5 .performance-badge {
+  background: #192335;
+  color: var(--mint);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.windows-v5 :is(button, .mode-main, .mechanism-demo *) {
+    transition-duration: 0.01ms;
+    animation-duration: 0.01ms;
+    animation-iteration-count: 1;
+  }
+}

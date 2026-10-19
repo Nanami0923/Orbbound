@@ -26,11 +26,13 @@ export function canvasGraphics(context: CanvasRenderingContext2D): BoardGraphics
 /** Canonical 48-unit artwork, shared by Phaser textures and Canvas sprites. */
 export function paintOrbArtwork(context: CanvasRenderingContext2D, color: number): void {
   const theme = getOrbTheme(color);
+  const root = typeof document !== 'undefined' ? document.documentElement : undefined;
+  const matte = root?.classList?.contains('windows-v5') || root?.classList?.contains('android-v5') || false;
   const circle = (x: number, y: number, radius: number, fill: string) => { context.beginPath(); context.arc(x, y, radius, 0, Math.PI * 2); context.fillStyle = fill; context.fill(); };
   context.save(); context.beginPath(); context.arc(24, 24, BOARD_APPEARANCE.orbRadius, 0, Math.PI * 2); context.clip();
   circle(24, 24, BOARD_APPEARANCE.orbRadius, theme.cssColor);
-  context.strokeStyle = 'rgba(255,255,255,.28)'; context.lineWidth = 1.5; context.stroke();
-  context.beginPath(); context.ellipse(18, 17, 5.5, 3, 0, 0, Math.PI * 2); context.fillStyle = 'rgba(255,255,255,.24)'; context.fill();
+  context.strokeStyle = matte ? 'rgba(12,20,33,.24)' : 'rgba(255,255,255,.28)'; context.lineWidth = matte ? 1 : 1.5; context.stroke();
+  context.beginPath(); context.ellipse(18, 17, matte ? 4.5 : 5.5, matte ? 2.4 : 3, 0, 0, Math.PI * 2); context.fillStyle = matte ? 'rgba(255,255,255,.075)' : 'rgba(255,255,255,.24)'; context.fill();
   context.fillStyle = theme.ink; context.font = `bold 17px ${BOARD_APPEARANCE.symbolFont}`; context.textAlign = 'center'; context.textBaseline = 'middle'; context.fillText(theme.symbol, 24, 25);
   circle(18, 32, 1.7, theme.ink); circle(30, 32, 1.7, theme.ink); context.restore();
 }

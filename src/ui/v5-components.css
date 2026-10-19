@@ -1,0 +1,391 @@
+/* Shared, low-contrast 5.0 finishing layer. Platform layout stays in its own file. */
+html:is(.windows-v5, .android-v5) body {
+  background-color: var(--bg);
+  background-image:
+    radial-gradient(circle at 13% 22%, rgba(119, 165, 207, .12) 0 1px, transparent 1.5px),
+    radial-gradient(circle at 82% 31%, rgba(131, 205, 181, .09) 0 1px, transparent 1.5px),
+    radial-gradient(circle at 71% 79%, rgba(161, 139, 211, .08) 0 1px, transparent 1.5px),
+    radial-gradient(ellipse at 78% 12%, rgba(119, 165, 207, .025), transparent 32rem);
+  background-size: 100% 100%;
+}
+
+html:is(.windows-v5, .android-v5) .danger-stat #danger-value {
+  color: var(--cream) !important;
+}
+
+html:is(.windows-v5, .android-v5) .danger-stat.near #danger-value {
+  color: var(--gold) !important;
+}
+
+html:is(.windows-v5, .android-v5) .danger-stat.urgent #danger-value {
+  color: var(--coral) !important;
+}
+
+html:is(.windows-v5, .android-v5) .danger-stat.urgent .danger-meter {
+  background: rgba(225, 138, 137, .18);
+}
+
+html:is(.windows-v5, .android-v5) .danger-stat.urgent #danger-fill {
+  background: var(--coral);
+  animation: v5-danger-pulse 1.2s ease-in-out infinite alternate;
+}
+
+html:is(.windows-v5, .android-v5) .board-wrap {
+  position: relative;
+}
+
+html.android-v5 .home-topline {
+  color: var(--cream);
+}
+
+html.android-v5 .home-topline .brand-mark i {
+  box-shadow: none;
+}
+
+html.android-v5 .hero-copy h1 {
+  color: var(--cream);
+  font-weight: 680;
+  letter-spacing: -.045em;
+}
+
+html.android-v5 .hero-copy h1 em {
+  color: var(--mint);
+}
+
+html.android-v5 .hero-description,
+html.android-v5 .home-footer,
+html.android-v5 .mechanism-demo > span {
+  color: var(--muted);
+}
+
+html.android-v5 .mechanism-demo--auto {
+  cursor: default;
+}
+
+html.android-v5 .mechanism-demo .demo-orbits {
+  opacity: .065;
+}
+
+html.android-v5 .mechanism-demo .demo-route-left,
+html.android-v5 .mechanism-demo .demo-route-right {
+  stroke: #a7b2c1;
+  stroke-opacity: .18;
+}
+
+html.android-v5 .mode-card {
+  border: 1px solid rgba(167, 178, 193, .14);
+  border-radius: 12px;
+  background: var(--panel);
+}
+
+html.android-v5 .mode-card.endless {
+  border-color: rgba(131, 205, 181, .22);
+  background: #1a2b32;
+}
+
+html.android-v5 .mode-card.campaign,
+html.android-v5 .mode-card.timed,
+html.android-v5 .mode-card.lan-mode {
+  border-left-color: rgba(167, 178, 193, .2);
+}
+
+html.android-v5 .mode-main {
+  border-radius: inherit;
+  color: var(--cream);
+}
+
+html.android-v5 .mode-main:hover,
+html.android-v5 .mode-main:active {
+  background: rgba(243, 241, 235, .035);
+}
+
+html.android-v5 .mode-main strong {
+  font-size: 15px;
+  font-weight: 650;
+}
+
+html.android-v5 .mode-main small,
+html.android-v5 .home-footer .text-button {
+  color: var(--muted);
+}
+
+html.android-v5 .mode-action {
+  color: var(--mint);
+}
+
+html.android-v5 .home-footer {
+  border-top: 1px solid rgba(167, 178, 193, .1);
+}
+
+html.android-v5 .home-footer button {
+  min-height: 44px;
+}
+
+html.android-v5 .game-screen .next-card > p {
+  display: none;
+}
+
+html.android-v5 .modal-root {
+  background: rgba(7, 11, 18, .86);
+}
+
+html.android-v5 .modal-card,
+html.android-v5 .modal-root .history-card,
+html.android-v5 .modal-root .settings-card,
+html.android-v5 .modal-root .campaign-panel,
+html.android-v5 .modal-root .practice-card {
+  border-color: #344257;
+  border-radius: 16px;
+  background: var(--panel);
+  box-shadow: 0 16px 42px rgba(0, 0, 0, .22);
+}
+
+html.android-v5 .modal-card h2,
+html.android-v5 .modal-card h3,
+html.android-v5 .settings-detail h4 {
+  color: var(--cream);
+}
+
+html.android-v5 .modal-card h3,
+html.android-v5 .settings-detail h4 {
+  color: var(--mint);
+}
+
+html.android-v5 .modal-card > p,
+html.android-v5 .modal-page p,
+html.android-v5 .modal-card .tutorial-step span,
+html.android-v5 .setting-row small,
+html.android-v5 .settings-context,
+html.android-v5 .result-meta,
+html.android-v5 .result-card .result-description {
+  color: var(--muted);
+}
+
+html.android-v5 .modal-close,
+html.android-v5 .history-close {
+  border-radius: 10px;
+  background: #222e41;
+  color: var(--muted);
+}
+
+html.android-v5 .modal-footer {
+  border-color: rgba(120, 134, 154, .2);
+}
+
+html.android-v5 .setting-row {
+  border-color: rgba(120, 134, 154, .18);
+}
+
+html.android-v5 .setting-row select,
+html.android-v5 .history-filters select,
+html.android-v5 .lan-screen :is(input, select, textarea) {
+  border-color: var(--line);
+  background: #111b2a;
+  color: var(--cream);
+}
+
+html.android-v5 input[type="range"] {
+  accent-color: var(--mint);
+}
+
+html.android-v5 .switch span {
+  background: #344257;
+}
+
+html.android-v5 .switch input:checked + span {
+  background: var(--mint);
+}
+
+html.android-v5 .switch input:checked + span::before {
+  background: #17332e;
+}
+
+html.android-v5 .result-mark {
+  position: relative;
+  background: rgba(131, 205, 181, .11);
+  color: var(--mint);
+}
+
+html.android-v5 .result-card.lost .result-mark {
+  background: rgba(225, 138, 137, .11);
+  color: var(--coral);
+}
+
+html.android-v5 .result-score {
+  color: var(--gold);
+  font-variant-numeric: tabular-nums;
+}
+
+html.android-v5 .result-progress,
+html.android-v5 .rank-number,
+html.android-v5 .recent-best {
+  color: var(--mint);
+}
+
+html.android-v5 .history-title .text-button,
+html.android-v5 .history-rules,
+html.android-v5 .rank-status,
+html.android-v5 .rank-meta,
+html.android-v5 .rank-score small,
+html.android-v5 .rank-status small,
+html.android-v5 .history-empty {
+  color: var(--muted);
+}
+
+html.android-v5 .history-segments {
+  border-color: var(--line);
+}
+
+html.android-v5 .history-segments button {
+  color: var(--muted);
+}
+
+html.android-v5 .history-segments [aria-pressed="true"] {
+  background: rgba(131, 205, 181, .12);
+  color: var(--mint);
+}
+
+html.android-v5 .ranking-row,
+html.android-v5 .history-scroll th,
+html.android-v5 .history-scroll td {
+  border-color: rgba(120, 134, 154, .2);
+}
+
+html.android-v5 .recent-best,
+html.android-v5 .history-scroll tr.recent-best {
+  background: rgba(131, 205, 181, .045);
+}
+
+html.android-v5 .level-tile {
+  border-color: #344257;
+  border-radius: 10px;
+  background: #202d40;
+  color: var(--cream);
+}
+
+html.android-v5 .level-tile:hover:not(:disabled),
+html.android-v5 .level-tile:focus-visible {
+  border-color: rgba(131, 205, 181, .55);
+  background: #26384a;
+}
+
+html.android-v5 .level-number {
+  color: #9eb7d2;
+  font-variant-numeric: tabular-nums;
+}
+
+html.android-v5 .level-stars,
+html.android-v5 .campaign-result-stars,
+html.android-v5 .campaign-star-rules {
+  color: var(--gold);
+}
+
+html.android-v5 .campaign-result-stars {
+  display: flex;
+  justify-content: center;
+  gap: .1em;
+}
+
+html:is(.windows-v5, .android-v5) .modal-root:not([hidden]) .modal-card {
+  animation: v5-modal-in 180ms ease-out both;
+}
+
+html:is(.windows-v5, .android-v5) .result-card:not(.lost) .result-mark::after,
+html:is(.windows-v5, .android-v5) .campaign-result-stars .earned::after {
+  content: "";
+  position: absolute;
+  inset: -5px;
+  border: 1px solid rgba(221, 186, 98, .5);
+  border-radius: inherit;
+  pointer-events: none;
+  animation: v5-win-ring 700ms ease-out both;
+}
+
+html:is(.windows-v5, .android-v5) .campaign-result-stars .campaign-result-star {
+  position: relative;
+  display: inline-block;
+}
+
+html:is(.windows-v5, .android-v5) .campaign-result-stars .earned::after {
+  inset: 0;
+  border-radius: 50%;
+  animation-delay: var(--star-delay, 0ms);
+}
+
+html:is(.windows-v5, .android-v5) .result-card.lost .result-mark::after {
+  content: "";
+  position: absolute;
+  inset: 0 -4px;
+  border-top: 1px solid rgba(225, 138, 137, .58);
+  border-bottom: 1px solid rgba(225, 138, 137, .35);
+  border-radius: inherit;
+  pointer-events: none;
+  animation: v5-fail-wave 280ms ease-out both;
+}
+
+html:is(.windows-v5, .android-v5) .combo-feedback {
+  position: absolute;
+  z-index: 3;
+  top: 38px;
+  left: 50%;
+  display: grid;
+  place-items: center;
+  min-height: 32px;
+  padding: 5px 12px;
+  border: 1px solid rgba(131, 205, 181, .23);
+  border-radius: 10px;
+  background: rgba(25, 35, 53, .94);
+  color: var(--mint);
+  font-size: 13px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 5px) scale(.98);
+}
+
+html:is(.windows-v5, .android-v5) .combo-feedback.is-active {
+  animation: v5-combo 1.25s ease-out both;
+}
+
+@keyframes v5-modal-in {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes v5-combo {
+  0% { opacity: 0; transform: translate(-50%, 7px) scale(.96); }
+  14%, 78% { opacity: 1; transform: translate(-50%, 0) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -5px) scale(1); }
+}
+
+@keyframes v5-win-ring {
+  from { opacity: .55; transform: scale(.82); }
+  to { opacity: 0; transform: scale(1.22); }
+}
+
+@keyframes v5-fail-wave {
+  from { opacity: .8; transform: scaleX(.82); }
+  to { opacity: 0; transform: scaleX(1.08); }
+}
+
+@keyframes v5-danger-pulse {
+  from { opacity: .78; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html:is(.windows-v5, .android-v5) .combo-feedback.is-active,
+  html:is(.windows-v5, .android-v5) .result-mark::after,
+  html:is(.windows-v5, .android-v5) .campaign-result-stars::after,
+  html:is(.windows-v5, .android-v5) .danger-stat.urgent #danger-fill {
+    animation: none !important;
+  }
+}
+
+html:is(.windows-v5, .android-v5).reduce-motion .combo-feedback.is-active,
+html:is(.windows-v5, .android-v5).reduce-motion .result-mark::after,
+html:is(.windows-v5, .android-v5).reduce-motion .campaign-result-stars::after,
+html:is(.windows-v5, .android-v5).reduce-motion .danger-stat.urgent #danger-fill {
+  animation: none !important;
+}
