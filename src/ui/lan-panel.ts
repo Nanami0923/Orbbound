@@ -45,7 +45,7 @@ type BrowseTab = 'nearby' | 'address' | 'recent' | 'diagnostics';
 export function installLan(openHome: () => void): { isActive: () => boolean; back: () => void; foreground: (active: boolean) => void } {
   const entry = document.querySelector<HTMLElement>('#lan-entry-slot') ?? document.createElement('div');
   entry.className = 'mode-card lan-mode';
-  entry.innerHTML = '<button id="lan-button" class="mode-main" type="button"><b class="mode-symbol">⇄</b><span><strong>局域网联机</strong><small>2–4 人 · 竞分 / 对战</small></span><b class="mode-action">联机 →</b></button>';
+  entry.innerHTML = `<button id="lan-button" class="mode-main" type="button"><b class="mode-symbol">⇄</b><span><strong>局域网联机</strong><small>${document.documentElement.classList.contains('android-v5') ? '2–4 人' : '2–4 人 · 竞分 / 对战'}</small></span><b class="mode-action">联机 →</b></button>`;
   if (!entry.isConnected) document.querySelector('.home-actions')?.append(entry);
   const root = document.createElement('section'); root.id = 'lan-screen'; root.className = 'lan-screen'; root.hidden = true;
   document.querySelector('#app')!.append(root);

@@ -1,7 +1,7 @@
 import { CAMPAIGN_LEVELS, getLevel } from './content/campaign';
 import { campaignStars, createCampaign } from './core/campaign';
 import { isUnlocked, loadProgress } from './storage/campaign';
-import { campaignMarkup, campaignPageSize, levelMarkup, starRules } from './ui/campaign-panel';
+import { campaignChaptersMarkup, campaignLevelsMarkup, campaignMarkup, campaignPageSize, levelMarkup, starRules } from './ui/campaign-panel';
 import { bindDesktopBridge } from './ui/desktop-bridge';
 import { bindModalFocus } from './ui/modal-focus';
 import { bindAndroidServices, refreshPlatformPerformance, replayDisplayInfo } from './ui/platform-services';
@@ -40,6 +40,18 @@ import { formatHeadings, prepareModalHeader } from './ui/typography';
 import { createModalNavigation, type ModalPage } from './ui/modal-navigation';
 import { loadHistory, recordRound, hasCompletedRound, formatDuration, rankingKey, leaderboard, recordRules, roundStanding, type HistoryDifficulty, type HistoryRules } from './storage/history';
 import { installLan } from './ui/lan-panel';
+import { availablePauseShortcut, setV5CountdownValue } from './ui/v5-hud';
+import { createRoundFeedback } from './ui/v5-feedback';
+import './ui/windows-v5.css';
+import './ui/android-v5.css';
+import './ui/v5-feedback.css';
+
+const previewPlatform = import.meta.env.DEV ? new URLSearchParams(location.search).get('platform') : null;
+const windowsV5 = import.meta.env.MODE === 'windows' || previewPlatform === 'windows';
+const androidV5 = !windowsV5 && (Capacitor.getPlatform() === 'android' || previewPlatform === 'android');
+const v5Ui = windowsV5 || androidV5;
+document.documentElement.classList.toggle('windows-v5', windowsV5);
+document.documentElement.classList.toggle('android-v5', androidV5);
 
 interface SceneStateDetail {
   levelId?: number;
@@ -78,6 +90,7 @@ if (!usesButtonControls()) {
   document.querySelector('.sidebar-actions [data-history]')!.innerHTML = '<span>历史与排行</span><kbd data-shortcut="history"></kbd>';
   document.querySelector('.sidebar-actions')!.insertAdjacentHTML('beforeend', '<button id="game-help-button" class="side-button" type="button"><span>玩法提示</span><kbd data-shortcut="help"></kbd></button>');
   document.querySelector('.sidebar-actions')!.insertAdjacentHTML('beforeend', '<button id="fullscreen-button" class="side-button" type="button"><span>全屏</span><kbd>F11</kbd></button>');
+  if (windowsV5) document.querySelector('.sidebar-actions')!.insertAdjacentHTML('afterbegin', '<button id="game-pause-button" class="side-button" type="button"><span>暂停游戏</span><kbd id="pause-shortcut"></kbd></button>');
 }
 const homeScreen = document.querySelector<HTMLElement>('#home-screen');
 const gameScreen = document.querySelector<HTMLElement>('#game-screen');
@@ -140,12 +153,26 @@ let practiceSeen=readStorage('orbbound-practice-seen')==='1';
 function syncMobileLayout(): void {
   if (usesButtonControls()) {
     const preview = document.querySelector('.next-card');
-    const target = document.querySelector('.board-heading');
+    const target = document.querySelector(androidV5 ? '.game-header' : '.board-heading');
     if (preview && target && preview.parentElement !== target) target.append(preview);
+    if (androidV5) {
+      const clock = document.querySelector('#round-clock')?.closest('.header-stat');
+      const topbar = document.querySelector('.mobile-topbar');
+      if (clock && topbar && clock.parentElement !== topbar) {
+        clock.classList.add('topbar-clock');
+        topbar.insertBefore(clock, topbar.querySelector('#mobile-help-button'));
+      }
+    }
+  } else {
+    const preview = document.querySelector('#next-orb-preview')?.closest('.next-card');
+    const sidebar = document.querySelector('#game-screen .game-sidebar');
+    if (preview && sidebar && preview.parentElement !== sidebar) sidebar.prepend(preview);
   }
   document.documentElement.classList.toggle('immersive-mode', usesButtonControls() && settings.immersiveMode);
   if (gameScreen) syncGameShell(gameScreen, { touch: usesButtonControls(), immersive: settings.immersiveMode, mode: previousUiDetail?.mode ?? selectedMode });
   document.querySelectorAll<HTMLElement>('[data-shortcut]').forEach(label => { label.textContent = shortcutLabel(settings.shortcuts[label.dataset.shortcut as ShortcutAction]); });
+  const pauseHint = document.querySelector<HTMLElement>('#pause-shortcut');
+  if (pauseHint) { pauseHint.textContent = availablePauseShortcut(settings.shortcuts) ? 'P' : ''; pauseHint.hidden = !pauseHint.textContent; }
   document.documentElement.classList.toggle("desktop-ui", !usesButtonControls());
   document.documentElement.classList.toggle('mobile-ui', usesButtonControls());
   document.documentElement.classList.toggle('controls-swapped', settings.controlsSwapped);
@@ -158,11 +185,23 @@ function syncMobileLayout(): void {
 syncMobileLayout();
 window.addEventListener('resize', () => { stopRotation(); syncMobileLayout(); cancelAnimationFrame(modalResizeFrame); modalResizeFrame = requestAnimationFrame(() => resizeModal?.()); });
 const singleBoardWrap = document.querySelector<HTMLElement>('#game-screen .board-wrap')!;
+const roundFeedback = createRoundFeedback(singleBoardWrap, document.querySelector<HTMLElement>('#combo-feedback')!, () => settings.reducedMotion || !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches);
 const singleBoardSize = new ResizeObserver(() => {
-  if (!usesButtonControls() || gameScreen?.hidden) return;
-  const heading = singleBoardWrap.querySelector<HTMLElement>('.board-heading');
-  const available = Math.max(0, singleBoardWrap.clientHeight - (heading?.getBoundingClientRect().height ?? 0));
-  const width = Math.max(1, Math.min(singleBoardWrap.clientWidth, available * 640 / 760));
+  if ((!usesButtonControls() && !windowsV5) || gameScreen?.hidden) return;
+  const style = getComputedStyle(singleBoardWrap);
+  const pixels = (value: string) => Number.parseFloat(value) || 0;
+  const flow = [...singleBoardWrap.children].filter((child): child is HTMLElement => {
+    if (!(child instanceof HTMLElement) || child.id === 'game-container' || child.hidden) return false;
+    const childStyle = getComputedStyle(child);
+    return childStyle.display !== 'none' && !['absolute', 'fixed'].includes(childStyle.position);
+  });
+  const occupied = flow.reduce((height, child) => {
+    const childStyle = getComputedStyle(child);
+    return height + child.getBoundingClientRect().height + pixels(childStyle.marginTop) + pixels(childStyle.marginBottom);
+  }, 0);
+  const available = Math.max(0, singleBoardWrap.clientHeight - pixels(style.paddingTop) - pixels(style.paddingBottom) - occupied - pixels(style.rowGap) * flow.length);
+  const availableWidth = Math.max(0, singleBoardWrap.clientWidth - pixels(style.paddingLeft) - pixels(style.paddingRight));
+  const width = Math.max(1, Math.min(availableWidth, available * 640 / 760));
   const previous = Number.parseFloat(singleBoardWrap.style.getPropertyValue('--single-board-width'));
   if (!Number.isFinite(previous) || Math.abs(previous - width) >= 0.5) {
     singleBoardWrap.style.setProperty('--single-board-width', `${width}px`);
@@ -170,6 +209,7 @@ const singleBoardSize = new ResizeObserver(() => {
   }
 });
 singleBoardSize.observe(singleBoardWrap);
+singleBoardWrap.querySelectorAll('.board-heading, #campaign-budget').forEach(element => singleBoardSize.observe(element));
 
 
 function getScene(): PlayScene | null {
@@ -187,6 +227,7 @@ async function ensureGame(): Promise<void> {
 }
 
 function showHome(): boolean {
+  roundFeedback.reset();
   roundRequest++;
   window.clearTimeout(roundBootTimer); roundBootTimer=undefined;
   window.clearTimeout(roundReadyTimer); roundReadyTimer=undefined;
@@ -211,6 +252,7 @@ function showGame(): void {
 }
 
 async function startRound(state: Parameters<PlayScene['begin']>[0] | null, difficulty = selectedDifficulty): Promise<void> {
+  roundFeedback.reset();
   if (state && hasCompletedRound(state)) {
     clearGame(state.mode); showHome(); showToast('本局已经结算，不能续玩旧存档'); return;
   }
@@ -293,6 +335,11 @@ function updateGameState(detail: SceneStateDetail): void {
     gameAudio.setScene(!gameScreen?.hidden && modalRoot?.hidden && ['READY', 'FLYING', 'RESOLVING'].includes(detail.phase) ? 'play' : 'menu');
   }
   if (scoreValue && scoreValue.textContent !== formatScore(detail.score)) scoreValue.textContent = formatScore(detail.score);
+  if (v5Ui && scoreValue && previous && !roundChanged && detail.score > previous.score) {
+    scoreValue.classList.remove('v5-score-gain');
+    void scoreValue.offsetWidth;
+    scoreValue.classList.add('v5-score-gain');
+  }
   const level = detail.mode === 'campaign' ? getLevel(detail.levelId!) : null;
   const timed = detail.mode === 'timed';
   if(roundChanged){
@@ -307,15 +354,21 @@ function updateGameState(detail: SceneStateDetail): void {
   const remaining = shotsUntilDescent(detail.difficultyId, detail.danger);
   if (dangerValue) {
     const label = detail.status !== 'READY' ? '本局结束' : level ? (level.timeLimitMs ? '限时清空' : `剩余 ${Math.max(0, level.maxShots - detail.step)} 发`) : timed ? `${remaining} 次` : remaining === 1 ? '下一发后下降' : `再发射 ${remaining} 次`;
-    if (dangerValue.textContent !== label) dangerValue.textContent = label;
-    dangerValue.style.color = (level ? !level.timeLimitMs && level.maxShots - detail.step <= 2 : remaining <= 2) ? 'var(--coral)' : 'var(--cream)';
+    if (androidV5) setV5CountdownValue(dangerValue, label, !level && remaining === 1 && detail.status === 'READY' ? '1 次' : label);
+    else if (dangerValue.textContent !== label) dangerValue.textContent = label;
+    if (v5Ui) {
+      const warningCount = level ? level.timeLimitMs ? Infinity : level.maxShots - detail.step : remaining;
+      const stat = dangerValue.closest('.danger-stat');
+      stat?.classList.toggle('near', detail.status === 'READY' && warningCount === 2);
+      stat?.classList.toggle('urgent', detail.status === 'READY' && warningCount <= 1);
+    } else dangerValue.style.color = (level ? !level.timeLimitMs && level.maxShots - detail.step <= 2 : remaining <= 2) ? 'var(--coral)' : 'var(--cream)';
   }
   if (dangerFill) {
     const progress = level ? (level.timeLimitMs ? Math.max(0, 100 * (1 - detail.elapsedMs / level.timeLimitMs)) : Math.max(0, 100 * (1 - detail.step / level.maxShots))) : timed ? (detail.status === 'READY' ? bars.shotPercent : 0) : Math.max(0, Math.min(100, detail.danger / DANGER_MAX * 100));
     dangerFill.style.transform = `scaleX(${progress/100})`;
     if(roundChanged)dangerFill.parentElement?.setAttribute('aria-label', level ? '闯关剩余资源' : '下落次数倒计时');
     setAttributeIfChanged(dangerFill.parentElement,'aria-valuenow',String(Math.round(progress)));
-    setAttributeIfChanged(dangerFill.parentElement,'aria-valuetext',dangerValue?.textContent ?? '');
+    setAttributeIfChanged(dangerFill.parentElement,'aria-valuetext',dangerValue?.getAttribute('aria-label') ?? dangerValue?.textContent ?? '');
   }
   if (timed && descentTimeFill && descentTimeValue) {
     const label = detail.status === 'READY' ? `${Math.ceil(detail.descentRemainingMs / 1000)} 秒` : '本局结束';
@@ -326,7 +379,9 @@ function updateGameState(detail: SceneStateDetail): void {
     descentTimeFill.parentElement?.setAttribute('aria-valuetext', label);
     descentTimeRow?.classList.toggle('urgent', detail.status === 'READY' && detail.descentRemainingMs <= 5000);
   }
-  if (descentCaption) setTextIfChanged(descentCaption,level ? `${level.targets ? `目标剩余 ${detail.targetsRemaining ?? 0}` : '清空棋盘'}${level.descentEvery ? ` · ${level.descentEvery - detail.step % level.descentEvery} 发后下移` : ' · 不下压'}` : '距离棋盘下降');
+  if (descentCaption) setTextIfChanged(descentCaption,level ? `${level.targets ? `目标剩余 ${detail.targetsRemaining ?? 0}` : '清空棋盘'}${level.descentEvery ? ` · ${level.descentEvery - detail.step % level.descentEvery} 发后下移` : ' · 不下压'}` : androidV5 ? '距下压' : '距离棋盘下降');
+  const desktopPause = document.querySelector<HTMLButtonElement>('#game-pause-button');
+  if (desktopPause) desktopPause.disabled = detail.status !== 'READY';
   const budget=document.querySelector<HTMLElement>('#campaign-budget');
   if(budget){budget.hidden=!level;if(level)setTextIfChanged(budget,starBudget(level,detail.step,detail.elapsedMs));}
   const difficultyText = level ? `第 ${level.id} 关 · ${level.name}` : `${detail.mode === 'timed' ? '限时' : '无尽'} · ${getDifficulty(detail.difficultyId).label} ×${scoreMultiplier(detail.difficultyId)}`;
@@ -518,28 +573,117 @@ window.addEventListener('orbbound-close-settings', () => {
 });
 
 let campaignPage = 0, campaignChapter = '';
-function showCampaign(): void {
-  const capacity = campaignPageSize();
-  openModal(campaignMarkup(loadProgress(), loadGame('campaign'), campaignPage, campaignChapter), 'campaign-panel campaign-picker', undefined, 'custom');
-  resizeModal = () => { campaignPage = Math.floor(campaignPage * capacity / campaignPageSize()); showCampaign(); };
-  const chapterSelect = modalRoot?.querySelector<HTMLSelectElement>('#campaign-chapter');
-  campaignChapter = chapterSelect?.value ?? '';
-  chapterSelect?.addEventListener('change', () => { campaignChapter = chapterSelect.value; campaignPage = 0; showCampaign(); });
-  modalRoot?.querySelector('#campaign-prev')?.addEventListener('click', () => { campaignPage = Math.max(0, campaignPage - 1); showCampaign(); });
-  modalRoot?.querySelector('#campaign-next')?.addEventListener('click', () => { campaignPage++; showCampaign(); });
-  modalRoot?.querySelector('#campaign-resume')?.addEventListener('click', () => { resumeAfterModal = false; closeModal(); continueSaved('campaign'); });
-  modalRoot?.querySelectorAll<HTMLButtonElement>('[data-level]').forEach(button => button.addEventListener('click', () => {
-    const id = Number(button.dataset.level);
-    if (!isUnlocked(id)) return;
-    openModal(levelMarkup(getLevel(id), loadProgress(), loadGame('campaign')), 'campaign-panel', showCampaign, 'paged');
-    modalRoot?.querySelector('#campaign-back')?.addEventListener('click', modalPage!.dismiss);
-    modalRoot?.querySelector('#campaign-begin')?.addEventListener('click', modalAction(() => beginCampaign(id)));
-  }));
+const campaignChapters = [...new Set(CAMPAIGN_LEVELS.map(level => level.chapter))];
+let campaignChapterScrollTop = 0, campaignChapterFocusName = '';
+let campaignListScrollTop = 0, campaignListFocusLevelId: number | null = null;
+
+function bindCampaignClose(): void {
+  const owner = modalPage, close = owner?.action(closeModal);
+  modalRoot?.querySelector<HTMLButtonElement>('.campaign-close')?.addEventListener('click', () => close?.());
+}
+function bindCampaignResume(): void {
+  const owner = modalPage, resume = owner?.action(() => {
+    resumeAfterModal = false; closeModal(); continueSaved('campaign');
+  });
+  modalRoot?.querySelector<HTMLButtonElement>('#campaign-resume')?.addEventListener('click', () => resume?.());
+}
+function restoreCampaignPanel(selector: string, scrollTop: number, focusSelector: string): void {
+  requestAnimationFrame(() => {
+    const scroll = modalRoot?.querySelector<HTMLElement>(selector);
+    if (!scroll) return;
+    scroll.scrollTop = scrollTop;
+    modalRoot?.querySelector<HTMLElement>(focusSelector)?.focus({ preventScroll: true });
+  });
 }
 
-function beginCampaign(id: number): void {
-  if (!isUnlocked(id)) return;
-  if(!practiceSeen){showPractice(()=>beginCampaign(id),showCampaign);return;}
+function showCampaignChapters(restore = false): void {
+  if (!campaignChapter) campaignChapter = campaignChapters[0] ?? '';
+  openModal(campaignChaptersMarkup(loadProgress(), loadGame('campaign'), campaignChapter), 'campaign-panel campaign-chapter-panel', undefined, 'custom');
+  const owner = modalPage;
+  bindCampaignClose(); bindCampaignResume();
+  modalRoot?.querySelectorAll<HTMLButtonElement>('[data-campaign-chapter]').forEach(button => button.addEventListener('click', () => owner?.action(() => {
+    const list = modalRoot?.querySelector<HTMLElement>('.campaign-chapter-list');
+    campaignChapterScrollTop = list?.scrollTop ?? 0;
+    campaignChapterFocusName = button.dataset.campaignChapter ?? campaignChapter;
+    const changedChapter = campaignChapter !== campaignChapterFocusName;
+    campaignChapter = campaignChapterFocusName;
+    if (changedChapter) { campaignListScrollTop = 0; campaignListFocusLevelId = null; }
+    showCampaignLevels(false);
+  })()));
+  if (restore) restoreCampaignPanel('.campaign-chapter-list', campaignChapterScrollTop,
+    `[data-campaign-chapter="${CSS.escape(campaignChapterFocusName || campaignChapter)}"]`);
+}
+
+function showCampaignLevels(restore = false): void {
+  if (!campaignChapter) campaignChapter = campaignChapters[0] ?? '';
+  openModal(campaignLevelsMarkup(loadProgress(), loadGame('campaign'), campaignChapter), 'campaign-panel campaign-level-panel', () => showCampaignChapters(true), 'custom');
+  const owner = modalPage;
+  bindCampaignClose(); bindCampaignResume();
+  const back = () => owner?.dismiss();
+  modalRoot?.querySelector<HTMLButtonElement>('#campaign-to-chapters')?.addEventListener('click', back);
+  const list = modalRoot?.querySelector<HTMLElement>('.campaign-level-list');
+  if (list) list.addEventListener('click', event => {
+    const button = (event.target as HTMLElement).closest<HTMLButtonElement>('[data-level]');
+    if (!button || button.disabled) return;
+    owner?.action(() => {
+      const id = Number(button.dataset.level);
+      if (!isUnlocked(id, loadProgress())) return;
+      campaignListScrollTop = list.scrollTop; campaignListFocusLevelId = id;
+      showCampaignLevelDetail(id);
+    })();
+  });
+  requestAnimationFrame(() => {
+    const currentList = modalRoot?.querySelector<HTMLElement>('.campaign-level-list');
+    if (!currentList) return;
+    currentList.scrollTop = restore ? campaignListScrollTop : 0;
+    const wanted = restore ? campaignListFocusLevelId : null;
+    const target = wanted ? currentList.querySelector<HTMLButtonElement>(`[data-level="${wanted}"]`) : null;
+    (target ?? currentList.querySelector<HTMLButtonElement>('button:not(:disabled)'))?.focus({ preventScroll: true });
+  });
+}
+
+function showCampaignLevelDetail(id: number, onDismiss = () => showCampaignLevels(true)): void {
+  const level = getLevel(id);
+  openModal(levelMarkup(level, loadProgress(), loadGame('campaign'), { android: androidV5 }), `campaign-panel campaign-detail${androidV5 ? ' campaign-detail-android' : ''}`, onDismiss, androidV5 ? 'custom' : 'paged');
+  const owner = modalPage;
+  if (androidV5) bindCampaignClose();
+  const back = () => owner?.dismiss();
+  modalRoot?.querySelector<HTMLButtonElement>('#campaign-back')?.addEventListener('click', back);
+  modalRoot?.querySelector<HTMLButtonElement>('#campaign-detail-back')?.addEventListener('click', back);
+  const begin = owner?.action(() => beginCampaign(id, () => showCampaignLevelDetail(id)));
+  modalRoot?.querySelector('#campaign-begin')?.addEventListener('click', () => begin?.());
+}
+
+function showCampaignGrid(): void {
+  const capacity = campaignPageSize();
+  openModal(campaignMarkup(loadProgress(), loadGame('campaign'), campaignPage, campaignChapter), 'campaign-panel campaign-picker', undefined, 'custom');
+  const owner = modalPage;
+  resizeModal = () => { campaignPage = Math.floor(campaignPage * capacity / campaignPageSize()); showCampaignGrid(); };
+  const chapterSelect = modalRoot?.querySelector<HTMLSelectElement>('#campaign-chapter');
+  campaignChapter = chapterSelect?.value ?? '';
+  chapterSelect?.addEventListener('change', () => { campaignChapter = chapterSelect.value; campaignPage = 0; showCampaignGrid(); });
+  modalRoot?.querySelector('#campaign-prev')?.addEventListener('click', () => { campaignPage = Math.max(0, campaignPage - 1); showCampaignGrid(); });
+  modalRoot?.querySelector('#campaign-next')?.addEventListener('click', () => { campaignPage++; showCampaignGrid(); });
+  modalRoot?.querySelector('#campaign-resume')?.addEventListener('click', () => owner?.action(() => { resumeAfterModal = false; closeModal(); continueSaved('campaign'); })());
+  modalRoot?.querySelectorAll<HTMLButtonElement>('[data-level]').forEach(button => button.addEventListener('click', () => owner?.action(() => {
+    const id = Number(button.dataset.level);
+    if (!isUnlocked(id, loadProgress())) return;
+    showCampaignLevelDetail(id, showCampaignGrid);
+  })()));
+}
+
+function showCampaign(): void {
+  if (androidV5) {
+    if (!campaignChapter) campaignChapter = campaignChapters[0] ?? '';
+    campaignChapterScrollTop = 0; campaignChapterFocusName = campaignChapter;
+    campaignListScrollTop = 0; campaignListFocusLevelId = null;
+    showCampaignChapters();
+  } else showCampaignGrid();
+}
+
+function beginCampaign(id: number, onPracticeCancel: () => void = () => androidV5 ? showCampaignLevelDetail(id) : showCampaignGrid()): void {
+  if (!isUnlocked(id, loadProgress())) return;
+  if(!practiceSeen){showPractice(()=>beginCampaign(id, onPracticeCancel),onPracticeCancel);return;}
   selectedMode = 'campaign';
   resumeAfterModal = false; closeModal();
   void startRound(createCampaign(id));
@@ -549,9 +693,9 @@ function showCampaignResult(state: GameState): void {
   const saved = getScene()?.lastPersistenceResult?.ok === true;
   const level = getLevel(state.levelId!), won = state.status === 'WON', stars = campaignStars(state);
   const next = CAMPAIGN_LEVELS.find(candidate => candidate.id === level.id + 1);
-  openModal(`<button class="modal-close" data-close-modal>关闭</button><p class="eyebrow">第 ${level.id} 关 / ${level.name}</p><h2>${won ? next ? '目标完成，继续向前' : '三十关，全部走过' : state.endReason === 'shots' ? '发数用尽，再想一步' : state.endReason === 'timeout' ? '时间到了，再试一次' : '棋盘触底，再试一次'}</h2><div class="campaign-result-stars" aria-label="${stars} 星">${'★'.repeat(stars)}${'☆'.repeat(3 - stars)}</div><p>${state.step} 次发射 · 操作用时 ${formatDuration(state.elapsedMs ?? 0)}</p><p>${won ? starRules(level) : escapeText(failureAdvice(state,level))}</p>${won && stars<3 ? `<p>${escapeText(starBudget(level,state.step,state.elapsedMs??0))}。重试同一布局，争取更少发数或更短操作时间。</p>` : ''}${won && !next ? `<p>你已完成本篇章。可以返回选关，挑战全部 ${CAMPAIGN_LEVELS.length * 3} 星。</p>` : ''}<div class="modal-footer">${won && next ? '<button id="campaign-next" class="primary-button">下一关 →</button>' : ''}<button id="campaign-retry" class="${won && next ? 'quiet-button' : 'primary-button'}">重试本关</button><button id="campaign-select" class="quiet-button">返回选关</button><button id="campaign-home" class="quiet-button">首页</button></div>`, 'result-card', showHome, 'paged');
-  modalRoot?.querySelector('#campaign-next')?.addEventListener('click', modalAction(() => beginCampaign(next!.id)));
-  modalRoot?.querySelector('#campaign-retry')?.addEventListener('click', modalAction(() => beginCampaign(level.id)));
+  openModal(`<button class="modal-close" data-close-modal>关闭</button><p class="eyebrow">第 ${level.id} 关 / ${level.name}</p><h2>${won ? next ? '目标完成，继续向前' : '三十关，全部走过' : state.endReason === 'shots' ? '发数用尽，再想一步' : state.endReason === 'timeout' ? '时间到了，再试一次' : '棋盘触底，再试一次'}</h2><div class="campaign-result-stars" aria-label="${stars} 星">${Array.from({ length: 3 }, (_, index) => `<span style="--star-order:${index}">${index < stars ? '★' : '☆'}</span>`).join('')}</div><p>${state.step} 次发射 · 操作用时 ${formatDuration(state.elapsedMs ?? 0)}</p><p>${won ? starRules(level) : escapeText(failureAdvice(state,level))}</p>${won && stars<3 ? `<p>${escapeText(starBudget(level,state.step,state.elapsedMs??0))}。重试同一布局，争取更少发数或更短操作时间。</p>` : ''}${won && !next ? `<p>你已完成本篇章。可以返回选关，挑战全部 ${CAMPAIGN_LEVELS.length * 3} 星。</p>` : ''}<div class="modal-footer">${won && next ? '<button id="campaign-next" class="primary-button">下一关 →</button>' : ''}<button id="campaign-retry" class="${won && next ? 'quiet-button' : 'primary-button'}">重试本关</button><button id="campaign-select" class="quiet-button">返回选关</button><button id="campaign-home" class="quiet-button">首页</button></div>`, `result-card${won ? '' : ' lost'}`, showHome, 'paged');
+  modalRoot?.querySelector('#campaign-next')?.addEventListener('click', modalAction(() => beginCampaign(next!.id, () => showCampaignResult(state))));
+  modalRoot?.querySelector('#campaign-retry')?.addEventListener('click', modalAction(() => beginCampaign(level.id, () => showCampaignResult(state))));
   modalRoot?.querySelector('#campaign-select')?.addEventListener('click', modalAction(() => { showHome(); showCampaign(); }));
   modalRoot?.querySelector('#campaign-home')?.addEventListener('click', modalPage!.dismiss);
   bindResultSaveRetry(state, saved);
@@ -617,7 +761,7 @@ function showModeSetup(mode: GameMode): void {
     <div class="mode-tabs">${['easy','normal','hard'].map(id => `<button class="quiet-button ${id === selectedDifficulty ? 'active' : ''}" data-setup-difficulty="${id}">${getDifficulty(id).label.split(' · ')[0]} ×${scoreMultiplier(id)}</button>`).join('')}</div>
     ${mode === 'timed' ? `<div class="mode-tabs"><button data-duration="300000" class="quiet-button ${selectedDuration === 300000 ? 'active' : ''}">5 分钟</button><button data-duration="600000" class="quiet-button ${selectedDuration === 600000 ? 'active' : ''}">10 分钟</button></div><p class="mode-note">下落会逐渐加快：简单 36→18 秒，普通 30→15 秒，困难 24→12 秒。</p>` : ''}
     ${loadGame(mode) ? '<button id="mode-continue" class="quiet-button mode-continue">读取此模式存档</button>' : ''}
-    <div class="modal-footer"><button id="mode-begin" class="primary-button">开始挑战 ↗</button><button id="mode-ranking" class="quiet-button">查看排行榜</button></div>`, '', undefined, 'paged');
+    <div class="modal-footer"><button id="mode-begin" class="primary-button">开始挑战 ↗</button><button id="mode-ranking" class="quiet-button">查看排行榜</button></div>`, 'mode-setup-card', undefined, 'paged');
   document.querySelector('#mode-continue')?.addEventListener('click', () => { closeModal(); continueSaved(mode); });
   document.querySelectorAll<HTMLElement>('[data-setup-difficulty]').forEach(button => button.addEventListener('click', () => {
     selectedDifficulty = button.dataset.setupDifficulty!; showModeSetup(mode); updateHomeState();
@@ -683,7 +827,7 @@ function showGameMenu(): void {
   const campaign = getScene()?.activeState.mode === 'campaign';
   openModal(`<button class="modal-close" data-close-modal type="button">继续游戏</button><h2>游戏菜单</h2>
     <p>本局已暂停。</p><p>${campaign ? '完成目标获得星级，可随时重试本关。' : '继续游玩，或结算成绩后入榜。'}</p>
-    <div class="mobile-menu-actions"><button id="menu-settings" class="quiet-button">设置</button><button id="menu-history" class="quiet-button">历史与排行</button>${campaign ? '' : '<button id="menu-settle" class="quiet-button">结算并入榜</button>'}<button id="menu-restart" class="quiet-button">放弃本局…</button><button id="menu-home" class="quiet-button">存档并返回首页</button></div>`, '', undefined, 'paged');
+    <div class="mobile-menu-actions"><button id="menu-continue" class="primary-button" data-close-modal data-autofocus>继续游戏</button><button id="menu-settings" class="quiet-button">设置</button><button id="menu-history" class="quiet-button">历史与排行</button>${campaign ? '' : '<button id="menu-settle" class="quiet-button">结算并入榜</button>'}<button id="menu-restart" class="quiet-button">放弃本局…</button><button id="menu-home" class="quiet-button">存档并返回首页</button></div>`, 'pause-card', undefined, 'paged');
   document.querySelector('#menu-settle')?.addEventListener('click', modalAction(() => { resumeAfterModal = false; closeModal(); getScene()?.settleGame(); }));
   document.querySelector('#menu-settings')?.addEventListener('click', modalAction(() => showSettings(undefined, showGameMenu)));
   document.querySelector('#menu-history')?.addEventListener('click', modalAction(() => showHistory(true,0,'endless','all',RULES_VERSION,showGameMenu)));
@@ -702,6 +846,7 @@ function restartCurrentRound(): void {
   closeModal(); game?.loop.wake(); getScene()?.resumeGame(); showToast('新回合已开始');
 }
 document.querySelector('#mobile-menu-button')?.addEventListener('click', showGameMenu);
+document.querySelector('#game-pause-button')?.addEventListener('click', showGameMenu);
 
 const aimSlider = document.querySelector<HTMLInputElement>('#aim-slider')!;
 const fineSlider = document.querySelector<HTMLInputElement>('#fine-slider')!;
@@ -760,7 +905,16 @@ window.addEventListener('snood-persistence-result', (event) => {
 });
 window.addEventListener('snood-finished', (event) => {
   const state = (event as CustomEvent<GameState>).detail;
-  showResult(state);
+  if (gameScreen?.hidden) return;
+  const request = roundRequest;
+  if (v5Ui) roundFeedback.finish(state.status === 'LOST' && !state.endReason, () => {
+    if (request === roundRequest && !gameScreen?.hidden) showResult(state);
+  });
+  else showResult(state);
+});
+window.addEventListener('snood-round-start', () => roundFeedback.reset());
+window.addEventListener('snood-combo', event => {
+  if (v5Ui) roundFeedback.combo((event as CustomEvent<{ count: number }>).detail.count);
 });
 
 document.addEventListener('visibilitychange', () => {
@@ -795,6 +949,9 @@ window.addEventListener('keydown', (event) => {
     return;
   }
   if (usesButtonControls() || event.repeat || event.defaultPrevented || gameScreen?.hidden || !modalRoot?.hidden) return;
+  if (windowsV5 && event.code === availablePauseShortcut(settings.shortcuts) && !event.ctrlKey && !event.altKey && !event.metaKey && !event.shiftKey && !event.isComposing) {
+    event.preventDefault(); showGameMenu(); return;
+  }
   const action = shortcutAction(event, settings.shortcuts);
   const actions: Partial<Record<ShortcutAction, string>> = { save: '#back-home-button', settle: '#settle-button', restart: '#restart-button', settings: '#game-settings-button', history: '.sidebar-actions [data-history]', help: '#game-help-button' };
   const selector = action && actions[action];

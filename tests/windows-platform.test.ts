@@ -15,6 +15,21 @@ it('Windows always retains desktop input even on a narrow touch display',()=>{
  vi.stubEnv('MODE','windows');vi.stubGlobal('window',{matchMedia:()=>({matches:true})});
  expect(usesButtonControls()).toBe(false);
 });
+it('Windows V5 reserves an inner gutter for both countdown tracks without capping their real fill',()=>{
+ const css=readFileSync('src/ui/windows-v5.css','utf8');
+ expect(css).toContain('html.desktop-ui.windows-v5 .game-screen .game-header');
+ expect(css).toContain('padding-right: clamp(12px, 1.5vw, 20px);');
+ expect(css).toMatch(/html\.windows-v5 \.danger-meter \{[^}]*max-width: 100%;[^}]*min-width: 0;[^}]*box-sizing: border-box;/s);
+ expect(css).toMatch(/html\.windows-v5 #descent-time-row \.danger-meter \{[^}]*max-width: 100%;[^}]*min-width: 0;[^}]*box-sizing: border-box;/s);
+ expect(css).not.toMatch(/#danger-fill\s*\{[^}]*max-width\s*:\s*(?:90|95)%/s);
+});
+it('explicit development previews use the requested platform rather than the viewport width',()=>{
+ vi.stubEnv('MODE','development');vi.stubEnv('DEV',true);
+ vi.stubGlobal('window',{location:{search:'?platform=windows'},matchMedia:()=>({matches:true})});
+ expect(usesButtonControls()).toBe(false);
+ vi.stubGlobal('window',{location:{search:'?platform=android'},matchMedia:()=>({matches:false})});
+ expect(usesButtonControls()).toBe(true);
+});
 it('Windows removes the independent current-color copy and retains the loaded cannon ball',()=>{
  vi.stubEnv('MODE','windows');const scene=new PlayScene();
  Object.assign(scene.activeState,{currentColor:0,nextColor:1});

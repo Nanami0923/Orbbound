@@ -61,7 +61,7 @@ it('reuses unchanged board balls and only creates or destroys changed cells', ()
   const createOrb = vi.fn(() => {
     const data = new Map();
     const orb = { setData(k: string, v: unknown) { data.set(k,v); return orb; }, getData(k: string) { return data.get(k); },
-      setPosition: vi.fn(() => orb), setScale: vi.fn(() => orb), setAlpha: vi.fn(() => orb), destroy: vi.fn() };
+      setPosition: vi.fn(() => orb), setScale: vi.fn(() => orb), setAlpha: vi.fn(() => orb), setVisible: vi.fn((_visible: boolean) => orb), destroy: vi.fn() };
     return orb;
   });
   const state = createGameState('easy', 42);
@@ -70,9 +70,11 @@ it('reuses unchanged board balls and only creates or destroys changed cells', ()
   runtime.renderBoard();
   const count = createOrb.mock.calls.length;
   const first = runtime.boardBalls.get(cellKey({row:0,col:0}))!;
+  first.setVisible(false);
   runtime.renderBoard();
   expect(createOrb).toHaveBeenCalledTimes(count);
   expect(first.destroy).not.toHaveBeenCalled();
+  expect(first.setVisible).toHaveBeenLastCalledWith(true);
   state.board[0][0] = null;
   runtime.renderBoard();
   expect(first.destroy).toHaveBeenCalledOnce();

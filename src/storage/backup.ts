@@ -44,7 +44,7 @@ export function validateBackup(text: string): Values {
       if (!value || !Array.isArray(value.recent) || !Array.isArray(value.top) || value.recent.length > 500 || value.top.length > 180) throw Error('历史记录无效');
       for (const r of [...value.recent,...value.top]) {
         if (r?.startedAt > 8_640_000_000_000_000 || r?.endedAt > 8_640_000_000_000_000) throw Error('记录日期无效');
-        if (!r || typeof r.id !== 'string' || r.id.length > 200 || !['easy','normal','hard'].includes(r.difficulty) || !['WON','LOST','ABANDONED','TIMEOUT','SETTLED'].includes(r.result) || ![undefined,'endless','timed'].includes(r.mode) || (r.mode === 'timed' && ![300000,600000].includes(r.durationMs)) || ![r.score,r.startedAt,r.endedAt,r.elapsedMs,r.shots].every(n=>Number.isSafeInteger(n)&&n>=0) || (r.rawScore !== undefined && (!Number.isSafeInteger(r.rawScore)||r.rawScore<0)) || (r.multiplier !== undefined && ![1,1.5,2].includes(r.multiplier)) || ![undefined,'classic-v2','classic-v3'].includes(r.rulesVersion)) throw Error('历史记录字段无效');
+        if (!r || typeof r.id !== 'string' || r.id.length > 200 || !['easy','normal','hard'].includes(r.difficulty) || !['WON','LOST','ABANDONED','TIMEOUT','SETTLED'].includes(r.result) || ![undefined,'endless','timed'].includes(r.mode) || (r.mode === 'timed' && ![300000,600000].includes(r.durationMs)) || ![r.score,r.startedAt,r.endedAt,r.shots].every(n=>Number.isSafeInteger(n)&&n>=0) || !Number.isFinite(r.elapsedMs) || r.elapsedMs < 0 || (r.rawScore !== undefined && (!Number.isSafeInteger(r.rawScore)||r.rawScore<0)) || (r.multiplier !== undefined && ![1,1.5,2].includes(r.multiplier)) || ![undefined,'classic-v2','classic-v3'].includes(r.rulesVersion)) throw Error('历史记录字段无效');
       }
     }
     values[key] = source;

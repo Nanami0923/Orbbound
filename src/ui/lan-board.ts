@@ -188,6 +188,8 @@ export function bindLanBoard(root: HTMLElement, session: LanSession): () => void
     if (changed) { painted.delete(target); settledLayers.delete(target); }
   };
   const resize = () => {
+    // A changed board rectangle invalidates captured pointers and queued shots.
+    resetInput();
     const wrap = canvas.parentElement, available = wrap?.parentElement;
     if (wrap && available) {
       // The layout gives this column only the board's remaining space; preview lives in its own grid slot.

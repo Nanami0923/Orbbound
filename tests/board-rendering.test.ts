@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 vi.mock('phaser', () => ({ default: { Scene: class {}, AUTO: 0, Scale: { FIT: 0, CENTER_BOTH: 0 } } }));
 import { BOARD_APPEARANCE, aimMarkers, boardGeometry, drawArena } from '../src/render/board-appearance';
-import { clearBoardArtworkCache, paintOrbArtwork } from '../src/render/board-artwork';
+import { clearBoardArtworkCache, orbArtwork, paintOrbArtwork } from '../src/render/board-artwork';
 import { boardCanvasSize } from '../src/render/board-view';
 import { drawLanBoard } from '../src/ui/lan-board';
 import { PlayScene } from '../src/game/PlayScene';
@@ -20,14 +20,17 @@ function contextRecorder() {
   }) as CanvasRenderingContext2D;
   return { context, operations };
 }
-function canvases() {
+function canvases(classes = new Set<string>()) {
   const created: HTMLCanvasElement[] = [];
   const make = () => {
     const { context, operations } = contextRecorder();
     const canvas = { width: 640, height: 760, getContext: () => context, operations } as unknown as HTMLCanvasElement;
     created.push(canvas); return canvas;
   };
-  vi.stubGlobal('document', { createElement: (tag: string) => { expect(tag).toBe('canvas'); return make(); } });
+  vi.stubGlobal('document', {
+    documentElement: { classList: { contains: (name: string) => classes.has(name) } },
+    createElement: (tag: string) => { expect(tag).toBe('canvas'); return make(); },
+  });
   return { make, created };
 }
 beforeEach(clearBoardArtworkCache);
@@ -47,6 +50,35 @@ it('uses the exact same orb painting recipe for the Phaser texture and shared Ca
     expect(direct.operations).toContainEqual(['arc', 30, 32, 1.7, 0, Math.PI * 2]);
   }
   expect(textures).toHaveLength(6);
+});
+
+it('uses the shared V5 glyph paths for Phaser and Canvas and separates cached sprites by appearance', () => {
+  const classes = new Set(['android-v5']), { created } = canvases(classes);
+  const scene = new PlayScene(), textures = new Map<string, ReturnType<typeof contextRecorder>>();
+  Object.assign(scene, { textures: { exists: (key: string) => textures.has(key), createCanvas: (key: string, width: number, height: number) => {
+    expect([width, height]).toEqual([192, 192]); const texture = contextRecorder(); textures.set(key, texture);
+    return { context: texture.context, refresh: vi.fn() };
+  } }, add: { image: () => ({ setDisplaySize: vi.fn() }), container: vi.fn() } });
+  const createOrb = (scene as unknown as { createOrb(color: number, point: { x: number; y: number }): unknown }).createOrb.bind(scene);
+  for (let color = 0; color < 6; color++) {
+    createOrb(color, { x: 68, y: 86 });
+    const direct = contextRecorder(); paintOrbArtwork(direct.context, color);
+    expect(textures.get(`orb-shared-v5-${color}`)?.operations.slice(1)).toEqual(direct.operations);
+    expect(direct.operations.some(([name]) => name === 'moveTo')).toBe(true);
+    expect(direct.operations.some(([name]) => name === 'fillText')).toBe(false);
+    expect(direct.operations).toContainEqual(['arc', 18, 32, 1.7, 0, Math.PI * 2]);
+    expect(direct.operations).toContainEqual(['arc', 30, 32, 1.7, 0, Math.PI * 2]);
+  }
+
+  const v5Sprite = orbArtwork(2); expect(v5Sprite).toBe(created[0]);
+  classes.clear(); const legacySprite = orbArtwork(2);
+  createOrb(2, { x: 68, y: 86 });
+  expect(textures.has('orb-shared-legacy-2')).toBe(true);
+  expect(legacySprite).not.toBe(v5Sprite);
+  expect(orbArtwork(2)).toBe(legacySprite);
+  classes.add('windows-v5'); expect(orbArtwork(2)).toBe(v5Sprite);
+  createOrb(2, { x: 68, y: 86 });
+  expect(textures.size).toBe(7);
 });
 
 it('retains arena, orb, cannon and settled-board artwork across angle-only frames', () => {

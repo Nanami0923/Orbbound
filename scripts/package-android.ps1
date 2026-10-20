@@ -10,6 +10,16 @@ if (!$SdkPath -and (Test-Path android/local.properties)) {
 if (!(Test-Path "$SdkPath/build-tools/36.0.0/apksigner.bat")) { throw 'Set ANDROID_HOME to an SDK containing build-tools 36.0.0 and platform android-36.' }
 $env:ANDROID_HOME = $SdkPath
 $env:PATH = "$env:JAVA_HOME/bin;$env:PATH"
+$version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+$versionParts = $version.Split('.')
+if ($versionParts.Count -ne 3) { throw 'Android version must use major.minor.patch.' }
+$expectedCode = [int]$versionParts[0] * 10000 + [int]$versionParts[1] * 100 + [int]$versionParts[2]
+$gradleSource = Get-Content android/app/build.gradle -Raw
+$versionNameMatch = [regex]::Match($gradleSource, 'versionName\s+"([^"]+)"')
+$versionCodeMatch = [regex]::Match($gradleSource, 'versionCode\s+(\d+)')
+if (!$versionNameMatch.Success -or !$versionCodeMatch.Success -or $versionNameMatch.Groups[1].Value -ne $version -or [int]$versionCodeMatch.Groups[1].Value -ne $expectedCode) {
+    throw 'Android Gradle versionName/versionCode must match package.json before packaging.'
+}
 & npm.cmd run sync:android
 Check-Exit
 & ./android/gradlew.bat -p android assembleRelease

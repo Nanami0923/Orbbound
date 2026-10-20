@@ -5,6 +5,9 @@
 .mechanism-demo .demo-match-right,.mechanism-demo .demo-route-right { animation:home-right-clear var(--demo-duration,10s) linear infinite; }
 .mechanism-demo .demo-falling { animation:home-fall var(--demo-duration,10s) linear infinite; }
 .mechanism-demo .demo-route-left,.mechanism-demo .demo-route-right { fill:none; stroke:#a7b4c9; stroke-dasharray:2 7; stroke-opacity:.23; }
+.mechanism-demo--auto { cursor:default; }
+.mechanism-demo--auto > figcaption { font-size:10px; line-height:1.2; color:var(--muted); }
+.mechanism-demo--auto.demo-paused * { animation-play-state:paused !important; }
 @keyframes home-orbit-drift { to { transform:rotate(9deg) translateY(4px); } }
 @keyframes home-left-shot {
   0%,10% { transform:translate(0,0); opacity:1; }
@@ -27,3 +30,11 @@
   92%,94% { transform:translateY(86px); opacity:0; }
   95% { transform:translateY(0); opacity:0; }
 }
+@media (prefers-reduced-motion:reduce) {
+  .mechanism-demo--auto .demo-shot { opacity:0; }
+  .mechanism-demo--auto .demo-match-left { opacity:0; }
+  .mechanism-demo--auto .demo-falling { transform:translateY(44px); }
+}
+.reduce-motion .mechanism-demo--auto .demo-shot { opacity:0; }
+.reduce-motion .mechanism-demo--auto .demo-match-left { opacity:0; }
+.reduce-motion .mechanism-demo--auto .demo-falling { transform:translateY(44px); }

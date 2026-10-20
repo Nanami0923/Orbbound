@@ -2,6 +2,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { createRound } from '../src/core/modes';
 import { exportBackup, importBackup, validateBackup, backupSummary } from '../src/storage/backup';
 import { saveSettings, DEFAULT_SETTINGS, setHighScore, clearGame } from '../src/storage/storage';
+import { recordRound } from '../src/storage/history';
 afterEach(()=>vi.unstubAllGlobals());
 function fixture() {
  const values=new Map<string,string>();let failKey='';
@@ -14,6 +15,30 @@ it('round trips both saves and false settings, preserving a recovery copy',()=>{
  f.storage.setItem('orbbound-timed-active-v2',JSON.stringify(createRound('normal','timed',600000)));
  saveSettings({...DEFAULT_SETTINGS,adaptiveMusic:false});const backup=exportBackup();f.values.clear();importBackup(backup);
  expect(validateBackup(exportBackup())).toEqual(validateBackup(backup));expect(f.values.has('orbbound-backup-before-import')).toBe(true);
+});
+
+it('round trips a real fractional game elapsed time through history export and import',()=>{
+ const f=fixture(),elapsedMs=637864.1680000001;
+ const state=createRound('normal','endless',300000);
+ Object.assign(state,{status:'WON',endReason:'settled',elapsedMs,score:123,step:7,sessionId:'fractional-history-round',startedAt:Date.now()-Math.floor(elapsedMs)});
+ expect(recordRound(state)).toBe(true);
+ const backup=exportBackup(),historyKey='orbbound-history-v1';
+ expect(JSON.parse(validateBackup(backup)[historyKey]).recent[0].elapsedMs).toBe(elapsedMs);
+ f.values.delete(historyKey);
+ importBackup(backup);
+ expect(JSON.parse(f.values.get(historyKey)!).recent[0].elapsedMs).toBe(elapsedMs);
+});
+
+const historyBackup=(record:Record<string,unknown>)=>JSON.stringify({app:'orbbound',version:1,values:{'orbbound-history-v1':JSON.stringify({recent:[record],top:[]})}});
+const fractionalHistoryRecord={id:'history-record',score:123,difficulty:'normal',startedAt:1700000000000,endedAt:1700000637864,elapsedMs:637864.1680000001,shots:7,result:'WON'};
+it.each([null,-1,'637864.1680000001'])('rejects invalid elapsedMs %j in imported history',elapsedMs=>{
+ expect(()=>validateBackup(historyBackup({...fractionalHistoryRecord,elapsedMs}))).toThrow('历史记录字段无效');
+});
+it('rejects overflowing non-finite elapsedMs while preserving integer checks for other history fields',()=>{
+ const overflow='{"recent":[{"id":"history-record","score":123,"difficulty":"normal","startedAt":1700000000000,"endedAt":1700000637864,"elapsedMs":1e400,"shots":7,"result":"WON"}],"top":[]}';
+ expect(()=>validateBackup(JSON.stringify({app:'orbbound',version:1,values:{'orbbound-history-v1':overflow}}))).toThrow('历史记录字段无效');
+ for(const field of ['score','startedAt','endedAt','shots'])
+  expect(()=>validateBackup(historyBackup({...fractionalHistoryRecord,[field]:1.5}))).toThrow('历史记录字段无效');
 });
 
 it.each(['auto',undefined])('normalizes legacy backup frameRate %j without writing during preview',frameRate=>{

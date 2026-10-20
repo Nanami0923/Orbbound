@@ -6,8 +6,9 @@ import { createGameState, resolveShot } from '../core/engine';
 import { traceShot } from '../core/physics';
 import type { Cell, GameEvent, GameState, Point } from '../core/types';
 import { BOARD_GEOMETRY, GAME_HEIGHT, GAME_WIDTH, UI_COLORS } from '../content/game-config';
-import { getOrbTheme } from '../content/theme';
-import { BOARD_APPEARANCE, boardGeometry, drawAimMarkers, drawArena, drawDangerLine, drawLauncherBarrel, drawLauncherBase } from '../render/board-appearance';
+import { getOrbTheme, getOrbThemeVariant } from '../content/theme';
+import { BOARD_APPEARANCE, BOARD_APPEARANCE_V5, boardBackground, boardGeometry, drawAimMarkers, drawArena, drawDangerLine, drawLauncherBarrel, drawLauncherBase, isV5BoardAppearance } from '../render/board-appearance';
+import { clearOrbPose, clearParticlePose, createClearParticles, V5_CLEAR_MOTION, type ClearOrb, type ClearParticle } from '../render/clear-motion';
 import { paintOrbArtwork } from '../render/board-artwork';
 import { clearGame, DEFAULT_SETTINGS, saveGame, type Settings } from '../storage/storage';
 import { gameAudio, boardMusicPressure } from './audio';
@@ -28,6 +29,20 @@ interface ProgressDriver {
   progress: number;
 }
 
+interface V5RemovalItem {
+  orb: Phaser.GameObjects.Container;
+  motion: ClearOrb;
+}
+
+interface V5ParticleInstance {
+  particle: ClearParticle;
+  object: Phaser.GameObjects.Arc;
+}
+
+function cssColor(color: number): string {
+  return `#${color.toString(16).padStart(6, '0')}`;
+}
+
 export interface ScenePersistenceResult {
   ok: boolean;
   kind: 'save' | 'result' | 'clear';
@@ -37,6 +52,11 @@ export interface ScenePersistenceResult {
 
 function sendWindowEvent(name: string, detail: unknown): void {
   if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent(name, { detail }));
+}
+
+function usesInlineNextPreview(): boolean {
+  const windowsLayout = import.meta.env.MODE === 'windows' || (typeof document !== 'undefined' && document.documentElement.classList.contains('windows-v5'));
+  return !usesButtonControls() && !windowsLayout;
 }
 
 export class PlayScene extends Phaser.Scene {
@@ -73,6 +93,7 @@ export class PlayScene extends Phaser.Scene {
   private get canSteer(): boolean { return ['READY', 'FLYING', 'RESOLVING'].includes(this.phase); }
   private pausedFrom: ScenePhase = 'READY';
   private roundEpoch = 0;
+  private comboCount = 0;
   private boardGroup!: Phaser.GameObjects.Container;
   private aimGraphics!: Phaser.GameObjects.Graphics;
   private boardBalls = new Map<string, Phaser.GameObjects.Container>();
@@ -111,6 +132,7 @@ export class PlayScene extends Phaser.Scene {
     this.time.clearPendingEvents();
     this.transient.forEach(object => object.destroy());
     this.transient.clear();
+    this.v5Particles.clear();
     this.phase = this.gameState.status;
     this.renderBoard();
     this.renderLauncher();
@@ -160,6 +182,7 @@ export class PlayScene extends Phaser.Scene {
   private decisionClockAt: number | null = null;
   private abandoned = false;
   private transient = new Set<Phaser.GameObjects.GameObject>();
+  private v5Particles = new Set<Phaser.GameObjects.Arc>();
 
   public override update(_time: number, delta: number): void {
     delta = Number.isFinite(delta) ? Math.max(0, delta) : 0;
@@ -211,7 +234,7 @@ export class PlayScene extends Phaser.Scene {
     // Runtime quality changes backing pixels, never the logical board coordinates.
     const quality = (this.game as unknown as { orbboundQuality?: number }).orbboundQuality ?? 2;
     this.cameras.main.setZoom(quality).centerOn(GAME_WIDTH / 2, GAME_HEIGHT / 2);
-    this.cameras.main.setBackgroundColor(UI_COLORS.panel);
+    this.cameras.main.setBackgroundColor(boardBackground());
     this.createArena();
     this.boardGroup = this.add.container(0, 0);
     this.aimGraphics = this.add.graphics();
@@ -241,6 +264,7 @@ export class PlayScene extends Phaser.Scene {
   }
 
   public begin(state: GameState): void {
+    this.comboCount = 0;
     sendWindowEvent('snood-round-start', undefined);
     this.abandoned = false;
     this.terminalPersistedId = undefined; this.persistenceResult = undefined;
@@ -255,6 +279,7 @@ export class PlayScene extends Phaser.Scene {
     this.time.paused = false;
     this.transient.forEach(object => object.destroy());
     this.transient.clear();
+    this.v5Particles.clear();
     this.pointerActive = false;
     this.pausedFrom = 'READY';
     state.sessionId ??= crypto.randomUUID();
@@ -408,7 +433,7 @@ export class PlayScene extends Phaser.Scene {
     floorLabel.setAlpha(0.85);
     this.dangerLine = this.add.graphics();
     // The browser preview keeps its existing next-ball hint. Windows uses the DOM next-ball card.
-    if (!usesButtonControls() && import.meta.env.MODE !== 'windows') this.add.text(405, 661, '下一球', {
+    if (usesInlineNextPreview()) this.add.text(405, 661, '下一球', {
       resolution: 2, color: '#98a1b8', fontFamily: BOARD_APPEARANCE.font, fontSize: '14px',
     }).setOrigin(0.5);
   }
@@ -438,7 +463,7 @@ export class PlayScene extends Phaser.Scene {
           this.boardGroup.add(orb);
           this.boardBalls.set(key, orb);
         }
-        orb.setPosition(point.x, point.y).setScale(1).setAlpha(1);
+        orb.setPosition(point.x, point.y).setScale(1).setAlpha(1).setVisible(true);
         retained.add(key);
       }
     }
@@ -451,7 +476,7 @@ export class PlayScene extends Phaser.Scene {
     this.launcherColors = { currentColor: colors.currentColor, nextColor: colors.nextColor };
     this.launcherOrb?.destroy(); this.nextOrb?.destroy(); this.nextOrb = undefined;
     this.launcherBase.clear();
-    if (!usesButtonControls() && import.meta.env.MODE !== 'windows') {
+    if (usesInlineNextPreview()) {
       this.nextOrb = this.createOrb(colors.nextColor, { x: 405, y: 698 }); this.nextOrb.setScale(.72);
     }
     if (this.barrel) { this.barrel.clear(); drawLauncherBarrel(this.barrel, colors.currentColor); this.barrel.setRotation(this.angle); }
@@ -461,7 +486,7 @@ export class PlayScene extends Phaser.Scene {
   }
 
   private createOrb(colorId: number, point: Point): Phaser.GameObjects.Container {
-    const key = `orb-shared-${colorId}`;
+    const key = `orb-shared-${getOrbThemeVariant()}-${colorId}`;
     if (!this.textures.exists(key)) {
       const texture = this.textures.createCanvas(key, BOARD_APPEARANCE.orbTextureSize, BOARD_APPEARANCE.orbTextureSize)!;
       texture.context.scale(4, 4); paintOrbArtwork(texture.context, colorId); texture.refresh();
@@ -604,6 +629,10 @@ export class PlayScene extends Phaser.Scene {
     // Commit once on launch: process termination cannot replay a shot or lose its score.
     const previous = this.gameState;
     const result = resolveShot(previous, trace.landing);
+    const cleared = result.events.filter(event => event.type === 'match' || event.type === 'drop')
+      .reduce((count, event) => count + (event.cells?.length ?? 0), 0);
+    this.comboCount = cleared ? this.comboCount + 1 : 0;
+    const comboCount = this.comboCount;
     this.gameState = result.state;
     if (result.events.some(event => event.type === 'board-drop')) resetDescent(this.gameState, Date.now());
     this.persistGame();
@@ -626,6 +655,7 @@ export class PlayScene extends Phaser.Scene {
         projectile.destroy();
         this.transient.delete(projectile);
         this.phase = 'RESOLVING';
+        if (comboCount >= 2) sendWindowEvent('snood-combo', { count: comboCount, cleared });
         this.flashLanding(trace.landing!, getOrbTheme(previous.currentColor).color);
         this.animateResolution(previous, result.events);
       },
@@ -639,32 +669,66 @@ export class PlayScene extends Phaser.Scene {
     const removed = [...matched, ...dropped];
     const removeDuration = dropped.length ? BOARD_APPEARANCE.removal.fallMs : BOARD_APPEARANCE.removal.matchMs;
     const removeDelay = BOARD_APPEARANCE.removal.delay;
-
+    const v5 = isV5BoardAppearance();
+    const v5Orbs: V5RemovalItem[] = [];
+    const v5Motions: ClearOrb[] = [];
     const animationGroups = new Map<number, Phaser.GameObjects.Container[]>();
     for (const [index, cell] of removed.entries()) {
-      const orb = this.boardBalls.get(cellKey(cell));
-      if (!orb) continue;
+      const sourceOrb = this.boardBalls.get(cellKey(cell));
       const falling = dropped.includes(cell);
       const delay = falling ? 90 + Math.min(index, 6) * removeDelay : 0;
-      if (this.reducedMotion) orb.setAlpha(0);
-      if (falling && !this.reducedMotion) {
-        this.tweens.add({ targets: orb, y: orb.y + BOARD_APPEARANCE.removal.fallDistance, angle: BOARD_APPEARANCE.removal.fallAngle,
+      if (v5) {
+        const colorId = _previous.board[cell.row]?.[cell.col] ?? (sourceOrb?.getData('colorId') as number | undefined) ?? _previous.currentColor;
+        const target = _previous.targets?.some(targetCell => targetCell.row === cell.row && targetCell.col === cell.col) ?? false;
+        const point = sourceOrb
+          ? { x: sourceOrb.x + this.boardGroup.x, y: sourceOrb.y + this.boardGroup.y }
+          : cellToPoint(cell, boardGeometry(_previous));
+        const motion = { color: getOrbTheme(colorId).color, x: point.x, y: point.y, index, falling };
+        v5Motions.push(motion);
+        if (!this.reducedMotion) {
+          // The animated copy is a scene-level transient. The board's own orb is hidden
+          // until renderBoard reconciles the committed state after the visual lock.
+          const orb = this.createOrb(colorId, point);
+          if (target) orb.add(this.add.graphics().lineStyle(2, 0xffffff, 1).strokeCircle(0, 0, 20));
+          this.transient.add(orb);
+          sourceOrb?.setVisible(false);
+          v5Orbs.push({ orb, motion });
+        } else if (sourceOrb) {
+          sourceOrb.setAlpha(0);
+        }
+        if (sourceOrb) {
+          const group = animationGroups.get(delay) ?? [];
+          group.push(sourceOrb);
+          animationGroups.set(delay, group);
+        }
+        continue;
+      }
+      if (!sourceOrb) continue;
+      if (this.reducedMotion) sourceOrb.setAlpha(0);
+      else if (falling) {
+        this.tweens.add({ targets: sourceOrb, y: sourceOrb.y + BOARD_APPEARANCE.removal.fallDistance, angle: BOARD_APPEARANCE.removal.fallAngle,
           duration: removeDuration, delay, ease: 'Quad.In' });
       }
       const group = animationGroups.get(delay) ?? [];
-      group.push(orb);
+      group.push(sourceOrb);
       animationGroups.set(delay, group);
     }
-    for (const [delay, targets] of animationGroups) {
-      if (this.reducedMotion) continue;
-      this.tweens.add({
-        targets,
-        scale: delay > 0 ? BOARD_APPEARANCE.removal.fallScale : BOARD_APPEARANCE.removal.matchScale,
-        alpha: 0,
-        duration: removeDuration,
-        delay,
-        ease: delay > 0 ? 'Quad.In' : 'Back.In',
-      });
+    const v5Duration = v5Motions.length ? Math.max(...v5Motions.map(motion => motion.falling
+      ? V5_CLEAR_MOTION.fallMs
+      : V5_CLEAR_MOTION.matchMs)) : 0;
+    if (v5 && !this.reducedMotion && v5Orbs.length) this.animateV5Removal(v5Orbs, v5Duration, epoch);
+    if (!v5) {
+      for (const [delay, targets] of animationGroups) {
+        if (this.reducedMotion) continue;
+        this.tweens.add({
+          targets,
+          scale: delay > 0 ? BOARD_APPEARANCE.removal.fallScale : BOARD_APPEARANCE.removal.matchScale,
+          alpha: 0,
+          duration: removeDuration,
+          delay,
+          ease: delay > 0 ? 'Quad.In' : 'Back.In',
+        });
+      }
     }
 
     const points = events.reduce((total, event) => total + (event.points ?? 0), 0);
@@ -675,6 +739,8 @@ export class PlayScene extends Phaser.Scene {
     }
     if (events.some((event) => event.type === 'board-drop')) this.audio.blip('danger');
 
+    // The firing lock follows the pre-V5 board-removal cadence. V5 clones keep
+    // playing as root-level cosmetics after the board is ready to accept input.
     const wait = animationGroups.size ? removeDuration + Math.max(...animationGroups.keys()) + 20 : 60;
     this.time.delayedCall(wait, () => {
       if (epoch !== this.roundEpoch) return;
@@ -715,9 +781,87 @@ export class PlayScene extends Phaser.Scene {
     });
   }
 
+  private createV5Particles(particles: readonly ClearParticle[]): V5ParticleInstance[] {
+    const android = typeof document !== 'undefined' && document.documentElement.classList.contains('android-v5');
+    const particleLimit = android ? V5_CLEAR_MOTION.androidMaxParticles : V5_CLEAR_MOTION.maxParticles;
+    const capacity = Math.max(0, particleLimit - this.v5Particles.size);
+    return particles.slice(0, capacity).map(particle => {
+      const object = this.add.circle(particle.x, particle.y, particle.radius, particle.color, .78);
+      this.transient.add(object);
+      this.v5Particles.add(object);
+      return { particle, object };
+    });
+  }
+
+  private applyV5Particles(particles: readonly V5ParticleInstance[], elapsedMs: number): void {
+    for (const { particle, object } of particles) {
+      const pose = clearParticlePose(particle, elapsedMs);
+      object.setPosition(pose.x, pose.y).setScale(pose.radius / particle.radius).setAlpha(pose.alpha);
+    }
+  }
+
+  private disposeV5Particles(particles: readonly V5ParticleInstance[]): void {
+    for (const { object } of particles) {
+      this.v5Particles.delete(object);
+      if (this.transient.delete(object)) object.destroy();
+    }
+  }
+
+  private animateV5Particles(particles: readonly V5ParticleInstance[], epoch: number): void {
+    if (!particles.length) return;
+    const driver = { progress: 0 };
+    this.tweens.add({
+      targets: driver,
+      progress: 1,
+      duration: V5_CLEAR_MOTION.particleMs,
+      ease: 'Linear',
+      onUpdate: () => {
+        if (epoch !== this.roundEpoch) return;
+        this.applyV5Particles(particles, driver.progress * V5_CLEAR_MOTION.particleMs);
+      },
+      onComplete: () => this.disposeV5Particles(particles),
+    });
+  }
+
+  private disposeV5Orbs(orbs: readonly V5RemovalItem[]): void {
+    for (const { orb } of orbs) {
+      if (this.transient.delete(orb)) orb.destroy();
+    }
+  }
+
+  private animateV5Removal(orbs: readonly V5RemovalItem[], duration: number, epoch: number): void {
+    const particles = this.createV5Particles(createClearParticles(orbs.map(({ motion }) => motion)));
+    const driver = { progress: 0 };
+    this.tweens.add({
+      targets: driver,
+      progress: 1,
+      duration,
+      ease: 'Linear',
+      onUpdate: () => {
+        if (epoch !== this.roundEpoch) return;
+        const elapsedMs = driver.progress * duration;
+        for (const { orb, motion } of orbs) {
+          const pose = clearOrbPose(motion, elapsedMs);
+          orb.setPosition(pose.x, pose.y).setScale(pose.scale).setRotation(pose.rotation).setAlpha(pose.alpha);
+        }
+        this.applyV5Particles(particles, elapsedMs);
+      },
+      onComplete: () => {
+        this.disposeV5Orbs(orbs);
+        this.disposeV5Particles(particles);
+      },
+    });
+  }
+
   private flashLanding(cell: Cell, color: number): void {
     if (this.reducedMotion) return;
     const point = cellToPoint(cell, this.geometry);
+    if (isV5BoardAppearance()) {
+      const epoch = this.roundEpoch;
+      const particles = this.createV5Particles(createClearParticles([{ color, x: point.x, y: point.y, index: 0, falling: false }]));
+      this.animateV5Particles(particles, epoch);
+      return;
+    }
     const flash = this.add.circle(point.x, point.y, BOARD_GEOMETRY.radius + 5, color, 0.22);
     this.transient.add(flash);
     this.tweens.add({
@@ -731,6 +875,10 @@ export class PlayScene extends Phaser.Scene {
   }
 
   private showScorePopup(points: number, label: string): void {
+    if (isV5BoardAppearance()) {
+      this.showV5ScorePopup(points, label);
+      return;
+    }
     const text = this.add.text(BOARD_GEOMETRY.launcherX, BOARD_APPEARANCE.score.y, `+${points}  ${label}`, {
       resolution: 2,
       color: '#f5f2eb',
@@ -748,6 +896,70 @@ export class PlayScene extends Phaser.Scene {
       duration: BOARD_APPEARANCE.score.duration,
       ease: 'Cubic.Out',
       onComplete: () => { text.destroy(); this.transient.delete(text); },
+    });
+  }
+
+  private showV5ScorePopup(points: number, label: string): void {
+    const epoch = this.roundEpoch;
+    const score = this.add.text(BOARD_GEOMETRY.launcherX, 560, `+${points}`, {
+      resolution: 2,
+      color: cssColor(BOARD_APPEARANCE_V5.warning),
+      fontFamily: 'Segoe UI, Microsoft YaHei, sans-serif',
+      fontSize: '28px',
+      fontStyle: 'bold',
+      stroke: boardBackground(),
+      strokeThickness: 3,
+    }).setOrigin(.5);
+    const caption = this.add.text(BOARD_GEOMETRY.launcherX, 584, label, {
+      resolution: 2,
+      color: '#a7b1c0',
+      fontFamily: 'Segoe UI, Microsoft YaHei, sans-serif',
+      fontSize: '14px',
+      stroke: boardBackground(),
+      strokeThickness: 1,
+    }).setOrigin(.5);
+    this.transient.add(score);
+    this.transient.add(caption);
+    const dispose = () => {
+      if (this.transient.delete(score)) score.destroy();
+      if (this.transient.delete(caption)) caption.destroy();
+    };
+    if (this.reducedMotion) {
+      this.time.delayedCall(V5_CLEAR_MOTION.scoreMs, () => {
+        if (epoch !== this.roundEpoch) { dispose(); return; }
+        dispose();
+      });
+      return;
+    }
+    score.setScale(.88);
+    caption.setScale(.94);
+    this.tweens.add({
+      targets: score,
+      scale: 1.05,
+      duration: 90,
+      ease: 'Back.Out',
+      onComplete: () => {
+        if (epoch !== this.roundEpoch) { dispose(); return; }
+        this.tweens.add({
+          targets: score,
+          y: 500,
+          scale: 1,
+          alpha: 0,
+          duration: V5_CLEAR_MOTION.scoreMs - 90,
+          ease: 'Cubic.Out',
+          onComplete: dispose,
+        });
+        this.tweens.add({
+          targets: caption,
+          y: 524,
+          scale: 1,
+          alpha: 0,
+          delay: 40,
+          duration: V5_CLEAR_MOTION.scoreMs - 130,
+          ease: 'Cubic.Out',
+          onComplete: dispose,
+        });
+      },
     });
   }
 

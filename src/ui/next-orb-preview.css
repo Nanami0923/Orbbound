@@ -24,6 +24,17 @@
   border-radius:50%; background:rgba(255,255,255,.2); transform:rotate(-20deg);
 }
 .orb-preview-card p { display:none; }
+.orb-preview-card .dom-orb[data-theme-variant="v5"] {
+  background:transparent !important; box-shadow:0 2px 4px rgba(0,0,0,.24); transition:none;
+}
+.orb-preview-card .dom-orb[data-theme-variant="v5"]::before,
+.orb-preview-card .dom-orb[data-theme-variant="v5"]::after { content:none; display:none; }
+.orb-preview-card .dom-orb[data-theme-variant="v5"] .orb-symbol-vector {
+  position:absolute; inset:0; display:block; width:100%; height:100%; overflow:visible;
+}
+html.android-v5 .orb-preview-card .dom-orb[data-theme-variant="v5"] .orb-symbol-vector {
+  inset:1px; width:calc(100% - 2px); height:calc(100% - 2px); overflow:visible;
+}
 .mobile-ui .orb-preview-card {
   --orb-preview-size:40px; --orb-preview-symbol-size:18px; --orb-preview-box-size:44px; --orb-preview-label-size:10px;
   justify-content:center; gap:6px; padding:0; margin:0; border:0; background:transparent; box-shadow:none;
