@@ -1,0 +1,19 @@
+{
+  "version": "5.1.0",
+  "title": "双端界面与动效修复",
+  "prerelease": true,
+  "artifacts": [
+    {
+      "platform": "Android",
+      "file": "Orbbound-5.1.0-Android.apk",
+      "bytes": 1401631,
+      "sha256": "0f429340555c09f5620030b3911cf5cd3870533a41fcab9a289adcbf128bebdb"
+    },
+    {
+      "platform": "Windows",
+      "file": "Orbbound-Windows-5.1.0-x64.zip",
+      "bytes": 744347,
+      "sha256": "82bfa8a3a9eae1e9baad77925868f0e37246cad2e2450508532d3976b5c21ec7"
+    }
+  ]
+}

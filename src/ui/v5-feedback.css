@@ -1,0 +1,71 @@
+:is(html.windows-v5, html.android-v5) .board-wrap { position: relative; }
+:is(html.windows-v5, html.android-v5) #combo-feedback {
+  position: absolute; z-index: 5; top: 24%; left: 50%;
+  color: var(--mint, #83cdb5); font-size: clamp(17px, 2vw, 25px);
+  font-weight: 750; font-variant-numeric: tabular-nums;
+  white-space: nowrap; pointer-events: none; transform: translateX(-50%);
+}
+:is(html.windows-v5, html.android-v5) #combo-feedback.v5-combo-active {
+  animation: v5-combo-rise 1250ms cubic-bezier(.2,.65,.3,1) both;
+}
+:is(html.windows-v5, html.android-v5) .board-wrap.v5-failure-wave::after {
+  content: ''; position: absolute; pointer-events: none; z-index: 5;
+  bottom: 12%; left: 12%; right: 12%; height: 2px;
+  background: #e18a89; transform-origin: center;
+  animation: v5-floor-wave 280ms ease-out both;
+}
+:is(html.windows-v5, html.android-v5) .modal-card.result-card::before {
+  content: ''; position: absolute; pointer-events: none; top: 26px;
+  left: calc(50% - 46px); width: 90px; height: 90px;
+  border: 1px solid rgb(221 186 98 / .38); border-radius: 50%;
+  animation: v5-win-ring 700ms ease-out both;
+}
+:is(html.windows-v5, html.android-v5) .modal-card.result-card.lost::before {
+  width: 100px; height: 1px; left: calc(50% - 50px); top: 30px;
+  border: 0; border-radius: 0; background: #e18a89;
+  animation: v5-floor-wave 280ms ease-out both;
+}
+:is(html.windows-v5, html.android-v5) .campaign-result-stars > span {
+  display: inline-block; animation: v5-star-reveal 350ms ease-out both;
+  animation-delay: calc(var(--star-order, 0) * 120ms);
+}
+@keyframes v5-combo-rise {
+  0% { opacity: 0; transform: translate(-50%, 10px); }
+  14%, 70% { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%, -14px); }
+}
+@keyframes v5-floor-wave {
+  from { opacity: .8; transform: scaleX(.15); }
+  to { opacity: 0; transform: scaleX(1); }
+}
+@keyframes v5-win-ring {
+  from { opacity: .7; transform: scale(.6); }
+  to { opacity: 0; transform: scale(1.7); }
+}
+@keyframes v5-star-reveal {
+  from { opacity: .2; transform: translateY(4px) scale(.9); }
+  to { opacity: 1; transform: none; }
+}
+:is(html.windows-v5, html.android-v5).reduce-motion #combo-feedback,
+:is(html.windows-v5, html.android-v5).reduce-motion .campaign-result-stars > span {
+  animation: none; opacity: 1;
+}
+:is(html.windows-v5, html.android-v5).reduce-motion .modal-card.result-card::before,
+:is(html.windows-v5, html.android-v5).reduce-motion .board-wrap.v5-failure-wave::after { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  :is(html.windows-v5, html.android-v5) #combo-feedback,
+  :is(html.windows-v5, html.android-v5) .campaign-result-stars > span { animation: none; opacity: 1; }
+  :is(html.windows-v5, html.android-v5) .modal-card.result-card::before,
+  :is(html.windows-v5, html.android-v5) .board-wrap.v5-failure-wave::after { display: none; }
+}
+:is(html.windows-v5, html.android-v5) #score-value.v5-score-gain {
+  animation: v5-score-gain 600ms ease-out both;
+}
+@keyframes v5-score-gain {
+  0%, 32% { color: #ddba62; transform: translateY(-2px); }
+  100% { color: inherit; transform: none; }
+}
+:is(html.windows-v5, html.android-v5).reduce-motion #score-value.v5-score-gain { animation: none; }
+@media (prefers-reduced-motion: reduce) {
+  :is(html.windows-v5, html.android-v5) #score-value.v5-score-gain { animation: none; }
+}

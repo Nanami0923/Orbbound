@@ -86,7 +86,7 @@ it('compares recent completed rounds within one rule and difficulty, excluding a
   expect(historyTrend(data, 'endless', 'all')).toContain('仅比较同规则、同难度');
   expect(historyTrend({ recent: rounds.slice(0, 4), top: [] }, 'endless', 'normal')).toContain('累计 10 局后');
 });
-it('shows independent campaign best fields and keeps six-symbol previews', () => {
+it('shows independent campaign best fields with shared orb artwork and target rings', () => {
   storage();
   const state = createCampaign(1), gold = getLevel(1).gold;
   recordCampaign({ ...state, status: 'WON', step: gold, elapsedMs: 50000 });
@@ -94,7 +94,8 @@ it('shows independent campaign best fields and keeps six-symbol previews', () =>
   const markup = levelMarkup(getLevel(1), loadProgress(), null);
   expect(markup).toContain('最高星级：3 星'); expect(markup).toContain(`最少发数：${gold} 发`);
   expect(markup).toContain('最快操作时间：00:10'); expect(markup).toContain('可能来自不同对局');
-  expect(markup).toContain('<text'); expect(markup).not.toContain('<p>最佳：');
+  expect(markup).toContain('<path d='); expect(markup).not.toContain('<text'); expect(markup).not.toContain('<p>最佳：');
+  expect(levelMarkup(getLevel(9), loadProgress(), null)).toContain('class="level-target-ring"');
 });
 it('requires real matches, detached drops, and reflected traces to complete practice without modifying storage', () => {
   const map = storage(); saveGame(createRound('easy', 'endless')); const before = exportBackup();

@@ -19,7 +19,25 @@ export const ORB_THEMES: OrbTheme[] = [
   { id: 5, name: '玫红', symbol: '✿', color: 0xe985ba, cssColor: '#e985ba', ink: '#4b2641', glow: 0xffb8df },
 ];
 
-export function getOrbTheme(id: ColorId): OrbTheme {
-  return ORB_THEMES[id] ?? ORB_THEMES[0];
+export const ORB_THEMES_V5: OrbTheme[] = [
+  { id: 0, name: '珊瑚', symbol: '●', color: 0xdf827e, cssColor: '#df827e', ink: '#392936', glow: 0xe7a29b },
+  { id: 1, name: '薄荷', symbol: '◆', color: 0x76bdab, cssColor: '#76bdab', ink: '#173a3a', glow: 0x9bd0bf },
+  { id: 2, name: '金色', symbol: '✦', color: 0xd7b86c, cssColor: '#d7b86c', ink: '#463a25', glow: 0xddc88c },
+  { id: 3, name: '紫晶', symbol: '▲', color: 0xa18bd3, cssColor: '#a18bd3', ink: '#302844', glow: 0xbaa9de },
+  { id: 4, name: '晴蓝', symbol: '✚', color: 0x77a5cf, cssColor: '#77a5cf', ink: '#1e3550', glow: 0x9bbbe0 },
+  { id: 5, name: '玫红', symbol: '✿', color: 0xca8da9, cssColor: '#ca8da9', ink: '#482d3d', glow: 0xddadc1 },
+];
+
+export type OrbThemeVariant = 'legacy' | 'v5';
+
+/** V5 is activated only by the platform root classes set by the app bootstrap. */
+export function getOrbThemeVariant(): OrbThemeVariant {
+  const root = typeof document !== 'undefined' ? document.documentElement : undefined;
+  return root?.classList?.contains('windows-v5') || root?.classList?.contains('android-v5') ? 'v5' : 'legacy';
+}
+
+export function getOrbTheme(id: ColorId, variant: OrbThemeVariant = getOrbThemeVariant()): OrbTheme {
+  const themes = variant === 'v5' ? ORB_THEMES_V5 : ORB_THEMES;
+  return themes[id] ?? themes[0];
 }
 

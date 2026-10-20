@@ -1,4 +1,5 @@
-import { getOrbTheme } from '../content/theme';
+import { getOrbTheme, getOrbThemeVariant } from '../content/theme';
+import { orbArtworkSvgMarkup } from '../content/orb-symbol-artwork';
 import { escapeText } from './progress-feedback';
 import './next-orb-preview.css';
 
@@ -8,8 +9,17 @@ export function nextOrbPreviewMarkup(id: string): string {
 }
 
 export function updateOrbPreview(element: HTMLElement | null, color: number): void {
-  if (!element || element.dataset.colorId === String(color)) return;
-  const theme = getOrbTheme(color);
-  element.dataset.colorId = String(color); element.dataset.symbol = theme.symbol;
-  element.style.backgroundColor = theme.cssColor; element.style.setProperty('--orb-ink', theme.ink);
+  if (!element) return;
+  const variant = getOrbThemeVariant();
+  if (element.dataset.colorId === String(color) && element.dataset.themeVariant === variant) return;
+  const theme = getOrbTheme(color, variant);
+  element.dataset.colorId = String(color); element.dataset.themeVariant = variant; element.dataset.symbol = theme.symbol;
+  if (variant === 'v5') {
+    element.innerHTML = orbArtworkSvgMarkup(theme.id, theme.cssColor, theme.ink);
+    element.style.backgroundColor = 'transparent';
+  } else {
+    element.innerHTML = '';
+    element.style.backgroundColor = theme.cssColor;
+  }
+  element.style.setProperty('--orb-ink', theme.ink);
 }

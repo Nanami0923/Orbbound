@@ -1,6 +1,19 @@
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { createMatch } from '../src/lan/authority';
 import { lanMatchLayoutMarkup, lanNetworkLabel, lanStatusSummary } from '../src/ui/lan-match-layout';
+
+it('puts the single Android next-ball preview beside the portrait HUD and keeps opponents in their own group', () => {
+  vi.stubGlobal('document', { documentElement: { classList: { contains: (value: string) => value === 'android-v5' } } });
+  try {
+    const markup = lanMatchLayoutMarkup([{ id: 'guest', name: '朋友' }]);
+    expect(markup.match(/id="lan-next-orb-preview"/g)).toHaveLength(1);
+    expect(markup.slice(0, markup.indexOf('class="lan-play-space"'))).toContain('id="lan-next-orb-preview"');
+    expect(markup.slice(0, markup.indexOf('class="lan-play-space"'))).toContain('class="lan-watch-slot"><button id="lan-watch-self"');
+    expect(markup.match(/id="lan-watch-self"/g)).toHaveLength(1);
+    expect(markup.slice(markup.indexOf('<aside'))).not.toContain('id="lan-next-orb-preview"');
+    expect(markup).toContain('class="lan-side" aria-label="其他选手"');
+  } finally { vi.unstubAllGlobals(); }
+});
 
 it.each([2, 3, 4])('gives a %i-player match exactly one accessible card per opponent and one shared preview', count => {
   const opponents = Array.from({ length: count - 1 }, (_, index) => ({ id: `guest${index}`, name: `朋友 ${index} <&>` }));

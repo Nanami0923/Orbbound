@@ -12,7 +12,7 @@ import { gameAudio, boardMusicPressure } from '../src/game/audio';
 import { haptic } from '../src/game/feedback';
 import { createGameState } from '../src/core/engine';
 import { createMatch } from '../src/lan/authority';
-import { BOARD_APPEARANCE } from '../src/render/board-appearance';
+import { BOARD_APPEARANCE, boardGeometry } from '../src/render/board-appearance';
 import { BOARD_GEOMETRY } from '../src/content/game-config';
 import { cellToPoint } from '../src/core/grid';
 import type { BoardDescendedEvent, PresentationEvent, ShotResolvedEvent } from '../src/lan/presentation';
@@ -44,6 +44,80 @@ function descent(eventSeq = 1): BoardDescendedEvent {
 }
 
 describe('LAN committed canvas presentation', () => {
+  it('keeps V5 scatter and particles visible after the committed stage without delaying the next shot', () => {
+    vi.stubGlobal('document', { documentElement: { classList: { contains: (value: string) => value === 'android-v5' } } });
+    try {
+      const p = painter(), event = shot();
+      event.stages = { flightMs: 220, resolutionMs: 190, descentMs: 0, waveMs: 0 }; event.readyAtMs = 510;
+      const before = structuredClone(event);
+      p.presentation.ingest([event], 1, 100); p.presentation.advance(510, 'host');
+      expect(p.presentation.hasBoardAnimationFor('host')).toBe(false);
+      p.presentation.draw(p.canvas, 'host', event.afterState, 600, false, true);
+      expect(p.paint.mock.calls.at(-1)![1]).toBe(event.afterState);
+      expect(p.orb).toHaveBeenCalled(); expect(p.context.arc).toHaveBeenCalled();
+      expect(p.context.fillText).toHaveBeenCalledWith('+50', 320, expect.any(Number));
+      expect(event).toEqual(before);
+      p.presentation.advance(1700, 'host'); expect(p.presentation.busyFor('host')).toBe(false);
+      const reduced = painter(); reduced.presentation.ingest([event], 1, 100);
+      reduced.presentation.draw(reduced.canvas, 'host', event.afterState, 600, true, true);
+      expect(reduced.orb).not.toHaveBeenCalled(); expect(reduced.context.arc).not.toHaveBeenCalled();
+    } finally { vi.unstubAllGlobals(); }
+  });
+
+  it('starts match and falling balls together at impact and retains the unchanged 656 ms stage through their visual tail', () => {
+    vi.stubGlobal('document', { documentElement: { classList: { contains: (value: string) => value === 'windows-v5' } } });
+    try {
+      const p = painter(), event = shot();
+      event.rulesEvents = [
+        { type: 'match', cells: [{ row: 0, col: 5 }, { row: 1, col: 5 }, { row: 2, col: 5 }] },
+        { type: 'drop', cells: [{ row: 1, col: 6 }] },
+      ];
+      event.stages = { flightMs: 220, resolutionMs: 656, descentMs: 0, waveMs: 0 };
+      event.readyAtMs = 976;
+      p.presentation.ingest([event], 1, 100);
+
+      const matchPoint = cellToPoint({ row: 0, col: 5 }, boardGeometry(event.beforeState));
+      const dropPoint = cellToPoint({ row: 1, col: 6 }, boardGeometry(event.beforeState));
+      p.presentation.draw(p.canvas, 'host', event.afterState, 320, false, true);
+      const initialMatch = p.orb.mock.calls.find(call => call[1] === 1)!;
+      const initialDrop = p.orb.mock.calls.find(call => call[1] === 2)!;
+      expect(initialMatch.slice(2, 4)).toEqual([matchPoint.x, matchPoint.y]);
+      expect(initialDrop.slice(2, 4)).toEqual([dropPoint.x, dropPoint.y]);
+
+      p.presentation.draw(p.canvas, 'host', event.afterState, 336, false, true);
+      const firstMatchFrame = p.orb.mock.calls.filter(call => call[1] === 1).at(-3)!;
+      const firstDropFrame = p.orb.mock.calls.filter(call => call[1] === 2).at(-1)!;
+      expect(firstMatchFrame[3]).toBeLessThan(matchPoint.y);
+      expect(firstDropFrame[3]).toBeGreaterThan(dropPoint.y);
+
+      expect(event.readyAtMs).toBe(976);
+      p.presentation.advance(event.readyAtMs, 'host');
+      expect(p.presentation.hasBoardAnimationFor('host')).toBe(false);
+      expect(p.presentation.busyFor('host')).toBe(true); // Cosmetic drop tail continues after READY.
+      expect(event.readyAtMs).toBe(976);
+      p.presentation.advance(1369, 'host');
+      expect(p.presentation.busyFor('host')).toBe(true);
+      p.presentation.advance(1370, 'host');
+      expect(p.presentation.busyFor('host')).toBe(false);
+    } finally { vi.unstubAllGlobals(); }
+  });
+
+  it('removes the fallback canvas drop start wait while retaining its separate legacy curve', () => {
+    vi.stubGlobal('document', { documentElement: { classList: { contains: () => false } } });
+    try {
+      const p = painter(), event = shot();
+      event.stages = { flightMs: 220, resolutionMs: 656, descentMs: 0, waveMs: 0 };
+      p.presentation.ingest([event], 1, 100);
+      const dropPoint = cellToPoint({ row: 1, col: 6 }, boardGeometry(event.beforeState));
+      p.presentation.draw(p.canvas, 'host', event.afterState, 320, false, true);
+      const atImpact = p.orb.mock.calls.find(call => call[1] === 2)!;
+      expect(atImpact[3]).toBe(dropPoint.y);
+      p.presentation.draw(p.canvas, 'host', event.afterState, 336, false, true);
+      const nextFrame = p.orb.mock.calls.filter(call => call[1] === 2).at(-1)!;
+      expect(nextFrame[3]).toBeGreaterThan(dropPoint.y);
+    } finally { vi.unstubAllGlobals(); }
+  });
+
   it('caches the transition board and removal list for all renders of a committed event', () => {
     const p = painter(), event = shot(), before = structuredClone(event.beforeState); p.presentation.ingest([event], 1, 100);
     p.presentation.draw(p.canvas, 'host', event.afterState, 450, false, true); const first = p.paint.mock.calls.at(-1)![1];

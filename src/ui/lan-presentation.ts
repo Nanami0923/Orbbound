@@ -3,7 +3,8 @@ import { getOrbTheme } from '../content/theme';
 import { cellToPoint } from '../core/grid';
 import type { GameState, ShotTrace } from '../core/types';
 import { pointOnTrace, type PresentationEvent } from '../lan/presentation';
-import { BOARD_APPEARANCE, boardGeometry } from '../render/board-appearance';
+import { BOARD_APPEARANCE, boardBackground, boardGeometry, isV5BoardAppearance } from '../render/board-appearance';
+import { clearOrbPose, clearParticlePose, createClearParticles, V5_CLEAR_MOTION, type ClearOrb, type ClearParticle } from '../render/clear-motion';
 import type { BoardRole } from '../render/board-view';
 
 export interface BoardPaintOptions { role?: BoardRole; recoil?: number }
@@ -13,12 +14,22 @@ type VisualEvent = Extract<PresentationEvent, { type: 'shot-resolved' | 'board-d
 type ShotEvent = Extract<VisualEvent, { type: 'shot-resolved' }>;
 const duration = (event: VisualEvent) => event.type === 'shot-resolved'
   ? event.stages.flightMs + event.stages.resolutionMs + event.stages.descentMs + event.stages.waveMs : event.durationMs;
-const tailEnd = (event: VisualEvent) => event.type === 'shot-resolved'
-  ? event.atMs + event.stages.flightMs + Math.max(BOARD_APPEARANCE.landingFlashMs, event.rulesEvents.some(item => item.points) ? BOARD_APPEARANCE.score.duration : 0) : event.atMs + duration(event);
+const tailEnd = (event: VisualEvent) => {
+  if (event.type !== 'shot-resolved') return event.atMs + duration(event);
+  const hasMatch = event.rulesEvents.some(item => item.type === 'match' && (item.cells?.length ?? 0) > 0);
+  const hasDrop = event.rulesEvents.some(item => item.type === 'drop' && (item.cells?.length ?? 0) > 0);
+  const hasClear = hasMatch || hasDrop;
+  const visualDuration = isV5BoardAppearance()
+    ? Math.max(hasDrop ? V5_CLEAR_MOTION.fallMs : hasMatch ? V5_CLEAR_MOTION.matchMs : 0,
+      hasClear ? V5_CLEAR_MOTION.particleMs : 0,
+      event.rulesEvents.some(item => item.points) ? V5_CLEAR_MOTION.scoreMs : 0)
+    : event.rulesEvents.some(item => item.points) ? BOARD_APPEARANCE.score.duration : 0;
+  return event.atMs + event.stages.flightMs + Math.max(BOARD_APPEARANCE.landingFlashMs, visualDuration);
+};
 const clamp = (value: number) => Math.max(0, Math.min(1, value));
 interface Transition {
   board: GameState; matched: number; dropped: number; points: number; dropPoints: number;
-  removed: Array<{ color: number; x: number; y: number; falling: boolean; index: number }>;
+  removed: ClearOrb[]; particles: ClearParticle[];
 }
 
 /** Visual history never advances rules or grants permission to fire. */
@@ -76,13 +87,14 @@ export class LanPresentation {
       board[cell.row][cell.col] = null;
       if (color !== null) { const point = cellToPoint(cell, boardGeometry(before)); removed.push({ color, ...point, index, falling: index >= matched.length }); }
     }
+    const particleBudget = typeof document !== 'undefined' && document.documentElement?.classList?.contains('android-v5') ? V5_CLEAR_MOTION.androidMaxParticles : V5_CLEAR_MOTION.maxParticles;
     const value = { board: { ...before, board, currentColor: after.currentColor, nextColor: after.nextColor }, matched: matched.length, dropped: dropped.length,
-      points: event.rulesEvents.reduce((sum, item) => sum + (item.points ?? 0), 0), dropPoints: event.rulesEvents.find(item => item.type === 'drop')?.points ?? 0, removed };
+      points: event.rulesEvents.reduce((sum, item) => sum + (item.points ?? 0), 0), dropPoints: event.rulesEvents.find(item => item.type === 'drop')?.points ?? 0, removed, particles: createClearParticles(removed, particleBudget) };
     this.transitions.set(event, value); return value;
   }
   draw(canvas: HTMLCanvasElement, playerId: string, fallback: GameState, atMs: number, reduced: boolean, self: boolean, angle?: number, aim?: ShotTrace, options: BoardPaintOptions = {}): void {
     this.prune(playerId, atMs, self);
-    const queue = this.queues.get(playerId) ?? [], event = queue[0], context = canvas.getContext('2d');
+    const queue = this.queues.get(playerId) ?? [], event = queue[0], context = canvas.getContext('2d'), v5 = isV5BoardAppearance();
     const paint = (state: GameState, preview?: ShotTrace, offset = 0, recoil = options.recoil ?? 0) => this.paint(canvas, state, angle, preview, offset, { ...options, recoil });
     if (!event) paint(fallback, aim);
     else {
@@ -103,9 +115,8 @@ export class LanPresentation {
           if (transition.removed.length) this.sound(event, transition.dropped ? 'drop' : 'match', self);
           if (phaseTime < resolutionMs) {
             paint(transition.board);
-            if (context && !reduced) for (const item of transition.removed) {
-              const delay = item.falling ? 90 + Math.min(item.index, 6) * BOARD_APPEARANCE.removal.delay : 0;
-              const p = clamp((phaseTime - delay) / (transition.dropped ? BOARD_APPEARANCE.removal.fallMs : BOARD_APPEARANCE.removal.matchMs));
+            if (context && !reduced && !v5) for (const item of transition.removed) {
+              const p = clamp(phaseTime / (transition.dropped ? BOARD_APPEARANCE.removal.fallMs : BOARD_APPEARANCE.removal.matchMs));
               const eased = item.falling ? p * p : 2.70158 * p * p * p - 1.70158 * p * p;
               context.save(); context.globalAlpha = clamp(1 - eased);
               this.paintOrb(context, item.color, item.x, item.y + (item.falling ? BOARD_APPEARANCE.removal.fallDistance * eased : 0),
@@ -119,7 +130,7 @@ export class LanPresentation {
           } else {
             paint(after);
             if (waveMs && context) {
-              const p = clamp((phaseTime - resolutionMs - descentMs) / waveMs); this.flash(canvas, BOARD_APPEARANCE.background, (1 - p) * .65);
+              const p = clamp((phaseTime - resolutionMs - descentMs) / waveMs); this.flash(canvas, boardBackground(), (1 - p) * .65);
               context.save(); context.fillStyle = '#63d7bd'; context.textAlign = 'center'; context.font = `bold 25px ${BOARD_APPEARANCE.font}`; context.fillText('进入下一波', 320, 500); context.restore();
             }
           }
@@ -136,11 +147,30 @@ export class LanPresentation {
         context.beginPath(); context.arc(point.x, point.y, (BOARD_GEOMETRY.radius + 5) * (1 + .75 * eased), 0, Math.PI * 2); context.fill(); context.restore();
       }
       const transition = this.transition(overlay);
-      if (!self && options.role !== 'observation' || !transition.points || elapsed >= BOARD_APPEARANCE.score.duration) continue;
-      const p = clamp(elapsed / BOARD_APPEARANCE.score.duration), eased = 1 - (1 - p) ** 3;
+      if (v5 && !reduced) {
+        for (const item of transition.removed) {
+          const pose = clearOrbPose(item, elapsed); if (pose.alpha <= 0) continue;
+          context.save(); context.globalAlpha = pose.alpha;
+          this.paintOrb(context, item.color, pose.x, pose.y, BOARD_APPEARANCE.orbRadius * pose.scale, pose.rotation);
+          context.restore();
+        }
+        if (elapsed < V5_CLEAR_MOTION.particleMs) for (const particle of transition.particles) {
+          const pose = clearParticlePose(particle, elapsed);
+          context.save(); context.globalAlpha = pose.alpha; context.fillStyle = getOrbTheme(particle.color).cssColor;
+          context.beginPath(); context.arc(pose.x, pose.y, pose.radius, 0, Math.PI * 2); context.fill(); context.restore();
+        }
+      }
+      const scoreDuration = v5 ? V5_CLEAR_MOTION.scoreMs : BOARD_APPEARANCE.score.duration;
+      if (!self && options.role !== 'observation' || !transition.points || elapsed >= scoreDuration) continue;
+      const p = clamp(elapsed / scoreDuration), eased = 1 - (1 - p) ** 3;
       const label = transition.dropped ? `消除 ${transition.matched} · 悬空 ${transition.dropped} 额外 +${transition.dropPoints}` : `同色消除 ${transition.matched}`;
       const message = `+${transition.points}  ${label}`, y = reduced ? BOARD_APPEARANCE.score.y : BOARD_APPEARANCE.score.y + (BOARD_APPEARANCE.score.endY - BOARD_APPEARANCE.score.y) * eased;
-      context.save(); context.globalAlpha = 1 - eased; context.fillStyle = '#f5f2eb'; context.strokeStyle = '#111a2d'; context.lineWidth = BOARD_APPEARANCE.score.stroke;
+      context.save(); context.globalAlpha = v5 ? clamp((1 - p) / .35) : 1 - eased; context.fillStyle = v5 ? '#ddba62' : '#f5f2eb'; context.strokeStyle = '#111a2d'; context.lineWidth = v5 ? 3 : BOARD_APPEARANCE.score.stroke;
+      if (v5) {
+        context.font = `bold 28px ${BOARD_APPEARANCE.font}`; context.textAlign = 'center';
+        context.strokeText?.(`+${transition.points}`, 320, y); context.fillText(`+${transition.points}`, 320, y);
+        context.font = `14px ${BOARD_APPEARANCE.font}`; context.fillStyle = '#c4d0da'; context.fillText(label, 320, y + 24); context.restore(); continue;
+      }
       context.font = `bold ${BOARD_APPEARANCE.score.fontSize}px ${BOARD_APPEARANCE.font}`; context.textAlign = 'center'; context.strokeText?.(message, 320, y); context.fillText(message, 320, y); context.restore();
     }
   }

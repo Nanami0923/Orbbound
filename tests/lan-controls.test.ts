@@ -251,6 +251,14 @@ describe('LAN actual control event lifecycle', () => {
     expect(session.shoot).toHaveBeenCalledOnce(); expect(board.owner).toBeNull();
   });
 
+  it('releases an immersive pointer before a resize and cannot fire from its stale release', () => {
+    const { board, session, windowEvents, frame } = setup();
+    send(board, 'pointerdown'); expect(board.owner).toBe(1);
+    send(windowEvents, 'resize'); frame(17);
+    expect(board.owner).toBeNull();
+    send(board, 'pointerup'); expect(session.shoot).not.toHaveBeenCalled();
+  });
+
   it.each(['pointercancel', 'lostpointercapture'])('does not fire a canceled touch after %s', type => {
     const { board, session } = setup();
     send(board, 'pointerdown'); send(board, type); send(board, 'pointerup');
