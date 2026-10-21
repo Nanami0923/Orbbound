@@ -43,7 +43,7 @@ export function settingsMarkup(settings: Settings, mobile: boolean, inGame = fal
     <section data-settings-page="display" hidden><h3 tabindex="-1">画面与性能</h3>
       ${select('frameRate','帧率上限',[['30','30 FPS · 省电'],['60','60 FPS · 默认'],['90','90 FPS'],['120','120 FPS']],'选择活动绘制上限；实际帧率受屏幕、系统和设备性能限制。')}
       ${select('quality','画面清晰度',[['auto','自动'],['1','标准'],['1.5','清晰'],['2','精细']],'与帧率独立，不改变棋盘规则。')}
-      ${toggle('reducedMotion','减少动态效果','简化位移与闪光，保持相同发射节奏。')}${toggle('showPerformance','显示帧率','显示实际绘制帧率和当前目标。')}<p id="settings-performance-status" role="status">请求 ${settings.frameRate} FPS · 等待实际绘制数据</p>${reset('display')}
+      ${toggle('reducedMotion','减少消除效果','关闭粒子和散落，保留基础淡出。')}${toggle('showPerformance','显示帧率','显示实际绘制帧率和当前目标。')}<p id="settings-performance-status" role="status">请求 ${settings.frameRate} FPS · 等待实际绘制数据</p>${reset('display')}
     </section>
     <section data-settings-page="backup" hidden><h3 tabindex="-1">数据与维护</h3><p>导出存档、记录和设置。导入前预览并保留恢复副本。</p><p id="backup-last-export"></p><div class="settings-categories"><button class="quiet-button" data-backup="export">导出备份</button>${inGame ? '<p>导入、恢复备份及全部恢复默认，请返回首页后操作。</p>' : '<button class="quiet-button" data-backup="import">导入备份</button>' + restoreBackup + (!mobile ? '<button class="quiet-button" data-backup="legacy">导入旧 Windows 存档</button>' : '')}</div><p id="backup-status" role="status"></p>${inGame ? '' : '<h4>恢复设置</h4><p>只恢复声音、操作和显示偏好，存档及成绩不变。</p><button class="quiet-button" id="settings-reset">恢复全部默认设置</button>'}<p id="settings-reset-status" role="status"></p></section>
     </div></div><p class="settings-save-status" role="status" aria-live="polite"></p>`;
@@ -129,7 +129,7 @@ export function bindSettingsPanel(root: HTMLElement, settings: Settings, onChang
       else if (!raf) { lastTime = performance.now(); raf = requestAnimationFrame(tick); } } }) : null;
   listen(root.querySelector('#preview-fire'), 'click', () => {
     gameAudio.blip('shoot'); haptic('shoot', settings);
-    if (!settings.reducedMotion) barrel?.animate([{ translate: '0 0' }, { translate: '0 5px' }, { translate: '0 0' }], { duration: 160 });
+    if (!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) barrel?.animate([{ translate: '0 0' }, { translate: '0 5px' }, { translate: '0 0' }], { duration: 160 });
   });
   window.addEventListener('blur', () => binding?.reset(), { signal: abort.signal });
   document.addEventListener('visibilitychange', () => { if (document.hidden) binding?.reset(); }, { signal: abort.signal });

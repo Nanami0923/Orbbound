@@ -13,6 +13,7 @@ import { haptic } from '../src/game/feedback';
 import { createGameState } from '../src/core/engine';
 import { createMatch } from '../src/lan/authority';
 import { BOARD_APPEARANCE, boardGeometry } from '../src/render/board-appearance';
+import { clearOrbPose } from '../src/render/clear-motion';
 import { BOARD_GEOMETRY } from '../src/content/game-config';
 import { cellToPoint } from '../src/core/grid';
 import type { BoardDescendedEvent, PresentationEvent, ShotResolvedEvent } from '../src/lan/presentation';
@@ -60,7 +61,8 @@ describe('LAN committed canvas presentation', () => {
       p.presentation.advance(1700, 'host'); expect(p.presentation.busyFor('host')).toBe(false);
       const reduced = painter(); reduced.presentation.ingest([event], 1, 100);
       reduced.presentation.draw(reduced.canvas, 'host', event.afterState, 600, true, true);
-      expect(reduced.orb).not.toHaveBeenCalled(); expect(reduced.context.arc).not.toHaveBeenCalled();
+      expect(reduced.orb).toHaveBeenCalled(); // The clear copy remains visible through the base fade.
+      expect(reduced.context.arc).not.toHaveBeenCalled();
     } finally { vi.unstubAllGlobals(); }
   });
 
@@ -88,16 +90,17 @@ describe('LAN committed canvas presentation', () => {
       const firstMatchFrame = p.orb.mock.calls.filter(call => call[1] === 1).at(-3)!;
       const firstDropFrame = p.orb.mock.calls.filter(call => call[1] === 2).at(-1)!;
       expect(firstMatchFrame[3]).toBeLessThan(matchPoint.y);
-      expect(firstDropFrame[3]).toBeGreaterThan(dropPoint.y);
+      expect(firstMatchFrame[3]).toBeCloseTo(clearOrbPose({ x: matchPoint.x, y: matchPoint.y, index: 0, falling: false }, 16).y);
+      expect(firstDropFrame[3]).toBeCloseTo(clearOrbPose({ x: dropPoint.x, y: dropPoint.y, index: 3, falling: true }, 16).y);
 
       expect(event.readyAtMs).toBe(976);
       p.presentation.advance(event.readyAtMs, 'host');
       expect(p.presentation.hasBoardAnimationFor('host')).toBe(false);
       expect(p.presentation.busyFor('host')).toBe(true); // Cosmetic drop tail continues after READY.
       expect(event.readyAtMs).toBe(976);
-      p.presentation.advance(1369, 'host');
+      p.presentation.advance(1039, 'host');
       expect(p.presentation.busyFor('host')).toBe(true);
-      p.presentation.advance(1370, 'host');
+      p.presentation.advance(1040, 'host');
       expect(p.presentation.busyFor('host')).toBe(false);
     } finally { vi.unstubAllGlobals(); }
   });
@@ -144,27 +147,82 @@ describe('LAN committed canvas presentation', () => {
   });
 
   it('animates removal and falling from the committed cells and counts feedback once across frames and duplicate events', () => {
+    vi.stubGlobal('document', { documentElement: { classList: { contains: (value: string) => value === 'windows-v5' } } });
     const p = painter(), event = shot(); p.presentation.ingest([event], 1, 100);
     p.presentation.draw(p.canvas, 'host', event.afterState, 600, false, true);
     const painted = p.paint.mock.calls.at(-1)?.[1] as GameState;
     expect(painted.board[0][5]).toBeNull(); expect(painted.board[1][6]).toBeNull(); expect(painted.board[2][5]).toBeNull();
     expect(painted.currentColor).toBe(event.afterState.currentColor);
     const dropped = p.orb.mock.calls.find(call => call[1] === 2)!;
-    expect(dropped[3]).toBeGreaterThan(cellToPoint({ row: 1, col: 6 }, { ...BOARD_GEOMETRY, rowOffset: event.beforeState.rowOffset ?? 0 }).y);
+    const dropPoint = cellToPoint({ row: 1, col: 6 }, boardGeometry(event.beforeState));
+    expect(dropped[3]).toBeCloseTo(clearOrbPose({ x: dropPoint.x, y: dropPoint.y, index: 3, falling: true }, 280).y);
     expect(p.context.fillText.mock.calls[0][0]).toContain('+50');
-    p.presentation.ingest([event], 1, 620); p.presentation.draw(p.canvas, 'host', event.afterState, 620, false, true);
+    p.presentation.ingest([event], 1, 620); p.presentation.draw(p.canvas, 'host', event.afterState, 840, false, true);
     p.presentation.draw(p.canvas, 'host', event.afterState, 976, false, true);
-    expect(p.feedback).toHaveBeenCalledExactlyOnceWith('drop'); expect(p.presentation.busy).toBe(false);
+    expect(p.feedback).toHaveBeenCalledExactlyOnceWith('drop'); expect(p.presentation.busy).toBe(true);
+    p.presentation.advance(1570, 'host'); expect(p.presentation.busy).toBe(false);
     expect(p.paint.mock.calls.at(-1)?.[1]).toBe(event.afterState);
   });
 
   it('uses reduced motion without changing presentation duration or committed state', () => {
     const p = painter(), event = shot(); p.presentation.ingest([event], 1, 100);
-    p.presentation.draw(p.canvas, 'host', event.afterState, 210, true, true); expect(p.orb).not.toHaveBeenCalled();
+    p.presentation.draw(p.canvas, 'host', event.afterState, 210, true, true); expect(p.orb).toHaveBeenCalled(); // Basic shot travel remains visible.
     p.presentation.draw(p.canvas, 'host', event.afterState, 600, true, true);
-    expect(p.orb).not.toHaveBeenCalled(); // Match the single-player reduced-motion instant removal.
+    expect(p.orb).toHaveBeenCalled(); // The cleared balls retain their stationary fade.
     expect(p.presentation.busy).toBe(true); p.presentation.draw(p.canvas, 'host', event.afterState, 976, true, true);
     expect(p.presentation.busy).toBe(false); expect(p.paint.mock.calls.at(-1)?.[1]).toBe(event.afterState);
+  });
+
+  it('keeps an event reduced when the OS preference turns off during its base fade', () => {
+    vi.stubGlobal('document', { documentElement: { classList: { contains: (value: string) => value === 'windows-v5' } } });
+    try {
+      const p = painter(), event = shot(), observedAlpha: number[] = []; p.presentation.ingest([event], 1, 100);
+      p.orb.mockImplementation((context: { globalAlpha: number }) => observedAlpha.push(context.globalAlpha));
+      const dropPoint = cellToPoint({ row: 1, col: 6 }, boardGeometry(event.beforeState));
+      p.presentation.draw(p.canvas, 'host', event.afterState, 320, true, true);
+      p.presentation.draw(p.canvas, 'host', event.afterState, 420, false, true);
+      const dropped = p.orb.mock.calls.find(call => call[1] === 2)!;
+      const pose = clearOrbPose({ x: dropPoint.x, y: dropPoint.y, index: 3, falling: true }, 100, true);
+      expect(dropped.slice(2, 4)).toEqual([pose.x, pose.y]);
+      expect(observedAlpha.at(-1)).toBeCloseTo(pose.alpha);
+      expect(p.context.arc).not.toHaveBeenCalled();
+    } finally { vi.unstubAllGlobals(); }
+  });
+
+  it('applies a user reduced-effects toggle to active LAN clears and cleans them when disabled', () => {
+    vi.stubGlobal('document', { documentElement: { classList: { contains: (value: string) => value === 'windows-v5' } } });
+    try {
+      const p = painter(), event = shot(), observedAlpha: number[] = []; p.presentation.ingest([event], 1, 100);
+      const dropPoint = cellToPoint({ row: 1, col: 6 }, boardGeometry(event.beforeState));
+      p.presentation.draw(p.canvas, 'host', event.afterState, 320, false, true);
+      p.presentation.setUserReducedMotion(true, false);
+      p.context.arc.mockClear(); p.orb.mockClear();
+      p.orb.mockImplementation((context: { globalAlpha: number }) => observedAlpha.push(context.globalAlpha));
+      p.presentation.draw(p.canvas, 'host', event.afterState, 420, true, true);
+      const dropped = p.orb.mock.calls.find(call => call[1] === 2)!;
+      const pose = clearOrbPose({ x: dropPoint.x, y: dropPoint.y, index: 3, falling: true }, 100, true);
+      expect(dropped.slice(2, 4)).toEqual([pose.x, pose.y]);
+      expect(observedAlpha.at(-1)).toBeCloseTo(pose.alpha);
+      expect(p.context.arc).not.toHaveBeenCalled();
+
+      p.presentation.setUserReducedMotion(false, false); p.orb.mockClear(); p.context.fillText.mockClear();
+      p.presentation.draw(p.canvas, 'host', event.afterState, 430, false, true);
+      expect(p.orb).not.toHaveBeenCalled();
+      expect(p.context.fillText).not.toHaveBeenCalledWith('+50', 320, expect.any(Number));
+    } finally { vi.unstubAllGlobals(); }
+  });
+
+  it('keeps a bounded visible particle sample in thumbnails without treating them as reduced motion', () => {
+    vi.stubGlobal('document', { documentElement: { classList: { contains: (value: string) => value === 'windows-v5' } } });
+    try {
+      const event = shot(), main = painter(), thumb = painter();
+      main.presentation.ingest([event], 1, 100); thumb.presentation.ingest([event], 1, 100);
+      main.presentation.draw(main.canvas, 'host', event.afterState, 600, false, true, undefined, undefined, { role: 'main' });
+      thumb.presentation.draw(thumb.canvas, 'host', event.afterState, 600, false, true, undefined, undefined, { role: 'thumbnail' });
+      expect(thumb.context.arc.mock.calls.length).toBeGreaterThan(0);
+      expect(thumb.context.arc.mock.calls.length).toBeLessThan(main.context.arc.mock.calls.length);
+      expect(thumb.orb).toHaveBeenCalled();
+    } finally { vi.unstubAllGlobals(); }
   });
 
   it('eases a committed attack descent and emits only one local danger cue', () => {
@@ -175,7 +233,8 @@ describe('LAN committed canvas presentation', () => {
     expect(p.paint.mock.calls.at(-1)?.[4]).toBeCloseTo(-BOARD_GEOMETRY.rowStep * 0.125);
     expect(p.context.fillRect).toHaveBeenCalled(); expect(p.feedback).toHaveBeenCalledExactlyOnceWith('danger');
     p.presentation.draw(p.canvas, 'host', event.afterState!, 300, true, true);
-    expect(p.paint.mock.calls.at(-1)?.[4]).toBe(0);
+    expect(p.paint.mock.calls.at(-1)?.[4]).toBeLessThan(0);
+    expect(Math.abs(p.paint.mock.calls.at(-1)?.[4] ?? 0)).toBeLessThan(BOARD_GEOMETRY.rowStep);
   });
 
   it('never plays the opponent presentation through local sound or haptic callbacks', () => {

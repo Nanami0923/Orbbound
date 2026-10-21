@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><title>ORBBOUND · 5.2.0 动效演示</title><style>/*__STYLES__*/</style></head>
+<body>
+<main>
+  <header class="page-header"><a class="brand" href="#"><span class="brand-dots"><i></i><i></i><i></i></span>ORBBOUND</a><span class="edition">5.2.0 · 方案演示</span></header>
+  <section class="intro"><div><p class="eyebrow">MOTION STUDY / 02</p><h1>抛物线散落，等大淡出。</h1><p class="lede">先向外轻抛，再沿抛物线加速落下。两类球使用同一节拍，保留图案与柔和粒子。</p></div><span class="proposal-note">独立视觉 demo<br>5.1.0 正式程序未改动</span></section>
+  <nav class="study-tabs" aria-label="演示内容"><button data-view="motion" aria-pressed="true">消除动效</button><button data-view="random" aria-pressed="false">联机独立随机</button></nav>
+  <section id="motion-study">
+    <div class="toolbar"><div class="segmented" aria-label="效果设置"><button data-effect="full" aria-pressed="true">完整效果</button><button data-effect="reduced" aria-pressed="false">减少效果</button></div><div class="toolbar-right"><div class="segmented platform-switch" aria-label="平台布局"><button data-layout="both" aria-pressed="true">双端</button><button data-layout="windows" aria-pressed="false">Windows</button><button data-layout="android" aria-pressed="false">Android</button></div><label class="speed-label">速度 <select id="speed"><option value="0.5">0.5×</option><option value="1" selected>1×</option></select></label><button id="play-toggle" class="quiet" aria-pressed="false">暂停</button></div></div>
+    <div class="stage-note"><span id="effect-description">球体等大淡出 · 同步加速散落 · 双端保留粒子</span><span class="loop-indicator"><i></i>自动循环</span></div>
+    <div class="previews" data-layout="both">
+      <article class="desktop-preview"><div class="preview-caption"><span>Windows</span><small>横屏 · 完整效果</small></div><div class="desktop-screen"><aside class="desktop-stats"><strong class="mini-brand">ORBBOUND</strong><label>基础分</label><b data-score>002410</b><label>距离棋盘下降</label><strong>再发射 7 次</strong><div class="pressure-track"><i></i></div><label>本局用时</label><strong class="mono">00:42</strong></aside><div class="board-area"><div class="board-heading">无尽 · 普通<span>演示棋盘</span></div><canvas id="windows-canvas" aria-label="Windows 同步消除动效演示"></canvas></div><aside class="desktop-actions"><div class="next-card">下一球 <span data-orb="4"></span></div><p>暂停游戏 <kbd>P</kbd></p><p>游戏设置 <kbd>S</kbd></p><p>历史与排行 <kbd>H</kbd></p></aside></div></article>
+      <article class="android-preview"><div class="preview-caption"><span>Android</span><small>竖屏 · 完整效果</small></div><div class="phone-screen"><div class="phone-topbar"><strong>ORBBOUND</strong><span>无尽 · 普通</span><span>Ⅱ</span></div><div class="phone-hud"><div><label>基础分</label><b data-score>002410</b></div><div><label>棋盘下降</label><strong>再发射 7 次</strong><div class="pressure-track"><i></i></div></div><div class="phone-next"><label>下一球</label><span data-orb="4"></span></div></div><canvas id="android-canvas" aria-label="Android 竖屏同步消除动效演示"></canvas><p class="phone-instruction">按住瞄准，松手发射。</p><div class="phone-bottom"><span>暂停</span><span>00:42</span><span>设置</span></div></div></article>
+    </div>
+    <div class="timeline"><div class="timeline-label"><span id="phase-label">等待命中</span><span id="time-label" class="mono">命中前</span></div><input id="timeline" type="range" min="0" max="3000" value="0" step="1" aria-label="拖动查看同一次消除的动画时刻"><div class="timeline-ticks"><span>命中前</span><span>命中 t₀</span><span>720ms 完成</span><span>下一轮</span></div></div>
+    <div class="study-summary"><p><b>同一时间轴</b><span>两类球同步开始、同步结束；球体不缩小。</span></p><p><b id="density-label">粒子双端保留</b><span id="reduced-description">细粒与短尾混合，颜色来自被消除的小球。</span></p><p><b>可逐帧确认</b><span>暂停或拖动时间轴，也可切换 0.5× 慢放。</span></p></div>
+  </section>
+  <section id="random-study" hidden><div class="random-heading"><div><h2>同一房间，各自开局。</h2><p>棋盘与供球分别随机；所有玩家仍由房主统一生成和同步。</p></div><button id="new-room" class="action">新一局</button></div><div id="random-players" class="random-players"></div><p class="random-footnote">演示的是独立随机策略。短段颜色偶尔相同是正常随机，不强行替换颜色。正式版需同步修改联机规则指纹，拒绝旧规则混连。</p></section>
+  <footer>原球面图案 · 低高光 · 本 demo 不读写游戏存档</footer>
+</main>
+<script>/*__DATA__*/
+/*__MODEL__*/
+/*__APP__*/</script>
+</body></html>

@@ -36,9 +36,15 @@ it('retains the same resolution/descent firing lock with reduced motion',()=>{
     boardGroup:{setY:vi.fn()},renderBoard:vi.fn(),renderLauncher:vi.fn(),audio:{blip:vi.fn()},statusText:{setText:vi.fn()}});
   const runtime=scene as unknown as {animateResolution(previous:unknown,events:unknown[]):void;phase:string};
   runtime.animateResolution(scene.activeState,[{type:'drop',cells},{type:'board-drop'}]);
-  expect(tween).not.toHaveBeenCalled();expect(runtime.phase).toBe('RESOLVING');
-  callbacks[0].fn();expect(runtime.phase).toBe('RESOLVING');expect(callbacks[1].delay).toBe(360);
-  callbacks[1].fn();expect(scene.isReady).toBe(true);
+  expect(tween).toHaveBeenCalledTimes(2);
+  expect(tween.mock.calls.map(([config])=>config)).toEqual(expect.arrayContaining([
+    expect.objectContaining({duration:320,delay:0,alpha:0,scale:1,ease:'Linear'}),
+  ]));
+  expect(runtime.phase).toBe('RESOLVING');expect(callbacks).toHaveLength(1);expect(callbacks[0].delay).toBe(476);
+  callbacks[0].fn();expect(runtime.phase).toBe('RESOLVING');
+  expect(tween).toHaveBeenCalledTimes(3);
+  const boardDrop=tween.mock.calls[2][0];expect(boardDrop).toMatchObject({duration:360,ease:'Cubic.Out'});
+  boardDrop.onComplete?.();expect(scene.isReady).toBe(true);
 });
 
 it('settles campaign decision time between static frames before pause and excludes menu time',()=>{

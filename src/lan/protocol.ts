@@ -2,9 +2,10 @@ import { BOARD_GEOMETRY } from '../content/game-config';
 import { BOARD_COLUMNS, BOARD_ROWS, DANGER_MAX, DIFFICULTIES, LOSE_ROW, MATCH_THRESHOLD, RULES_VERSION, SCHEMA_VERSION, dropPoints, matchPoints } from '../core/engine';
 import type { GameEvent, GameState, ShotTrace } from '../core/types';
 import type { PresentationEvent } from './presentation';
+import { LAN_INITIAL_COLOR_QUOTAS } from './random';
 
 export const LAN_PROTOCOL_VERSION = 3;
-export const LAN_RULES_VERSION = 'lan-multiplayer-v3';
+export const LAN_RULES_VERSION = 'lan-multiplayer-v4';
 export const LAN_MAX_ANGLE_MILLI_DEG = 78000;
 export const LAN_MATCH_DURATIONS = [180000, 300000] as const;
 export type LanMatchDuration = typeof LAN_MATCH_DURATIONS[number];
@@ -29,14 +30,15 @@ export const LAN_CONTENT_HASH = fingerprint(DIFFICULTIES.map(({ id, colors, init
 // Bump the algorithm revision whenever physics, RNG, attachment or scheduling
 // behavior changes. Geometry, scoring and tunable content are also fingerprinted.
 export const LAN_RULES_HASH = fingerprint({
-  rules: LAN_RULES_VERSION, core: RULES_VERSION, algorithmRevision: 4,
+  rules: LAN_RULES_VERSION, core: RULES_VERSION, algorithmRevision: 5,
   geometry: BOARD_GEOMETRY, columns: BOARD_COLUMNS, rows: BOARD_ROWS, loseRow: LOSE_ROW,
   threshold: MATCH_THRESHOLD, dangerMax: DANGER_MAX, content: LAN_CONTENT_HASH,
   scoring: Array.from({ length: BOARD_COLUMNS * BOARD_ROWS + 1 }, (_, count) => [matchPoints(count), dropPoints(count)]),
   timing: { flightMsPerPoint: 2.8, minFlightMs: 220, maxFlightMs: 920, matchMs: 190, dropMs: 656, idleMs: 60, descentMs: 360,
     descent: [[36000, 18000], [30000, 15000], [24000, 12000]], maxAngleMilliDeg: LAN_MAX_ANGLE_MILLI_DEG },
-  waveSeed: 'imul-9e3779b9-murmur3-fmix32-v1',
-  battle: BATTLE_RULES, pause: PAUSE_RULES, multiplayer: 'target-sum-dynamic-ratio-defense-dual-v1-competition-rank', attackSeed: 'wave-seed-xor-a771ac4b-applied-ordinal-v1',
+  random: { derive: 'fnv1a-utf16-fmix32-v1', domains: ['board-v1', 'supply-v1', 'attack-v1/appliedRows'],
+    boardShuffle: 'quota-pool-fisher-yates-v1', initialColorQuotas: LAN_INITIAL_COLOR_QUOTAS },
+  battle: BATTLE_RULES, pause: PAUSE_RULES, multiplayer: 'target-sum-dynamic-ratio-defense-dual-v1-competition-rank',
 });
 
 export interface MatchConfig {

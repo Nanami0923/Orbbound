@@ -8,7 +8,8 @@ import type { Cell, GameEvent, GameState, Point } from '../core/types';
 import { BOARD_GEOMETRY, GAME_HEIGHT, GAME_WIDTH, UI_COLORS } from '../content/game-config';
 import { getOrbTheme, getOrbThemeVariant } from '../content/theme';
 import { BOARD_APPEARANCE, BOARD_APPEARANCE_V5, boardBackground, boardGeometry, drawAimMarkers, drawArena, drawDangerLine, drawLauncherBarrel, drawLauncherBase, isV5BoardAppearance } from '../render/board-appearance';
-import { clearOrbPose, clearParticlePose, createClearParticles, V5_CLEAR_MOTION, type ClearOrb, type ClearParticle } from '../render/clear-motion';
+import { clearMotionPlatform, clearMotionSeed, clearOrbPose, clearParticleCap, clearParticlePose, createClearParticles, V5_CLEAR_MOTION, type ClearOrb, type ClearParticle } from '../render/clear-motion';
+import { shouldReduceMotion, systemPrefersReducedMotion } from '../render/motion-preferences';
 import { paintOrbArtwork } from '../render/board-artwork';
 import { clearGame, DEFAULT_SETTINGS, saveGame, type Settings } from '../storage/storage';
 import { gameAudio, boardMusicPressure } from './audio';
@@ -37,6 +38,22 @@ interface V5RemovalItem {
 interface V5ParticleInstance {
   particle: ClearParticle;
   object: Phaser.GameObjects.Arc;
+  trail?: Phaser.GameObjects.Graphics;
+}
+
+interface ActiveV5ClearAnimation {
+  driver: ProgressDriver;
+  orbs: V5RemovalItem[];
+  particles: V5ParticleInstance[];
+  duration: number;
+  reduced: boolean;
+  generation: number;
+}
+
+interface ActiveV5ScorePopup {
+  score: Phaser.GameObjects.Text;
+  caption: Phaser.GameObjects.Text;
+  timer?: Phaser.Time.TimerEvent;
 }
 
 function cssColor(color: number): string {
@@ -108,8 +125,9 @@ export class PlayScene extends Phaser.Scene {
     return this.phase === 'READY' && !this.aimDirty && !this.recoil && !this.rotationDirection && !this.fineSpeed && !this.quickTurn && !this.transient.size;
   }
   private get reducedMotion(): boolean {
-    return this.settings.reducedMotion || (typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches);
+    return shouldReduceMotion(this.settings.reducedMotion);
   }
+  private get reducedSystemMotion(): boolean { return systemPrefersReducedMotion(); }
   private controlHint(): string {
     if (usesButtonControls()) return this.settings.immersiveMode ? '按住棋盘瞄准 · 松手发射' : '上条定位 · 下条微调 · 侧边发射';
     return `鼠标左 / 右键或${shortcutLabel(this.settings.shortcuts.fire)}发射`;
@@ -126,6 +144,9 @@ export class PlayScene extends Phaser.Scene {
   }
   private finishImmediately(): void {
     this.roundEpoch++;
+    this.clearMotionGeneration++;
+    this.activeV5ClearAnimations.clear();
+    this.clearActiveV5ScorePopups();
     this.stopRotation();
     this.tweens.killAll();
     this.time.removeAllEvents();
@@ -133,6 +154,7 @@ export class PlayScene extends Phaser.Scene {
     this.transient.forEach(object => object.destroy());
     this.transient.clear();
     this.v5Particles.clear();
+    this.v5ParticleInstances.clear();
     this.phase = this.gameState.status;
     this.renderBoard();
     this.renderLauncher();
@@ -183,6 +205,10 @@ export class PlayScene extends Phaser.Scene {
   private abandoned = false;
   private transient = new Set<Phaser.GameObjects.GameObject>();
   private v5Particles = new Set<Phaser.GameObjects.Arc>();
+  private v5ParticleInstances = new Set<V5ParticleInstance>();
+  private activeV5ClearAnimations = new Set<ActiveV5ClearAnimation>();
+  private activeV5ScorePopups = new Set<ActiveV5ScorePopup>();
+  private clearMotionGeneration = 0;
 
   public override update(_time: number, delta: number): void {
     delta = Number.isFinite(delta) ? Math.max(0, delta) : 0;
@@ -269,6 +295,9 @@ export class PlayScene extends Phaser.Scene {
     this.abandoned = false;
     this.terminalPersistedId = undefined; this.persistenceResult = undefined;
     this.roundEpoch++;
+    this.clearMotionGeneration++;
+    this.activeV5ClearAnimations.clear();
+    this.clearActiveV5ScorePopups();
     state = resumeTimed(state);
     this.stopRotation();
     this.tweens.killAll();
@@ -280,6 +309,7 @@ export class PlayScene extends Phaser.Scene {
     this.transient.forEach(object => object.destroy());
     this.transient.clear();
     this.v5Particles.clear();
+    this.v5ParticleInstances.clear();
     this.pointerActive = false;
     this.pausedFrom = 'READY';
     state.sessionId ??= crypto.randomUUID();
@@ -319,13 +349,27 @@ export class PlayScene extends Phaser.Scene {
       if (!this.clearStoredGame()) return false;
     } else if (!this.persistGame()) return false;
     this.abandoned = true;
+    this.roundEpoch++; this.clearMotionGeneration++;
+    this.clearActiveV5ScorePopups();
+    (this.tweens as Phaser.Tweens.TweenManager | undefined)?.killAll?.();
+    (this.time as Phaser.Time.Clock | undefined)?.removeAllEvents?.(); (this.time as Phaser.Time.Clock | undefined)?.clearPendingEvents?.();
+    this.transient.forEach(object => object.destroy()); this.transient.clear();
+    this.v5Particles.clear(); this.v5ParticleInstances.clear(); this.activeV5ClearAnimations.clear();
     return true;
   }
 
   public setSettings(settings: Settings): void {
+    const wasUserReduced = this.settings.reducedMotion;
+    const wasReduced = this.reducedMotion;
     const changed = settingsEffects(this.settings, settings);
     this.settings = snapshotSettings(settings);
     if (!this.ready) return;
+    const userEnabledReduced = !wasUserReduced && this.settings.reducedMotion;
+    if (userEnabledReduced || wasReduced !== this.reducedMotion) {
+      if (this.reducedMotion) this.reduceActiveV5ClearLayers();
+      else this.clearActiveV5ClearLayers();
+      this.clearActiveV5ScorePopups();
+    }
     if (changed.controls || changed.quality) { this.pointerActive = false; this.stopRotation(); }
     if (this.phase === 'READY') this.statusText?.setText(this.controlHint());
     this.audio.setMix(settings.volume, settings.musicVolume);
@@ -615,13 +659,12 @@ export class PlayScene extends Phaser.Scene {
     this.pointerActive = false;
     this.audio.blip('shoot');
     haptic('shoot', this.settings);
-    this.recoil = this.reducedMotion ? 0 : 1; this.positionBarrel();
+    this.recoil = this.reducedSystemMotion ? 0 : 1; this.positionBarrel();
     sendWindowEvent('snood-fired', undefined);
     this.statusText.setText(trace.bounced ? '反弹中 · 等待落点' : '飞行中 · 等待落点');
     this.emitState();
 
     const projectile = this.createOrb(this.gameState.currentColor, trace.points[0]);
-    if (this.reducedMotion) projectile.setVisible(false);
     this.transient.add(projectile);
     projectile.setScale(0.93);
     const driver: ProgressDriver = { progress: 0 };
@@ -671,7 +714,6 @@ export class PlayScene extends Phaser.Scene {
     const removeDelay = BOARD_APPEARANCE.removal.delay;
     const v5 = isV5BoardAppearance();
     const v5Orbs: V5RemovalItem[] = [];
-    const v5Motions: ClearOrb[] = [];
     const animationGroups = new Map<number, Phaser.GameObjects.Container[]>();
     for (const [index, cell] of removed.entries()) {
       const sourceOrb = this.boardBalls.get(cellKey(cell));
@@ -684,18 +726,13 @@ export class PlayScene extends Phaser.Scene {
           ? { x: sourceOrb.x + this.boardGroup.x, y: sourceOrb.y + this.boardGroup.y }
           : cellToPoint(cell, boardGeometry(_previous));
         const motion = { color: getOrbTheme(colorId).color, x: point.x, y: point.y, index, falling };
-        v5Motions.push(motion);
-        if (!this.reducedMotion) {
-          // The animated copy is a scene-level transient. The board's own orb is hidden
-          // until renderBoard reconciles the committed state after the visual lock.
-          const orb = this.createOrb(colorId, point);
-          if (target) orb.add(this.add.graphics().lineStyle(2, 0xffffff, 1).strokeCircle(0, 0, 20));
-          this.transient.add(orb);
-          sourceOrb?.setVisible(false);
-          v5Orbs.push({ orb, motion });
-        } else if (sourceOrb) {
-          sourceOrb.setAlpha(0);
-        }
+        // A scene-level copy gives both full and reduced effects a visible fade.
+        // The committed board orb stays hidden until renderBoard reconciles it.
+        const orb = this.createOrb(colorId, point);
+        if (target) orb.add(this.add.graphics().lineStyle(2, 0xffffff, 1).strokeCircle(0, 0, 20));
+        this.transient.add(orb);
+        sourceOrb?.setVisible(false);
+        v5Orbs.push({ orb, motion });
         if (sourceOrb) {
           const group = animationGroups.get(delay) ?? [];
           group.push(sourceOrb);
@@ -704,7 +741,7 @@ export class PlayScene extends Phaser.Scene {
         continue;
       }
       if (!sourceOrb) continue;
-      if (this.reducedMotion) sourceOrb.setAlpha(0);
+      if (this.reducedMotion) sourceOrb.setAlpha(1);
       else if (falling) {
         this.tweens.add({ targets: sourceOrb, y: sourceOrb.y + BOARD_APPEARANCE.removal.fallDistance, angle: BOARD_APPEARANCE.removal.fallAngle,
           duration: removeDuration, delay, ease: 'Quad.In' });
@@ -713,13 +750,16 @@ export class PlayScene extends Phaser.Scene {
       group.push(sourceOrb);
       animationGroups.set(delay, group);
     }
-    const v5Duration = v5Motions.length ? Math.max(...v5Motions.map(motion => motion.falling
-      ? V5_CLEAR_MOTION.fallMs
-      : V5_CLEAR_MOTION.matchMs)) : 0;
-    if (v5 && !this.reducedMotion && v5Orbs.length) this.animateV5Removal(v5Orbs, v5Duration, epoch);
+    const reducedAtStart = this.reducedMotion;
+    const v5Duration = reducedAtStart ? V5_CLEAR_MOTION.reducedMs : V5_CLEAR_MOTION.fullMs;
+    if (v5 && v5Orbs.length) this.animateV5Removal(v5Orbs, v5Duration, reducedAtStart, epoch,
+      clearMotionSeed('scene', this.roundEpoch, _previous.step, 'clear'));
     if (!v5) {
       for (const [delay, targets] of animationGroups) {
-        if (this.reducedMotion) continue;
+        if (this.reducedMotion) {
+          this.tweens.add({ targets, alpha: 0, scale: 1, duration: V5_CLEAR_MOTION.reducedMs, delay: 0, ease: 'Linear' });
+          continue;
+        }
         this.tweens.add({
           targets,
           scale: delay > 0 ? BOARD_APPEARANCE.removal.fallScale : BOARD_APPEARANCE.removal.matchScale,
@@ -774,49 +814,59 @@ export class PlayScene extends Phaser.Scene {
         sendWindowEvent('snood-finished', this.gameState);
       }
       };
-      if (droppedBoard) {
-        if (this.reducedMotion) { this.boardGroup.setY(0); this.time.delayedCall(360, finish); }
-        else this.tweens.add({ targets: this.boardGroup, y: 0, duration: 360, ease: 'Cubic.Out', onComplete: finish });
-      } else { this.boardGroup.setY(0); finish(); }
+      if (droppedBoard) this.tweens.add({ targets: this.boardGroup, y: 0, duration: 360, ease: 'Cubic.Out', onComplete: finish });
+      else { this.boardGroup.setY(0); finish(); }
     });
   }
 
   private createV5Particles(particles: readonly ClearParticle[]): V5ParticleInstance[] {
-    const android = typeof document !== 'undefined' && document.documentElement.classList.contains('android-v5');
-    const particleLimit = android ? V5_CLEAR_MOTION.androidMaxParticles : V5_CLEAR_MOTION.maxParticles;
+    const platform = clearMotionPlatform();
+    const particleLimit = clearParticleCap(platform);
     const capacity = Math.max(0, particleLimit - this.v5Particles.size);
     return particles.slice(0, capacity).map(particle => {
-      const object = this.add.circle(particle.x, particle.y, particle.radius, particle.color, .78);
+      const object = this.add.circle(particle.x, particle.y, particle.radius, particle.color, particle.alpha);
       this.transient.add(object);
       this.v5Particles.add(object);
-      return { particle, object };
+      const trail = particle.tail ? this.add.graphics() : undefined;
+      if (trail) this.transient.add(trail);
+      const instance = { particle, object, trail };
+      this.v5ParticleInstances.add(instance);
+      return instance;
     });
   }
 
   private applyV5Particles(particles: readonly V5ParticleInstance[], elapsedMs: number): void {
-    for (const { particle, object } of particles) {
+    for (const { particle, object, trail } of particles) {
       const pose = clearParticlePose(particle, elapsedMs);
-      object.setPosition(pose.x, pose.y).setScale(pose.radius / particle.radius).setAlpha(pose.alpha);
+      object.setPosition(pose.x, pose.y).setScale(1).setAlpha(pose.alpha);
+      if (trail) {
+        const speed = Math.hypot(particle.vx, particle.vy), length = Math.min(11, 3 + speed * .055);
+        const tailX = pose.x - particle.vx / speed * length, tailY = pose.y - particle.vy / speed * length;
+        trail.clear().lineStyle(Math.max(.7, particle.radius * .55), particle.color, pose.alpha * .42).lineBetween(tailX, tailY, pose.x, pose.y);
+      }
     }
   }
 
   private disposeV5Particles(particles: readonly V5ParticleInstance[]): void {
-    for (const { object } of particles) {
+    for (const instance of particles) {
+      const { object, trail } = instance;
       this.v5Particles.delete(object);
       if (this.transient.delete(object)) object.destroy();
+      this.v5ParticleInstances.delete(instance);
+      if (trail && this.transient.delete(trail)) trail.destroy();
     }
   }
 
   private animateV5Particles(particles: readonly V5ParticleInstance[], epoch: number): void {
     if (!particles.length) return;
-    const driver = { progress: 0 };
+    const driver = { progress: 0 }, generation = this.clearMotionGeneration;
     this.tweens.add({
       targets: driver,
       progress: 1,
       duration: V5_CLEAR_MOTION.particleMs,
       ease: 'Linear',
       onUpdate: () => {
-        if (epoch !== this.roundEpoch) return;
+        if (epoch !== this.roundEpoch || generation !== this.clearMotionGeneration) return;
         this.applyV5Particles(particles, driver.progress * V5_CLEAR_MOTION.particleMs);
       },
       onComplete: () => this.disposeV5Particles(particles),
@@ -829,28 +879,81 @@ export class PlayScene extends Phaser.Scene {
     }
   }
 
-  private animateV5Removal(orbs: readonly V5RemovalItem[], duration: number, epoch: number): void {
-    const particles = this.createV5Particles(createClearParticles(orbs.map(({ motion }) => motion)));
+  private animateV5Removal(orbs: V5RemovalItem[], duration: number, reduced: boolean, epoch: number, seed: number): void {
+    const particles = reduced ? [] : this.createV5Particles(createClearParticles(orbs.map(({ motion }) => motion), {
+      platform: clearMotionPlatform(), seed,
+      budget: Math.max(0, clearParticleCap(clearMotionPlatform()) - this.v5Particles.size),
+    }));
     const driver = { progress: 0 };
+    const animation: ActiveV5ClearAnimation = { driver, orbs, particles, duration, reduced, generation: this.clearMotionGeneration };
+    this.activeV5ClearAnimations.add(animation);
     this.tweens.add({
       targets: driver,
       progress: 1,
       duration,
       ease: 'Linear',
       onUpdate: () => {
-        if (epoch !== this.roundEpoch) return;
+        if (epoch !== this.roundEpoch || animation.generation !== this.clearMotionGeneration) return;
         const elapsedMs = driver.progress * duration;
+        const reduced = animation.reduced;
+        if (reduced && elapsedMs >= V5_CLEAR_MOTION.reducedMs) {
+          this.disposeV5Orbs(orbs); this.disposeV5Particles(particles); return;
+        }
         for (const { orb, motion } of orbs) {
-          const pose = clearOrbPose(motion, elapsedMs);
+          const pose = clearOrbPose(motion, elapsedMs, reduced);
           orb.setPosition(pose.x, pose.y).setScale(pose.scale).setRotation(pose.rotation).setAlpha(pose.alpha);
         }
-        this.applyV5Particles(particles, elapsedMs);
+        if (reduced && particles.length) this.disposeV5Particles(particles);
+        else this.applyV5Particles(particles, elapsedMs);
       },
       onComplete: () => {
+        this.activeV5ClearAnimations.delete(animation);
         this.disposeV5Orbs(orbs);
         this.disposeV5Particles(particles);
       },
     });
+  }
+
+  private clearActiveV5ClearLayers(): void {
+    if (!this.activeV5ClearAnimations.size && !this.v5ParticleInstances.size) return;
+    this.clearMotionGeneration++;
+    for (const animation of this.activeV5ClearAnimations) {
+      (this.tweens as Phaser.Tweens.TweenManager & { killTweensOf?: (target: object) => unknown }).killTweensOf?.(animation.driver);
+      this.disposeV5Orbs(animation.orbs);
+      this.disposeV5Particles(animation.particles);
+    }
+    this.activeV5ClearAnimations.clear();
+    this.disposeV5Particles([...this.v5ParticleInstances]);
+    this.renderBoard();
+  }
+
+  private reduceActiveV5ClearLayers(): void {
+    for (const animation of this.activeV5ClearAnimations) {
+      const elapsedMs = animation.driver.progress * animation.duration;
+      animation.reduced = true;
+      this.disposeV5Particles(animation.particles);
+      animation.particles.length = 0;
+      for (const { orb, motion } of animation.orbs) {
+        const pose = clearOrbPose(motion, elapsedMs, true);
+        orb.setPosition(pose.x, pose.y).setScale(1).setRotation(0).setAlpha(pose.alpha);
+      }
+      if (elapsedMs >= V5_CLEAR_MOTION.reducedMs) this.disposeV5Orbs(animation.orbs);
+    }
+    this.disposeV5Particles([...this.v5ParticleInstances]);
+  }
+
+  private clearActiveV5ScorePopups(): void {
+    if (!this.activeV5ScorePopups.size) return;
+    const clock = this.time as Phaser.Time.Clock & { removeEvent?: (event: Phaser.Time.TimerEvent) => unknown };
+    const tweens = this.tweens as Phaser.Tweens.TweenManager & { killTweensOf?: (target: object) => unknown };
+    for (const popup of this.activeV5ScorePopups) {
+      if (popup.timer) clock.removeEvent?.(popup.timer);
+      tweens.killTweensOf?.(popup.score);
+      tweens.killTweensOf?.(popup.caption);
+      if (this.transient.delete(popup.score)) popup.score.destroy();
+      if (this.transient.delete(popup.caption)) popup.caption.destroy();
+    }
+    this.activeV5ScorePopups.clear();
   }
 
   private flashLanding(cell: Cell, color: number): void {
@@ -858,7 +961,10 @@ export class PlayScene extends Phaser.Scene {
     const point = cellToPoint(cell, this.geometry);
     if (isV5BoardAppearance()) {
       const epoch = this.roundEpoch;
-      const particles = this.createV5Particles(createClearParticles([{ color, x: point.x, y: point.y, index: 0, falling: false }]));
+      const particles = this.createV5Particles(createClearParticles([{ color, x: point.x, y: point.y, index: this.gameState.step, falling: false }], {
+        platform: clearMotionPlatform(), seed: clearMotionSeed('scene', this.roundEpoch, this.gameState.step, 'landing'),
+        budget: Math.max(0, clearParticleCap(clearMotionPlatform()) - this.v5Particles.size),
+      }));
       this.animateV5Particles(particles, epoch);
       return;
     }
@@ -920,15 +1026,16 @@ export class PlayScene extends Phaser.Scene {
     }).setOrigin(.5);
     this.transient.add(score);
     this.transient.add(caption);
+    const popup: ActiveV5ScorePopup = { score, caption };
+    this.activeV5ScorePopups.add(popup);
     const dispose = () => {
+      if (!this.activeV5ScorePopups.delete(popup)) return;
+      if (popup.timer) (this.time as Phaser.Time.Clock & { removeEvent?: (event: Phaser.Time.TimerEvent) => unknown }).removeEvent?.(popup.timer);
       if (this.transient.delete(score)) score.destroy();
       if (this.transient.delete(caption)) caption.destroy();
     };
     if (this.reducedMotion) {
-      this.time.delayedCall(V5_CLEAR_MOTION.scoreMs, () => {
-        if (epoch !== this.roundEpoch) { dispose(); return; }
-        dispose();
-      });
+      popup.timer = this.time.delayedCall(V5_CLEAR_MOTION.scoreMs, dispose);
       return;
     }
     score.setScale(.88);
@@ -939,7 +1046,7 @@ export class PlayScene extends Phaser.Scene {
       duration: 90,
       ease: 'Back.Out',
       onComplete: () => {
-        if (epoch !== this.roundEpoch) { dispose(); return; }
+        if (epoch !== this.roundEpoch || !this.activeV5ScorePopups.has(popup)) { dispose(); return; }
         this.tweens.add({
           targets: score,
           y: 500,

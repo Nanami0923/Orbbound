@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><title>ORBBOUND · 5.2.0 动效演示</title><style>:root{font-family:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC",system-ui,sans-serif;color:#e4e9ee;background:#0c1420;font-synthesis:none;--muted:#94a3b4;--mint:#83c6b2;--line:#293647;--panel:#131f2e}*{box-sizing:border-box}body{margin:0}button,select,input{font:inherit}button,a,select,input{touch-action:manipulation}button{cursor:pointer}button:focus-visible,a:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--mint);outline-offset:4px}button{border:0;color:inherit;background:transparent}button,select{min-height:40px}button:hover{color:#a7d7c7}main{width:min(1500px,calc(100% - 88px));margin:auto}.page-header{height:92px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #202c3c}.brand{display:flex;gap:13px;align-items:center;font-size:16px;font-weight:650;letter-spacing:2px;color:inherit;text-decoration:none}.brand-dots{position:relative;display:block;width:22px;height:25px}.brand-dots i{width:6px;height:6px;position:absolute;border-radius:50%;background:#d7b86c;left:8px;top:1px}.brand-dots i:nth-child(2){left:0;top:14px;background:#76bdab}.brand-dots i:nth-child(3){left:16px;top:17px;background:#df827e}.edition{font-size:12px;color:var(--muted);letter-spacing:.8px}.intro{display:flex;justify-content:space-between;gap:30px;align-items:flex-end;padding:40px 0 28px}.eyebrow{font-size:10px;letter-spacing:2px;color:var(--mint);margin:0 0 12px}h1{font-size:clamp(26px,3vw,42px);line-height:1.25;letter-spacing:-1px;font-weight:650;margin:0 0 14px}.lede{font-size:13px;line-height:1.8;color:var(--muted);margin:0}.proposal-note{flex-shrink:0;font-size:11px;line-height:1.9;color:#77889d;text-align:right}.study-tabs{display:flex;gap:28px;border-bottom:1px solid var(--line);margin-bottom:20px}.study-tabs button{font-size:13px;padding:0 1px 13px;min-height:44px;color:var(--muted);border-bottom:2px solid transparent}.study-tabs button[aria-pressed=true]{border-color:var(--mint);color:#dbeae4}.toolbar,.toolbar-right{display:flex;align-items:center;gap:16px}.toolbar{justify-content:space-between;flex-wrap:wrap}.toolbar-right{gap:16px;flex-wrap:wrap}.segmented{display:flex;background:#172331;border-radius:8px;padding:3px;gap:3px}.segmented button{font-size:12px;min-height:34px;padding:5px 15px;border-radius:5px;color:#a6b2c0}.segmented button[aria-pressed=true]{background:#2a3c49;color:#d4ece3}.speed-label{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)}select{border:0;border-bottom:1px solid var(--line);color:#d6dfe8;background:#0c1420;padding:0 20px 0 5px;font-size:12px}.quiet{font-size:12px;min-width:48px}.stage-note{display:flex;justify-content:space-between;gap:20px;align-items:center;font-size:11px;color:var(--muted);padding:18px 0 12px}.loop-indicator{display:flex;align-items:center;gap:7px;white-space:nowrap}.loop-indicator i{width:5px;height:5px;background:var(--mint);border-radius:50%}.previews{display:grid;grid-template-columns:minmax(0,1fr) 286px;gap:24px;align-items:start}.preview-caption{display:flex;justify-content:space-between;align-items:center;font-size:12px;margin:0 0 10px}.preview-caption small{font-size:10px;color:#77889d}.desktop-screen{display:grid;grid-template-columns:128px minmax(0,1fr) 135px;align-items:center;min-height:535px;background:#0f1926;border:1px solid #253244;border-radius:12px;overflow:hidden;padding:22px 14px}.desktop-stats{font-size:11px;padding:0 12px 0 4px;min-width:0}.mini-brand{font-size:10px;letter-spacing:1px;display:block;margin-bottom:25px}.desktop-stats label{display:block;color:#8395a8;font-size:10px;margin:0 0 9px}.desktop-stats b{font-size:26px;font-variant-numeric:tabular-nums;letter-spacing:-.5px;display:block;margin-bottom:22px}.desktop-stats strong:not(.mini-brand){display:block;font-size:13px;margin:0 0 12px}.desktop-stats .pressure-track{margin:0 0 22px}.pressure-track{height:3px;border-radius:2px;background:#29384a;overflow:hidden}.pressure-track i{display:block;height:100%;width:30%;background:#83b6aa}.board-area{align-self:center;min-width:0}.board-heading{display:flex;justify-content:space-between;color:#8494a6;font-size:9px;gap:5px;margin:0 5px 9px}.board-heading span{color:#54766e}.board-area canvas{display:block;width:100%;height:auto;aspect-ratio:640/760;background:#111e2c;border:1px solid #293748;border-radius:12px}.desktop-actions{padding:0 3px 0 15px;align-self:center;font-size:10px}.next-card{display:flex;align-items:center;justify-content:space-between;padding:10px;background:#1b2939;border-radius:8px;margin-bottom:22px;gap:10px}.next-card svg{width:29px;height:29px;display:block}.desktop-actions p{margin:0 0 24px;display:flex;justify-content:space-between;color:#9dafbf;font-size:10px}kbd{font-family:inherit;font-size:9px;color:#698096}.phone-screen{border:1px solid #293748;background:#111e2c;padding:20px 12px 15px;border-radius:20px;min-height:535px;display:flex;flex-direction:column}.phone-topbar{display:flex;align-items:center;gap:12px;font-size:9px;margin-bottom:22px}.phone-topbar strong{font-size:11px;letter-spacing:.8px}.phone-topbar span{color:#96b2b1}.phone-topbar span:last-child{margin-left:auto;font-size:16px}.phone-hud{display:grid;grid-template-columns:1.12fr 1.1fr .75fr;gap:10px;margin-bottom:16px;align-items:center;min-height:58px}.phone-hud label{display:block;font-size:8px;color:#91a1b5;margin-bottom:10px}.phone-hud b{display:block;font-size:22px;letter-spacing:-.5px;font-variant-numeric:tabular-nums}.phone-hud strong{font-size:10px;white-space:nowrap;display:block;margin-bottom:9px}.phone-next{display:flex;gap:6px;align-items:center;justify-content:flex-end}.phone-next label{font-size:8px;white-space:nowrap;margin:0}.phone-next svg{display:block;width:24px;height:24px}.phone-screen canvas{display:block;width:100%;aspect-ratio:640/760;background:#101a28;border:1px solid #293748;border-radius:11px}.phone-instruction{font-size:9px;color:#7c8b9e;margin:13px 0 0}.phone-bottom{display:flex;justify-content:space-between;font-size:9px;color:#91a1b5;margin-top:auto;padding-top:21px}.timeline{margin-top:23px;padding:16px 18px;background:#111d2a;border-radius:8px}.timeline-label{display:flex;justify-content:space-between;font-size:11px;color:#bbc7d4;margin-bottom:12px}.mono{font-variant-numeric:tabular-nums;font-family:ui-monospace,Consolas,monospace}input[type=range]{accent-color:var(--mint);width:100%;display:block;cursor:ew-resize;height:18px;margin:0}.timeline-ticks{display:flex;justify-content:space-between;color:#687c90;font-size:9px;margin-top:6px}.study-summary{display:grid;grid-template-columns:1fr 1fr 1fr;gap:24px;padding:10px 0 24px}.study-summary p{font-size:11px;line-height:1.8}.study-summary b{font-size:12px;font-weight:600;display:block;margin-bottom:3px}.study-summary span{display:block;color:#8192a6}footer{font-size:10px;color:#607288;border-top:1px solid #202c3c;padding:20px 0 32px;letter-spacing:.4px}.previews[data-layout=windows]{grid-template-columns:minmax(0,1fr)}.previews[data-layout=windows] .android-preview{display:none}.previews[data-layout=windows] .desktop-screen{grid-template-columns:165px minmax(0,700px) 180px;justify-content:center}.previews[data-layout=android]{display:flex;justify-content:center}.previews[data-layout=android] .desktop-preview{display:none}.previews[data-layout=android] .android-preview{width:340px}.previews[data-layout=android] .phone-screen{min-height:640px}.random-heading{display:flex;align-items:center;justify-content:space-between;gap:20px;margin:30px 0}h2{font-size:25px;font-weight:600;margin:0 0 10px}.random-heading p,.random-footnote{font-size:12px;color:var(--muted);line-height:1.8}.action{font-size:12px;background:#28483f;color:#c3e0d5;border-radius:7px;padding:8px 20px;white-space:nowrap}.random-players{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:18px}.random-player{background:#131f2e;border-radius:10px;padding:16px}.random-player h3{font-size:13px;font-weight:600;margin:0 0 6px}.random-player p{color:var(--muted);font-size:10px;margin:0 0 17px}.random-player canvas{display:block;width:100%;aspect-ratio:640/390;background:#101b29;border-radius:8px}.queue-label{display:block;font-size:10px;color:var(--muted);margin:20px 0 8px}.queue{display:flex;gap:5px;align-items:center;flex-wrap:wrap}.queue svg{width:22px;height:22px;display:block}.random-footnote{margin:22px 0 35px;max-width:800px;font-size:11px}[hidden]{display:none!important}@media(min-width:1600px){.desktop-screen,.phone-screen{min-height:610px}.previews{grid-template-columns:minmax(0,1fr) 320px}.desktop-screen{grid-template-columns:155px minmax(0,1fr) 160px}.desktop-stats b{font-size:30px}}@media(max-width:1100px){main{width:calc(100% - 40px)}.previews{grid-template-columns:minmax(0,1fr) 250px;gap:18px}.desktop-screen{grid-template-columns:96px minmax(0,1fr);padding:18px 11px}.desktop-actions{display:none}.desktop-stats{padding-right:11px}.desktop-stats b{font-size:20px}.phone-hud{gap:6px}.phone-hud b{font-size:18px}.random-players{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:780px){main{width:calc(100% - 32px)}.page-header{height:72px}.intro{padding:28px 0 22px}.proposal-note{display:none}.lede{font-size:12px;max-width:540px}.toolbar{gap:12px}.toolbar-right{gap:10px;justify-content:space-between;width:100%}.previews{grid-template-columns:1fr}.desktop-screen{min-height:0;grid-template-columns:100px minmax(0,1fr);padding:18px 14px}.desktop-preview{min-width:0}.android-preview{width:min(340px,100%);margin:8px auto 0}.phone-screen{min-height:620px}.phone-hud b{font-size:24px}.study-summary{grid-template-columns:1fr;gap:0;padding-top:13px}.study-summary p{margin:7px 0}.previews[data-layout=windows] .desktop-screen{grid-template-columns:100px minmax(0,1fr)}.stage-note{font-size:10px;gap:10px}.segmented button{padding:5px 13px}.platform-switch button{padding:5px 10px}.random-players{gap:12px}.random-player{padding:12px}.queue{gap:3px}.queue svg{width:18px;height:18px}}@media(max-width:400px){.brand{font-size:13px}.edition{font-size:10px}.desktop-screen{grid-template-columns:78px minmax(0,1fr);padding:12px 8px}.desktop-stats b{font-size:16px}.desktop-stats label{font-size:8px}.desktop-stats strong:not(.mini-brand){font-size:10px}.mini-brand{font-size:8px}.random-players{grid-template-columns:1fr}.timeline{padding:12px}.speed-label{gap:2px}.toolbar-right{gap:5px}.segmented button{padding-inline:10px}}
+
+/* Keep both platform studies at comparable height; never stretch a sphere. */
+.desktop-screen{height:535px;min-height:535px}.board-area{display:grid;align-content:center;justify-items:center;width:100%;min-width:0}.board-area canvas,.board-heading{width:min(100%,395px)}.board-heading{margin-inline:0}.previews[data-layout=windows] .desktop-screen{height:700px}.previews[data-layout=windows] .board-area canvas,.previews[data-layout=windows] .board-heading{width:min(100%,530px)}.timeline-ticks{position:relative;height:13px}.timeline-ticks span{position:absolute;white-space:nowrap}.timeline-ticks span:nth-child(1){left:0}.timeline-ticks span:nth-child(2){left:33.333%;transform:translateX(-50%)}.timeline-ticks span:nth-child(3){left:57.333%;transform:translateX(-50%)}.timeline-ticks span:nth-child(4){right:0}
+@media(min-width:1600px){.desktop-screen{height:610px;min-height:610px}.board-area canvas,.board-heading{width:min(100%,450px)}}
+@media(max-width:780px){.desktop-screen,.previews[data-layout=windows] .desktop-screen{height:auto;min-height:0}.board-area canvas,.board-heading,.previews[data-layout=windows] .board-area canvas,.previews[data-layout=windows] .board-heading{width:100%}}
+</style></head>
+<body>
+<main>
+  <header class="page-header"><a class="brand" href="#"><span class="brand-dots"><i></i><i></i><i></i></span>ORBBOUND</a><span class="edition">5.2.0 · 方案演示</span></header>
+  <section class="intro"><div><p class="eyebrow">MOTION STUDY / 02</p><h1>抛物线散落，等大淡出。</h1><p class="lede">先向外轻抛，再沿抛物线加速落下。两类球使用同一节拍，保留图案与柔和粒子。</p></div><span class="proposal-note">独立视觉 demo<br>5.1.0 正式程序未改动</span></section>
+  <nav class="study-tabs" aria-label="演示内容"><button data-view="motion" aria-pressed="true">消除动效</button><button data-view="random" aria-pressed="false">联机独立随机</button></nav>
+  <section id="motion-study">
+    <div class="toolbar"><div class="segmented" aria-label="效果设置"><button data-effect="full" aria-pressed="true">完整效果</button><button data-effect="reduced" aria-pressed="false">减少效果</button></div><div class="toolbar-right"><div class="segmented platform-switch" aria-label="平台布局"><button data-layout="both" aria-pressed="true">双端</button><button data-layout="windows" aria-pressed="false">Windows</button><button data-layout="android" aria-pressed="false">Android</button></div><label class="speed-label">速度 <select id="speed"><option value="0.5">0.5×</option><option value="1" selected>1×</option></select></label><button id="play-toggle" class="quiet" aria-pressed="false">暂停</button></div></div>
+    <div class="stage-note"><span id="effect-description">球体等大淡出 · 同步加速散落 · 双端保留粒子</span><span class="loop-indicator"><i></i>自动循环</span></div>
+    <div class="previews" data-layout="both">
+      <article class="desktop-preview"><div class="preview-caption"><span>Windows</span><small>横屏 · 完整效果</small></div><div class="desktop-screen"><aside class="desktop-stats"><strong class="mini-brand">ORBBOUND</strong><label>基础分</label><b data-score>002410</b><label>距离棋盘下降</label><strong>再发射 7 次</strong><div class="pressure-track"><i></i></div><label>本局用时</label><strong class="mono">00:42</strong></aside><div class="board-area"><div class="board-heading">无尽 · 普通<span>演示棋盘</span></div><canvas id="windows-canvas" aria-label="Windows 同步消除动效演示"></canvas></div><aside class="desktop-actions"><div class="next-card">下一球 <span data-orb="4"></span></div><p>暂停游戏 <kbd>P</kbd></p><p>游戏设置 <kbd>S</kbd></p><p>历史与排行 <kbd>H</kbd></p></aside></div></article>
+      <article class="android-preview"><div class="preview-caption"><span>Android</span><small>竖屏 · 完整效果</small></div><div class="phone-screen"><div class="phone-topbar"><strong>ORBBOUND</strong><span>无尽 · 普通</span><span>Ⅱ</span></div><div class="phone-hud"><div><label>基础分</label><b data-score>002410</b></div><div><label>棋盘下降</label><strong>再发射 7 次</strong><div class="pressure-track"><i></i></div></div><div class="phone-next"><label>下一球</label><span data-orb="4"></span></div></div><canvas id="android-canvas" aria-label="Android 竖屏同步消除动效演示"></canvas><p class="phone-instruction">按住瞄准，松手发射。</p><div class="phone-bottom"><span>暂停</span><span>00:42</span><span>设置</span></div></div></article>
+    </div>
+    <div class="timeline"><div class="timeline-label"><span id="phase-label">等待命中</span><span id="time-label" class="mono">命中前</span></div><input id="timeline" type="range" min="0" max="3000" value="0" step="1" aria-label="拖动查看同一次消除的动画时刻"><div class="timeline-ticks"><span>命中前</span><span>命中 t₀</span><span>720ms 完成</span><span>下一轮</span></div></div>
+    <div class="study-summary"><p><b>同一时间轴</b><span>两类球同步开始、同步结束；球体不缩小。</span></p><p><b id="density-label">粒子双端保留</b><span id="reduced-description">细粒与短尾混合，颜色来自被消除的小球。</span></p><p><b>可逐帧确认</b><span>暂停或拖动时间轴，也可切换 0.5× 慢放。</span></p></div>
+  </section>
+  <section id="random-study" hidden><div class="random-heading"><div><h2>同一房间，各自开局。</h2><p>棋盘与供球分别随机；所有玩家仍由房主统一生成和同步。</p></div><button id="new-room" class="action">新一局</button></div><div id="random-players" class="random-players"></div><p class="random-footnote">演示的是独立随机策略。短段颜色偶尔相同是正常随机，不强行替换颜色。正式版需同步修改联机规则指纹，拒绝旧规则混连。</p></section>
+  <footer>原球面图案 · 低高光 · 本 demo 不读写游戏存档</footer>
+</main>
+<script>const ORB_DATA={"paths":{"0":"M17.841 25.004Q17.841 24.157 18.061 23.369Q18.281 22.58 18.679 21.896Q19.078 21.211 19.638 20.65Q20.198 20.09 20.883 19.688Q21.568 19.285 22.356 19.065Q23.145 18.845 23.992 18.845Q24.838 18.845 25.627 19.065Q26.416 19.285 27.1 19.688Q27.785 20.09 28.35 20.65Q28.914 21.211 29.317 21.896Q29.719 22.58 29.939 23.369Q30.159 24.157 30.159 25.004Q30.159 25.859 29.939 26.644Q29.719 27.428 29.317 28.113Q28.914 28.798 28.35 29.358Q27.785 29.918 27.1 30.317Q26.416 30.715 25.627 30.935Q24.838 31.155 23.992 31.155Q23.137 31.155 22.352 30.935Q21.568 30.715 20.883 30.317Q20.198 29.918 19.638 29.358Q19.078 28.798 18.679 28.113Q18.281 27.428 18.061 26.639Q17.841 25.851 17.841 25.004Z","1":"M18.048 25.008 23.992 19.048 29.952 25.008 23.992 30.952Z","2":"M18.102 25Q19.04 24.643 19.746 24.323Q20.451 24.004 20.983 23.659Q21.514 23.315 21.921 22.908Q22.327 22.501 22.668 21.962Q23.008 21.422 23.328 20.713Q23.647 20.003 24.004 19.048Q24.361 20.003 24.681 20.713Q25 21.422 25.341 21.962Q25.681 22.501 26.083 22.908Q26.486 23.315 27.021 23.659Q27.557 24.004 28.258 24.323Q28.96 24.643 29.898 25Q28.96 25.365 28.258 25.681Q27.557 25.996 27.021 26.341Q26.486 26.685 26.083 27.092Q25.681 27.499 25.341 28.038Q25 28.578 24.681 29.287Q24.361 29.997 24.004 30.952Q23.639 29.997 23.323 29.287Q23.008 28.578 22.668 28.038Q22.327 27.499 21.921 27.092Q21.514 26.685 20.983 26.341Q20.451 25.996 19.746 25.677Q19.04 25.357 18.102 25Z","3":"M24 19.048 30.657 30.952H17.343Z","4":"M22.423 30.952V26.585H18.04V23.423H22.423V19.048H25.585V23.423H29.96V26.585H25.585V30.952Z","5":"M26.2 24.996Q26.2 24.548 26.025 24.149Q25.851 23.751 25.552 23.452Q25.253 23.153 24.855 22.979Q24.457 22.804 24 22.804Q23.552 22.804 23.153 22.979Q22.755 23.153 22.456 23.452Q22.157 23.751 21.983 24.149Q21.809 24.548 21.809 24.996Q21.809 25.452 21.983 25.851Q22.157 26.249 22.456 26.548Q22.755 26.847 23.153 27.017Q23.552 27.187 24 27.187Q24.457 27.187 24.855 27.017Q25.253 26.847 25.552 26.548Q25.851 26.249 26.025 25.851Q26.2 25.452 26.2 24.996ZM24 18.845Q24.54 18.845 25 19.011Q25.461 19.177 25.793 19.476Q26.125 19.775 26.312 20.186Q26.499 20.596 26.499 21.086Q26.499 21.368 26.44 21.655Q26.382 21.941 26.216 22.281Q26.623 21.916 27.08 21.75Q27.536 21.584 28.001 21.584Q28.474 21.584 28.902 21.75Q29.329 21.916 29.653 22.228Q29.977 22.539 30.167 22.991Q30.358 23.444 30.358 24.025Q30.358 24.705 30.105 25.162Q29.852 25.618 29.433 25.896Q29.014 26.175 28.478 26.291Q27.943 26.407 27.387 26.39Q28.233 26.764 28.661 27.374Q29.088 27.984 29.088 28.74Q29.088 29.262 28.931 29.707Q28.773 30.151 28.453 30.47Q28.134 30.79 27.656 30.972Q27.179 31.155 26.532 31.155Q25.859 31.155 25.399 30.935Q24.938 30.715 24.643 30.371Q24.349 30.026 24.199 29.599Q24.05 29.171 24 28.756Q23.958 29.171 23.809 29.599Q23.66 30.026 23.361 30.371Q23.062 30.715 22.601 30.935Q22.141 31.155 21.468 31.155Q20.821 31.155 20.344 30.972Q19.866 30.79 19.551 30.47Q19.235 30.151 19.078 29.707Q18.92 29.262 18.92 28.74Q18.92 27.984 19.347 27.374Q19.775 26.764 20.622 26.39Q20.057 26.407 19.522 26.291Q18.986 26.175 18.571 25.896Q18.156 25.618 17.899 25.162Q17.642 24.705 17.642 24.025Q17.642 23.444 17.833 22.991Q18.023 22.539 18.347 22.228Q18.671 21.916 19.098 21.75Q19.526 21.584 20.007 21.584Q20.472 21.584 20.929 21.75Q21.385 21.916 21.792 22.281Q21.626 21.941 21.564 21.655Q21.501 21.368 21.501 21.086Q21.501 20.596 21.688 20.186Q21.875 19.775 22.207 19.476Q22.539 19.177 23 19.011Q23.46 18.845 24 18.845Z"},"themes":[{"id":0,"cssColor":"#df827e","ink":"#392936"},{"id":1,"cssColor":"#76bdab","ink":"#173a3a"},{"id":2,"cssColor":"#d7b86c","ink":"#463a25"},{"id":3,"cssColor":"#a18bd3","ink":"#302844"},{"id":4,"cssColor":"#77a5cf","ink":"#1e3550"},{"id":5,"cssColor":"#ca8da9","ink":"#482d3d"}]};
+// Preview model only. Production 5.1.0 rules and renderers are not modified.
+const MOTION = Object.freeze({ fullMs: 720, reducedMs: 320, particleMs: 720, windowsCap: 192, androidCap: 144, cycleMs: 3400, hitAtMs: 1000,
+  outwardSpeed: 60, outwardAcceleration: 140, arcCurvature: 420, arcLift: 144 });
+const clamp01 = n => Math.max(0, Math.min(1, n));
+function orbPose(orb, elapsedMs, reduced = false) {
+  const p = clamp01(elapsedMs / (reduced ? MOTION.reducedMs : MOTION.fullMs));
+  const direction = orb.index % 2 ? 1 : -1;
+  const t = p * MOTION.fullMs / 1000;
+  const vx = MOTION.outwardSpeed + orb.index % 3 * 6;
+  const ax = MOTION.outwardAcceleration + orb.index % 4 * 30;
+  const distance = vx * t + .5 * ax * t * t;
+  const endT = MOTION.fullMs / 1000;
+  const endDistance = vx * endT + .5 * ax * endT * endT;
+  const u = clamp01(distance / endDistance);
+  // Matched and detached use exactly the same clock, movement, scale and alpha.
+  // Accelerate along a true spatial parabola, rather than easing x and y separately.
+  return { x: orb.x + (reduced ? 0 : direction * distance),
+    y: orb.y + (reduced ? 0 : MOTION.arcCurvature * u * u - MOTION.arcLift * u),
+    rotation: reduced ? 0 : direction * .28 * p,
+    scale: 1, alpha: Math.pow(1 - p, 1.15), progress: p, pathProgress: reduced ? 0 : u };
+}
+function seeded(seed) {
+  let state = seed >>> 0;
+  return () => { let t = state += 0x6d2b79f5; t = Math.imul(t ^ t >>> 15, t | 1); t ^= t + Math.imul(t ^ t >>> 7, t | 61); return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+}
+function deriveSeed(matchSeed, playerId, wave, domain) {
+  let h = (matchSeed ^ 0x811c9dc5) >>> 0;
+  const text = `${playerId}\0${wave}\0${domain}`;
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193) >>> 0;
+  h = Math.imul(h ^ h >>> 16, 0x85ebca6b); h = Math.imul(h ^ h >>> 13, 0xc2b2ae35);
+  return ((h ^ h >>> 16) >>> 0) || 0x1a2b3c4d;
+}
+function independentPlayer(matchSeed, playerId, wave = 0) {
+  const boardSeed = deriveSeed(matchSeed, playerId, wave, 'board-v1');
+  const supplySeed = deriveSeed(matchSeed, playerId, wave, 'supply-v1');
+  const boardRandom = seeded(boardSeed), supplyRandom = seeded(supplySeed);
+  // Equal difficulty/ball count/color quota; independently shuffle every position.
+  const cells = Array.from({ length: 7 * 14 }, (_, i) => i % 5);
+  for (let i = cells.length - 1; i > 0; i--) { const j = Math.floor(boardRandom() * (i + 1)); [cells[i], cells[j]] = [cells[j], cells[i]]; }
+  const board = Array.from({ length: 7 }, (_, row) => cells.slice(row * 14, row * 14 + 14));
+  const queue = Array.from({ length: 8 }, () => Math.floor(supplyRandom() * 5));
+  return { playerId, wave, boardSeed, supplySeed, board, queue };
+}
+function clearParticles(orbs, platform = 'windows', reduced = false) {
+  if (reduced) return [];
+  const cap = platform === 'android' ? MOTION.androidCap : MOTION.windowsCap;
+  const perOrb = platform === 'android' ? 10 : 14;
+  const count = Math.min(cap, orbs.length * perOrb);
+  const random = seeded(0x5200);
+  return Array.from({ length: count }, (_, index) => {
+    // Round-robin allocation gives every detached and matched ball some particles.
+    const orb = orbs[index % orbs.length], angle = random() * Math.PI * 2;
+    const speed = 28 + random() * 88;
+    return { color: orb.color, x: orb.x, y: orb.y, vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed - 25, radius: 1.2 + random() * 2.3, alpha: .35 + random() * .4,
+      tail: index % 5 === 0, sourceIndex: orb.index };
+  });
+}
+function particlePose(particle, elapsedMs) {
+  const p = clamp01(elapsedMs / MOTION.particleMs);
+  const drag = (1 - Math.exp(-2.2 * p)) / (1 - Math.exp(-2.2));
+  return { x: particle.x + particle.vx * drag, y: particle.y + particle.vy * drag + 66 * p * p,
+    radius: particle.radius, alpha: particle.alpha * Math.pow(1 - p, 1.3) };
+}
+function sceneClock(cycleMs) {
+  const hitElapsed = cycleMs - MOTION.hitAtMs;
+  return { hitElapsed, beforeHit: hitElapsed < 0, resetAlpha: cycleMs > 3000 ? clamp01((cycleMs - 3000) / 400) : 0 };
+}
+
+(() => {
+  'use strict';
+  const $ = s => document.querySelector(s);
+  const scene = { fixed: [], removed: [] };
+  const colors = [0, 2, 4, 3, 1, 4, 2, 0, 3, 4, 2, 3, 0, 1];
+  for (let row = 0; row < 3; row++) for (let col = 0; col < 14; col++) scene.fixed.push({ x: 50 + col * 40 + (row % 2 ? 20 : 0), y: 56 + row * 34.64, color: colors[(col + row * 3) % 14] });
+  for (let row = 3; row < 5; row++) for (let col = 0; col < 14; col++) if (col < 4 || col > 10) scene.fixed.push({ x: 50 + col * 40 + (row % 2 ? 20 : 0), y: 56 + row * 34.64, color: colors[(col + row * 3) % 14] });
+  const coordinates = [[310,160,1,false],[350,160,1,false],[330,195,1,false],[390,160,1,false], [310,230,2,true],[350,230,3,true],[290,265,4,true],[330,265,0,true],[370,265,2,true],[310,300,3,true],[350,300,0,true],[330,335,4,true]];
+  scene.removed = coordinates.map(([x,y,color,falling], index) => ({x,y,color,falling,index}));
+  const state = { view: 'motion', effect: 'full', layout: 'both', playing: true, speed: 1, time: 0 };
+  const atlas = ORB_DATA.themes.map(theme => {
+    const canvas = document.createElement('canvas'); canvas.width = canvas.height = 144;
+    const c = canvas.getContext('2d'); c.translate(72,72); c.scale(144/35,144/35); c.translate(-24,-24);
+    c.fillStyle=theme.cssColor; c.beginPath(); c.arc(24,24,17.5,0,Math.PI*2);c.fill();
+    c.strokeStyle='rgba(12,20,33,.25)';c.lineWidth=.7;c.stroke();
+    c.fillStyle='rgba(255,255,255,.065)';c.beginPath();c.ellipse(18,17,4.5,2.4,0,0,Math.PI*2);c.fill();
+    c.fillStyle=theme.ink;c.fill(new Path2D(ORB_DATA.paths[theme.id]));
+    for(const x of [18,30]){c.beginPath();c.arc(x,32,1.7,0,Math.PI*2);c.fill();}return canvas;
+  });
+  function orb(c, color, x, y, radius=18, alpha=1, rotation=0) {
+    if(alpha<=0)return;c.save();c.translate(x,y);c.rotate(rotation);c.globalAlpha=alpha;c.drawImage(atlas[color],-radius,-radius,radius*2,radius*2);c.restore();
+  }
+  function svgOrb(color) { const t=ORB_DATA.themes[color];return `<svg viewBox="6.5 6.5 35 35" aria-hidden="true"><circle cx="24" cy="24" r="17.5" fill="${t.cssColor}"/><path d="${ORB_DATA.paths[color]}" fill="${t.ink}"/><circle cx="18" cy="32" r="1.7" fill="${t.ink}"/><circle cx="30" cy="32" r="1.7" fill="${t.ink}"/></svg>`; }
+  document.querySelectorAll('[data-orb]').forEach(e=>e.innerHTML=svgOrb(Number(e.dataset.orb)));
+  const particles = { windows: clearParticles(scene.removed,'windows'), android: clearParticles(scene.removed,'android') };
+  function fit(canvas,width,height){ const dpr=Math.min(devicePixelRatio||1,2);const w=Math.max(1,Math.round(canvas.getBoundingClientRect().width*dpr)),h=Math.round(w*height/width);if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h;}const c=canvas.getContext('2d');c.setTransform(w/width,0,0,h/height,0,0);return c; }
+  function paintBoard(c) {
+    c.fillStyle='#101b29';c.fillRect(0,0,640,760);
+    c.strokeStyle='rgba(143,163,184,.055)';c.lineWidth=1;
+    for(let y=367;y<650;y+=42){c.beginPath();c.moveTo(34,y);c.lineTo(606,y);c.stroke();}
+    c.strokeStyle='#34414d';c.beginPath();c.moveTo(32,652);c.lineTo(608,652);c.stroke();
+    c.fillStyle='#66788b';c.font='11px "Microsoft YaHei",sans-serif';c.textAlign='center';c.fillText('触底线',320,673);
+    for(const item of scene.fixed)orb(c,item.color,item.x,item.y);
+    c.fillStyle='#1e2b3c';c.beginPath();c.arc(320,716,34,0,Math.PI*2);c.fill();
+    c.save();c.translate(320,716);c.rotate(.14);c.fillStyle='#293b4c';c.beginPath();c.roundRect(-11,-57,22,58,7);c.fill();c.fillStyle='#83c6b2';c.beginPath();c.roundRect(-8,-55,16,6,3);c.fill();c.restore();orb(c,1,320,716,19);
+  }
+  function renderCanvas(platform) {
+    const canvas=$(`#${platform}-canvas`);if(!canvas.getClientRects().length)return;
+    const c=fit(canvas,640,760);paintBoard(c);const {hitElapsed:t,beforeHit,resetAlpha}=sceneClock(state.time),reduced=state.effect==='reduced';
+    if(beforeHit){for(const item of scene.removed)if(item.index!==3)orb(c,item.color,item.x,item.y);
+      // Scripted flight is illustrative; it does not consume a gameplay random stream.
+      const flight=clamp01((state.time-520)/480),x=(1-flight)**2*320+2*(1-flight)*flight*580+flight*flight*390,y=(1-flight)**2*716+2*(1-flight)*flight*560+flight*flight*160;
+      orb(c,1,x,y,18);c.strokeStyle='rgba(131,198,178,.17)';c.lineWidth=1;c.beginPath();c.arc(390,160,22,0,Math.PI*2);c.stroke();
+    }else{
+      for(const item of scene.removed){const p=orbPose(item,t,reduced);orb(c,item.color,p.x,p.y,18,p.alpha,p.rotation);}
+      if(!reduced)for(const p of particles[platform]){const pose=particlePose(p,t);if(pose.alpha<=0)continue;c.save();c.globalAlpha=pose.alpha;c.fillStyle=ORB_DATA.themes[p.color].cssColor;
+        c.beginPath();c.arc(pose.x,pose.y,pose.radius,0,Math.PI*2);c.fill();
+        if(p.tail){c.lineCap='round';c.strokeStyle=ORB_DATA.themes[p.color].cssColor;c.lineWidth=pose.radius*.55;c.globalAlpha=pose.alpha*.45;c.beginPath();c.moveTo(pose.x,pose.y);c.lineTo(pose.x-p.vx*.07,pose.y-p.vy*.07-3);c.stroke();}c.restore();}
+      if(!reduced&&t<880){const p=clamp01(t/880);c.save();c.textAlign='center';c.globalAlpha=Math.pow(1-p,1.1);c.fillStyle='#b7dfcd';c.font='600 29px "Microsoft YaHei",sans-serif';c.fillText('+ 1 0 5 0',330,225-42*p);c.font='12px "Microsoft YaHei",sans-serif';c.fillStyle='#91aaae';c.fillText('连锁消除',330,247-42*p);c.restore();}
+      if(resetAlpha>0)for(const item of scene.removed)if(item.index!==3)orb(c,item.color,item.x,item.y,18,resetAlpha);
+    }
+  }
+  let previousScore='';function render(){if(state.view!=='motion')return;renderCanvas('windows');renderCanvas('android');
+    const clock=sceneClock(state.time),duration=state.effect==='full'?MOTION.fullMs:MOTION.reducedMs;
+    const label=clock.beforeHit?'等待命中':clock.hitElapsed<duration?'同步消除 · 等大淡出':'淡出完成';
+    $('#phase-label').textContent=label;$('#time-label').textContent=clock.beforeHit?`命中前 ${Math.round(-clock.hitElapsed)}ms`:`t₀ + ${Math.round(clock.hitElapsed)}ms`;
+    $('#timeline').value=String(Math.min(3000,state.time));
+    const score=clock.beforeHit||clock.resetAlpha>0?'002410':'003460';if(previousScore!==score){document.querySelectorAll('[data-score]').forEach(e=>e.textContent=score);previousScore=score;}
+  }
+  function pressed(selector,key,value){document.querySelectorAll(selector).forEach(e=>e.setAttribute('aria-pressed',String(e.dataset[key]===value)));}
+  document.querySelectorAll('[data-effect]').forEach(b=>b.addEventListener('click',()=>{
+    state.effect=b.dataset.effect;pressed('[data-effect]','effect',state.effect);
+    const reduced=state.effect==='reduced';$('#effect-description').textContent=reduced?'基础淡出保留 · 关闭粒子、散落与旋转':'球体等大淡出 · 同步加速散落 · 双端保留粒子';
+    $('#density-label').textContent=reduced?'减少额外动效':'粒子双端保留';$('#reduced-description').textContent=reduced?'两类球原位淡出 320ms，保留发射、装填和正常界面过渡。':'细粒与短尾混合，颜色来自被消除的小球。';
+    document.querySelectorAll('.preview-caption small').forEach((e,i)=>e.textContent=`${i?'竖屏':'横屏'} · ${reduced?'减少效果':'完整效果'}`);render();
+  }));
+  document.querySelectorAll('[data-layout]').forEach(b=>b.addEventListener('click',()=>{state.layout=b.dataset.layout;$('.previews').dataset.layout=state.layout;pressed('[data-layout]','layout',state.layout);render();}));
+  $('#play-toggle').addEventListener('click',()=>{state.playing=!state.playing;$('#play-toggle').textContent=state.playing?'暂停':'继续';$('#play-toggle').setAttribute('aria-pressed',String(!state.playing));});
+  $('#speed').addEventListener('change',e=>state.speed=Number(e.target.value));
+  $('#timeline').addEventListener('input',e=>{state.time=Number(e.target.value);state.playing=false;$('#play-toggle').textContent='继续';$('#play-toggle').setAttribute('aria-pressed','true');render();});
+  let rooms=[];function renderRooms(){rooms=['你','玩家 2','玩家 3','玩家 4'].map((name,i)=>({name,...independentPlayer(roomSeed,`seat-${i+1}`)}));$('#random-players').innerHTML=rooms.map((p,i)=>`<article class="random-player"><h3>${p.name}</h3><p>普通 · 7 行 · 独立随机</p><canvas data-room="${i}" aria-label="${p.name}的随机棋盘"></canvas><span class="queue-label">出球顺序预览</span><div class="queue">${p.queue.map(svgOrb).join('')}</div></article>`).join('');drawRooms();}
+  function drawRooms(){document.querySelectorAll('[data-room]').forEach(canvas=>{const c=fit(canvas,640,390);c.fillStyle='#101b29';c.fillRect(0,0,640,390);rooms[Number(canvas.dataset.room)].board.forEach((row,r)=>row.forEach((color,col)=>orb(c,color,50+col*40+(r%2?20:0),70+r*34.64,18)));});}
+  let roomSeed=crypto.getRandomValues(new Uint32Array(1))[0];$('#new-room').addEventListener('click',()=>{roomSeed=crypto.getRandomValues(new Uint32Array(1))[0];renderRooms();});
+  document.querySelectorAll('[data-view]').forEach(b=>b.addEventListener('click',()=>{state.view=b.dataset.view;pressed('[data-view]','view',state.view);$('#motion-study').hidden=state.view!=='motion';$('#random-study').hidden=state.view!=='random';if(state.view==='random')renderRooms();else render();}));
+  const preferred=matchMedia('(prefers-reduced-motion: reduce)');if(preferred.matches)$('[data-effect="reduced"]').click();
+  if(innerWidth<780)$('[data-layout="android"]').click();
+  let last=performance.now();function frame(now){const dt=Math.min(60,now-last);last=now;if(state.playing&&state.view==='motion'&&!document.hidden){state.time=(state.time+dt*state.speed)%MOTION.cycleMs;render();}requestAnimationFrame(frame);}requestAnimationFrame(frame);
+  addEventListener('resize',()=>{render();if(state.view==='random')drawRooms();});render();
+  // Read-only inspection hook for reproducible demo QA; no game storage or engine access.
+  Object.defineProperty(window,'orbboundDemo',{value:Object.freeze({snapshot:()=>({state:{...state},motion:MOTION,orbs:scene.removed.map(o=>({...o})),rooms:rooms.map(p=>({...p,board:p.board.map(r=>[...r]),queue:[...p.queue]})),particleCounts:{windows:particles.windows.length,android:particles.android.length}})})});
+})();
+</script>
+</body></html>

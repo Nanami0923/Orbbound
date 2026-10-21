@@ -2,10 +2,11 @@ import { BOARD_COLUMNS, getDifficulty, LOSE_ROW } from '../core/engine';
 import { hasOccupiedAtOrBelow } from '../core/grid';
 import { SeededRandom } from '../core/rng';
 import type { GameEvent, GameState } from '../core/types';
-import { checkedTime, deriveWaveSeed, endMatch, eventBase, finalizeOutcome, resolvePlayerShot } from './match-helpers';
+import { checkedTime, endMatch, eventBase, finalizeOutcome, resolvePlayerShot } from './match-helpers';
 import type { PresentationDraft } from './presentation';
 import { BATTLE_RULES, battleThreshold, isShotCommand } from './protocol';
 import type { AttackRow, BattleBatchOutcome, BattlePlayerState, BattleShotOutcome, MatchSnapshot, ShotCommand } from './protocol';
+import { deriveLanSeed } from './random';
 
 export function createBattleState(startedAtMs: number, playerCount = 2): BattlePlayerState {
   return { chargeRemainder: 0, defenseRemainder: 0, incomingBalls: 0, incomingContributions: {}, threshold: battleThreshold(playerCount), pendingAttacks: [], lastAttackAtMs: null, naturalGuardUntilMs: startedAtMs, appliedRows: 0,
@@ -24,13 +25,13 @@ export function calculateAttackCharge(chargeRemainder: number, removedBalls: num
     discardedRows: Math.max(0, wholeRows - BATTLE_RULES.generatedCap) };
 }
 
-export function deriveAttackSeed(matchSeed: number, appliedRows: number): number {
-  return deriveWaveSeed((matchSeed ^ 0xa771ac4b) >>> 0, appliedRows);
+export function deriveAttackSeed(matchSeed: number, targetPlayerId: string, appliedRows: number): number {
+  return deriveLanSeed(matchSeed, targetPlayerId, 0, `attack-v1/${appliedRows}`);
 }
 
 /** Attack RNG is separate: preserve supply, preview, pressure, step and score. */
-export function applyAttackDescent(input: GameState, matchSeed: number, appliedRows: number): GameState {
-  const random = new SeededRandom(deriveAttackSeed(matchSeed, appliedRows));
+export function applyAttackDescent(input: GameState, matchSeed: number, targetPlayerId: string, appliedRows: number): GameState {
+  const random = new SeededRandom(deriveAttackSeed(matchSeed, targetPlayerId, appliedRows));
   const board = [Array.from({ length: BOARD_COLUMNS }, () => random.nextInt(getDifficulty(input.difficultyId).colors)), ...input.board.slice(0, -1).map(row => [...row])];
   return { ...input, board, rowOffset: 1 - (input.rowOffset ?? 0), status: hasOccupiedAtOrBelow(board, LOSE_ROW) ? 'LOST' : 'READY' };
 }
@@ -155,7 +156,7 @@ export function applyBattleBatch(input: MatchSnapshot, commands: readonly ShotCo
       || attack.notBeforeAtMs > now || battle.naturalGuardUntilMs > now
       || battle.lastAttackAtMs !== null && now < battle.lastAttackAtMs + BATTLE_RULES.attackIntervalMs) continue;
     battle.pendingAttacks.shift();
-    const state = applyAttackDescent(player.state, input.seed, battle.appliedRows);
+    const state = applyAttackDescent(player.state, input.seed, id, battle.appliedRows);
     battle.appliedRows++; battle.stats.appliedRows++; battle.lastAttackAtMs = now;
     const displayAtMs = acceptedPlayers.has(id) ? player.readyAtMs : now;
     const next = { ...player, state, boardRevision: player.boardRevision + 1, readyAtMs: displayAtMs + BATTLE_RULES.descentMs,
