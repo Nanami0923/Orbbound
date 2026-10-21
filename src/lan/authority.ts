@@ -1,14 +1,16 @@
-import { createGameState, forceDescent } from '../core/engine';
+import { forceDescent } from '../core/engine';
 import { descentInterval } from '../core/modes';
 import { applyBattleBatch, createBattleState } from './battle';
-import { checkedTime, deriveWaveSeed, endMatch, eventBase, finalizeOutcome, resolvePlayerShot } from './match-helpers';
+import { checkedTime, endMatch, eventBase, finalizeOutcome, resolvePlayerShot } from './match-helpers';
+import { createLanGameState } from './random';
 import { boundPresentationEvents } from './presentation';
 import type { PresentationDraft } from './presentation';
 import { LAN_RULES_HASH, isMatchConfig, isShotCommand } from './protocol';
 import type { AuthorityOutcome, MatchConfig, MatchSnapshot, PlayerMatchState, ShotCommand, ShotOutcome, ShotRejectionReason } from './protocol';
 
 export type { MatchConfig, MatchResult, MatchSnapshot, PlayerMatchState, ShotCommand, ShotOutcome, AuthorityOutcome, BattleBatchOutcome } from './protocol';
-export { deriveWaveSeed, shotTiming } from './match-helpers';
+export { createLanGameState, deriveLanSeed } from './random';
+export { shotTiming } from './match-helpers';
 export { applyBattleBatch } from './battle';
 
 export function createMatch(config: MatchConfig, nowMs = 0): MatchSnapshot {
@@ -17,7 +19,7 @@ export function createMatch(config: MatchConfig, nowMs = 0): MatchSnapshot {
   const mode = config.mode ?? 'score';
   const players: Record<string, PlayerMatchState> = {};
   for (const playerId of config.playerIds) players[playerId] = {
-    playerId, state: createGameState(config.difficultyId, deriveWaveSeed(config.seed, 0)),
+    playerId, state: createLanGameState(config.difficultyId, config.seed, playerId, 0),
     score: 0, totalShots: 0, waveIndex: 0, completedWaves: 0, boardRevision: 0,
     readyAtMs: nowMs, nextDescentAtMs: nowMs + descentInterval(config.difficultyId, 0, config.durationMs), lastSeq: 0, sealed: false, sealedAtMs: null,
     forfeited: false, forfeitedAtMs: null, eliminationRank: null,

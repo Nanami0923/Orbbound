@@ -28,10 +28,11 @@ function fatal(match: MatchSnapshot, id: string, at = 0) {
 function assertValid(match: MatchSnapshot) { expect(isMatchSnapshot(JSON.parse(JSON.stringify(match)))).toBe(true); }
 
 describe('four-player authoritative rules', () => {
-  it.each([2, 3, 4])('starts %i independent equal boards for both modes', count => {
+  it.each([2, 3, 4])('starts %i independent boards for both modes', count => {
     for (const mode of ['battle', 'score'] as const) {
-      const match = game(mode, count); assertValid(match);
-      for (const id of match.playerIds) expect(match.players[id].state).toEqual(match.players.alice.state);
+      const match = game(mode, count), replay = game(mode, count); assertValid(match);
+      for (const id of match.playerIds) expect(match.players[id].state).toEqual(replay.players[id].state);
+      expect(new Set(match.playerIds.map(id => JSON.stringify(match.players[id].state.board))).size).toBe(count);
       if (mode === 'battle') expect(match.players.alice.battle!.threshold).toBe(12 * (count - 1));
     }
   });

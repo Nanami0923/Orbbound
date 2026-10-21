@@ -1,10 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
-import { advanceMatch, applyShot, createMatch, deriveWaveSeed, finishMatch, forfeitMatch, shotTiming } from '../src/lan/authority';
+import { advanceMatch, applyShot, createLanGameState, createMatch, deriveLanSeed, finishMatch, forfeitMatch, shotTiming } from '../src/lan/authority';
 import { LAN_CONTENT_HASH, LAN_PROTOCOL_VERSION, LAN_RULES_HASH, isLanName, isMatchConfig, isMatchSnapshot, isShotCommand } from '../src/lan/protocol';
 import type { MatchSnapshot, ShotCommand } from '../src/lan/protocol';
-import { createEmptyBoard } from '../src/core/grid';
-import { BOARD_COLUMNS, BOARD_ROWS, createGameState } from '../src/core/engine';
+import { activeColors, createEmptyBoard } from '../src/core/grid';
+import { SeededRandom } from '../src/core/rng';
+import { BOARD_COLUMNS, BOARD_ROWS } from '../src/core/engine';
 import { descentInterval } from '../src/core/modes';
+import { LAN_INITIAL_COLOR_QUOTAS } from '../src/lan/random';
 
 const config = { matchId: 'test-match', difficultyId: 'normal' as const, durationMs: 180000 as const, seed: 42, playerIds: ['host', 'guest'] as [string, string] };
 const command = (snapshot: MatchSnapshot, playerId = 'host', angleMilliDeg = 0): ShotCommand => ({ playerId, seq: snapshot.players[playerId].lastSeq + 1, boardRevision: snapshot.players[playerId].boardRevision, angleMilliDeg });
@@ -23,20 +25,58 @@ function prepareLoss(snapshot: MatchSnapshot, id = 'host'): void {
 }
 
 describe('LAN deterministic score authority', () => {
-  it('creates independent equal boards with explicit three or five minute durations', () => {
+  it('creates independent boards with explicit three or five minute durations', () => {
     for (const durationMs of [180000, 300000] as const) {
       const snapshot = createMatch({ ...config, durationMs });
       expect(snapshot.durationMs).toBe(durationMs);
-      expect(snapshot.players.host.state).toEqual(snapshot.players.guest.state);
+      expect(snapshot.players.host.state).not.toEqual(snapshot.players.guest.state);
       expect(snapshot.players.host.state.board).not.toBe(snapshot.players.guest.state.board);
+      expect(snapshot.players.host.state.board).not.toEqual(snapshot.players.guest.state.board);
       expect(snapshot.players.host.state.board[0]).not.toBe(snapshot.players.guest.state.board[0]);
       expect(isMatchSnapshot(JSON.parse(JSON.stringify(snapshot)))).toBe(true);
     }
   });
 
-  it('pins wave seed mixing with fixed portable vectors', () => {
-    expect([[1, 0], [1, 1], [42, 0], [42, 9], [0, 0], [4294967295, 100]].map(([seed, wave]) => deriveWaveSeed(seed, wave)))
-      .toEqual([2527132011, 314344336, 939911724, 910337628, 3358703974, 3169372230]);
+  it.each([2, 3, 4])('builds independent board and supply streams for %i players at all difficulties', count => {
+    const playerIds = ['p1', 'p2', 'p3', 'p4'].slice(0, count);
+    for (const difficultyId of ['easy', 'normal', 'hard'] as const) {
+      const snapshot = createMatch({ ...config, difficultyId, playerIds });
+      const shuffledSeats = createMatch({ ...config, difficultyId, playerIds: [...playerIds].reverse() });
+      const boardKeys = new Set<string>();
+      const supplyStates = new Set<number>();
+      for (const playerId of playerIds) {
+        const state = snapshot.players[playerId].state;
+        expect(shuffledSeats.players[playerId].state).toEqual(state);
+        const quota = LAN_INITIAL_COLOR_QUOTAS[difficultyId];
+        const counts = Array.from({ length: quota.length }, (_, color) => state.board.flat().filter(cell => cell === color).length);
+        expect(counts).toEqual(quota);
+        expect(state).toEqual(createLanGameState(difficultyId, snapshot.seed, playerId, 0));
+        boardKeys.add(JSON.stringify(state.board));
+        supplyStates.add(state.rngState);
+
+        const colors = activeColors(state.board);
+        const supply = new SeededRandom(deriveLanSeed(snapshot.seed, playerId, 0, 'supply-v1'));
+        expect(state.currentColor).toBe(colors[supply.nextInt(colors.length)]);
+        expect(state.nextColor).toBe(colors[supply.nextInt(colors.length)]);
+        expect(state.rngState).toBe(supply.getState());
+
+        const nextWave = createLanGameState(difficultyId, snapshot.seed, playerId, 1);
+        expect(nextWave).toEqual(createLanGameState(difficultyId, snapshot.seed, playerId, 1));
+        expect(nextWave.board).not.toEqual(state.board);
+      }
+      expect(boardKeys.size).toBe(count);
+      expect(supplyStates.size).toBe(count);
+      expect(isMatchSnapshot(snapshot)).toBe(true);
+    }
+  });
+
+  it('pins UTF-16 FNV-1a and fmix seed derivation with the documented vectors', () => {
+    expect([
+      deriveLanSeed(520, 'p1', 0, 'board-v1'),
+      deriveLanSeed(520, 'p1', 0, 'supply-v1'),
+      deriveLanSeed(520, 'p2', 0, 'board-v1'),
+      deriveLanSeed(520, 'p1', 1, 'board-v1'),
+    ]).toEqual([603175877, 3636614665, 2466274389, 3356980069]);
   });
 
   it('accepts actual traced shots and reproduces the same complete state and events', () => {
@@ -79,11 +119,11 @@ describe('LAN deterministic score authority', () => {
     const first = replay(); const second = replay();
     expect(first).toEqual(second);
     expect(first.players.host.totalShots).toBeGreaterThan(10);
-    expect(first.players.host.state).toEqual(first.players.guest.state);
-    expect(first.result?.winnerId).toBeNull();
+    expect(first.players.host.state).not.toEqual(first.players.guest.state);
+    expect(first.result).toBeDefined();
   });
 
-  it('clears into the same numbered wave despite different timing and prior RNG', () => {
+  it('clears into each player’s independently seeded numbered wave despite timing and prior RNG', () => {
     const snapshot = createMatch(config);
     prepareClear(snapshot, 'host'); prepareClear(snapshot, 'guest');
     snapshot.players.host.state.rngState = 123;
@@ -95,9 +135,11 @@ describe('LAN deterministic score authority', () => {
     expect(first.events.some(event => event.type === 'win')).toBe(false);
     const second = applyShot(first.snapshot, command(first.snapshot, 'guest'), 5000);
     expect(second.snapshot.players.guest.completedWaves).toBe(1);
-    expect(second.snapshot.players.host.state).toEqual(second.snapshot.players.guest.state);
-    const expectedWave = createGameState('normal', deriveWaveSeed(config.seed, 1));
-    expect(second.snapshot.players.host.state.board).toEqual(expectedWave.board);
+    const expectedHostWave = createLanGameState('normal', config.seed, 'host', 1);
+    const expectedGuestWave = createLanGameState('normal', config.seed, 'guest', 1);
+    expect(second.snapshot.players.host.state).toEqual({ ...expectedHostWave, score: second.snapshot.players.host.score, step: second.snapshot.players.host.totalShots });
+    expect(second.snapshot.players.guest.state).toEqual({ ...expectedGuestWave, score: second.snapshot.players.guest.score, step: second.snapshot.players.guest.totalShots });
+    expect(second.snapshot.players.host.state.board).not.toEqual(second.snapshot.players.guest.state.board);
     expect(second.snapshot.players.guest.nextDescentAtMs).toBe(5000 + descentInterval('normal', 5000, 180000));
     expect(second.snapshot.players.guest.totalShots).toBe(1);
     expect(isMatchSnapshot(second.snapshot)).toBe(true);
@@ -259,6 +301,8 @@ describe('LAN wire validation', () => {
   it('publishes bounded compatibility fingerprints for rules and content', () => {
     expect(LAN_PROTOCOL_VERSION).toBe(3);
     expect(LAN_RULES_HASH).toMatch(/^[0-9a-f]{8}$/);
+    expect(LAN_RULES_HASH).toBe('7ca7ef0a');
+    expect(LAN_RULES_HASH).not.toBe('4e2a4139');
     expect(LAN_CONTENT_HASH).toMatch(/^[0-9a-f]{8}$/);
   });
 

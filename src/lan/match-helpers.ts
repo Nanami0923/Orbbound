@@ -1,22 +1,14 @@
 import { BOARD_GEOMETRY } from '../content/game-config';
-import { createGameState, resolveShot } from '../core/engine';
+import { resolveShot } from '../core/engine';
 import { neighbors } from '../core/grid';
 import { descentInterval } from '../core/modes';
 import { traceShot } from '../core/physics';
-import { normalizeSeed } from '../core/rng';
 import type { GameEvent, ShotTrace } from '../core/types';
 import { boundPresentationEvents, compressTrace } from './presentation';
 import type { PresentationDraft, ShotStages } from './presentation';
 import type { AuthorityOutcome, MatchEndReason, MatchResult, MatchSnapshot, PlayerMatchState, ShotCommand, ShotRejectionReason } from './protocol';
 import { matchRanking } from './protocol';
-
-/** Every player receives the same numbered wave, independently of supply RNG. */
-export function deriveWaveSeed(matchSeed: number, waveIndex: number): number {
-  let value = (normalizeSeed(matchSeed) + Math.imul(waveIndex + 1, 0x9e3779b9)) >>> 0;
-  value = Math.imul(value ^ (value >>> 16), 0x85ebca6b);
-  value = Math.imul(value ^ (value >>> 13), 0xc2b2ae35);
-  return normalizeSeed((value ^ (value >>> 16)) >>> 0);
-}
+import { createLanGameState } from './random';
 
 export function shotStages(trace: ShotTrace, events: readonly GameEvent[], cleared = false): ShotStages {
   return {
@@ -91,7 +83,7 @@ export function resolvePlayerShot(snapshot: MatchSnapshot, player: PlayerMatchSt
   const waveIndex = player.waveIndex + Number(cleared);
   const rulesEvents = resolution.events.filter(event => event.type !== 'win');
   const naturalDescent = rulesEvents.some(event => event.type === 'board-drop');
-  if (cleared) state = { ...createGameState(snapshot.difficultyId, deriveWaveSeed(snapshot.seed, waveIndex)), score: state.score, step: state.step };
+  if (cleared) state = { ...createLanGameState(snapshot.difficultyId, snapshot.seed, player.playerId, waveIndex), score: state.score, step: state.step };
   const stages = shotStages(trace, rulesEvents, cleared);
   const readyAtMs = now + stages.flightMs + stages.resolutionMs + stages.descentMs + stages.waveMs;
   const next: PlayerMatchState = {

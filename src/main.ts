@@ -42,6 +42,7 @@ import { loadHistory, recordRound, hasCompletedRound, formatDuration, rankingKey
 import { installLan } from './ui/lan-panel';
 import { availablePauseShortcut, setV5CountdownValue } from './ui/v5-hud';
 import { createRoundFeedback } from './ui/v5-feedback';
+import { shouldReduceMotion, systemPrefersReducedMotion } from './render/motion-preferences';
 import './ui/windows-v5.css';
 import './ui/android-v5.css';
 import './ui/v5-feedback.css';
@@ -176,16 +177,18 @@ function syncMobileLayout(): void {
   document.documentElement.classList.toggle("desktop-ui", !usesButtonControls());
   document.documentElement.classList.toggle('mobile-ui', usesButtonControls());
   document.documentElement.classList.toggle('controls-swapped', settings.controlsSwapped);
-  document.documentElement.classList.toggle('reduce-motion', settings.reducedMotion);
+  document.documentElement.classList.toggle('reduce-motion', systemPrefersReducedMotion());
+  document.documentElement.classList.toggle('reduce-clear-effects', shouldReduceMotion(settings.reducedMotion));
   document.documentElement.style.setProperty('--fire-width', `${settings.fireSize}px`);
   // Leave enough room for the system gesture area on short phones.
   const offset = Math.min(settings.controlOffset, Math.max(0, (window.innerHeight - 640) * 0.24));
   document.documentElement.style.setProperty('--control-offset', `${offset}px`);
 }
 syncMobileLayout();
+window.matchMedia?.('(prefers-reduced-motion: reduce)').addEventListener('change', syncMobileLayout);
 window.addEventListener('resize', () => { stopRotation(); syncMobileLayout(); cancelAnimationFrame(modalResizeFrame); modalResizeFrame = requestAnimationFrame(() => resizeModal?.()); });
 const singleBoardWrap = document.querySelector<HTMLElement>('#game-screen .board-wrap')!;
-const roundFeedback = createRoundFeedback(singleBoardWrap, document.querySelector<HTMLElement>('#combo-feedback')!, () => settings.reducedMotion || !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches);
+const roundFeedback = createRoundFeedback(singleBoardWrap, document.querySelector<HTMLElement>('#combo-feedback')!, systemPrefersReducedMotion);
 const singleBoardSize = new ResizeObserver(() => {
   if ((!usesButtonControls() && !windowsV5) || gameScreen?.hidden) return;
   const style = getComputedStyle(singleBoardWrap);
@@ -878,7 +881,7 @@ window.addEventListener('snood-angle', event => {
 window.addEventListener('blur', stopRotation);
 document.addEventListener('visibilitychange', stopRotation);
 window.addEventListener('snood-fired', () => {
-  if(settings.reducedMotion)return;
+  if(systemPrefersReducedMotion())return;
   document.querySelector('#mobile-fire')?.animate([
     { transform: 'scale(1)', filter: 'brightness(1)' },
     { transform: 'scale(.95)', filter: 'brightness(1.25)' },

@@ -1,23 +1,25 @@
 # Orbbound
 
-Android 与 Windows 当前验收候选版为 **5.1.0 prerelease**，稳定正式版保留 **4.3.0**。5.1.0 延续尚未公开发布的 5.0.0 界面改造候选，并按本轮反馈修正闯关导航、首页模式卡、下一球边界、Windows 信息栏留白和双端清除动效；**不表示 5.0.0 曾公开发布**。物理 LAN 四人局已在 Android 实机房主、Windows 原生 guest 和同机两名生产 C# headless guest 的组合中验收通过；Android 正式包同签名覆盖升级和内置备份导入/导出数据一致性已通过。
+Android 与 Windows 当前验收候选版为 **5.2.0 prerelease**，稳定正式版保留 **4.3.0**。5.2.0 基于 5.1.0，将联机改为各玩家独立随机棋盘与供球，统一直接消除和连带掉落的 720ms 加速抛物线与渐隐，增加双端粒子，并将联机基础界面对齐本平台其他模式。减少消除效果仍保留 320ms 原位淡出。5.0.0 没有公开发布记录，历史版本与安装包继续保留。
 
 ## 当前候选与历史下载
 
-[5.1.0 发布页](https://github.com/Nanami0923/Orbbound/releases/tag/v5.1.0) · [Android 5.1.0 APK](https://github.com/Nanami0923/Orbbound/releases/download/v5.1.0/Orbbound-5.1.0-Android.apk) · [Windows 5.1.0 ZIP](https://github.com/Nanami0923/Orbbound/releases/download/v5.1.0/Orbbound-Windows-5.1.0-x64.zip)
+[5.2.0 发布页](https://github.com/Nanami0923/Orbbound/releases/tag/v5.2.0) · [Android 5.2.0 APK](https://github.com/Nanami0923/Orbbound/releases/download/v5.2.0/Orbbound-5.2.0-Android.apk) · [Windows 5.2.0 ZIP](https://github.com/Nanami0923/Orbbound/releases/download/v5.2.0/Orbbound-Windows-5.2.0-x64.zip)
 
 | 平台 | 当前候选 | 验收与产物 | 状态 |
 | --- | --- | --- | --- |
-| Android | 5.1.0 prerelease | [验收记录](docs/releases/5.1.0-validation.md) · [APK 校验清单](docs/releases/5.1.0-artifacts.json) | 原签名升级及真实数据一致性通过 |
-| Windows | 5.1.0 prerelease | [验收记录](docs/releases/5.1.0-validation.md) · [ZIP 校验清单](docs/releases/5.1.0-artifacts.json) | 原生范围与未覆盖项见记录 |
+| Android | 5.2.0 prerelease | [验收记录](docs/releases/5.2.0-validation.md) · [APK 校验清单](docs/releases/5.2.0-artifacts.json) | 覆盖范围与数据保留结果见记录 |
+| Windows | 5.2.0 prerelease | [验收记录](docs/releases/5.2.0-validation.md) · [ZIP 校验清单](docs/releases/5.2.0-artifacts.json) | 原生交互与联机范围见记录 |
 
 所有旧版本保留在对应平台目录内。Windows 1.0.0 的两个不同本地构建按原来源分别保存，不将其视作同一文件。
 
+5.2.0 自动回归 58 个文件、634 项通过；Android JVM 22 项、Windows 原生 125 项通过。正式 Android 原签名覆盖升级后的 5 项数据与升级前逐值一致。实体四人竞分和双设备对战完成自然结算，完整范围见验收记录。
+
 历史测试版下载：[Windows 4.7.0 ZIP](https://github.com/Nanami0923/Orbbound/releases/download/v4.7.0/Orbbound-Windows-4.7.0-x64.zip) · [Android 4.7.0 APK](https://github.com/Nanami0923/Orbbound/releases/download/v4.7.0/Orbbound-4.7.0-Android.apk) · [4.7.0 发布页](https://github.com/Nanami0923/Orbbound/releases/tag/v4.7.0)。[4.3.0 稳定正式版](https://github.com/Nanami0923/Orbbound/releases/tag/v4.3.0)继续保留。
 
-[5.1.0 双端更新说明](docs/releases/5.1.0-notes.md) · [Android 更新说明](docs/releases/Android/android-5.1.0-notes.md) · [Windows 更新说明](docs/releases/Windows/windows-5.1.0-notes.md) · [版本历史](docs/releases/版本历史.md)
+[5.2.0 双端更新说明](docs/releases/5.2.0-notes.md) · [Android 更新说明](docs/releases/Android/android-5.2.0-notes.md) · [Windows 更新说明](docs/releases/Windows/windows-5.2.0-notes.md) · [版本历史](docs/releases/版本历史.md)
 
-5.1.0 自动回归共 58 个文件、619 项通过；Android JVM 22 项、Windows 原生 125 项通过。Windows 单局胜利样本 17 次发射得 5,250 分/3 星，单局失败样本第 22 次发射耗尽得 0 星。Android 实机四次发射记录到 3,160 分。物理 LAN 四人样本由两台实体 UI 设备和两名同机生产 C# headless 客人组成；47 轮 Windows 原生输入后自然结算，两端排名一致为 690/660/30/30。该结果不代表四台独立实体终端。5.1 沿用 4.7 的联机协议 v3、规则指纹 `4e2a4139` 和内容指纹 `f942c2f9`，具体范围见[验证记录](docs/releases/5.1.0-validation.md)。
+5.2.0 的 Windows 原生单局胜利样本为 17 次发射、5,250 分、3 星；失败样本第 22 次发射耗尽。Android 实机分别以完整效果与减少效果完成四发操作，均记录到 3,160 分。同机生产 C# TCP/UDP 与真实会话完成两种模式各 2/3/4 人的重连、暂停和自然结算检查；使用受控加速时钟，不代表完整多设备矩阵。5.2 消息封装仍为 v3，规则指纹为 `7ca7ef0a`，内容指纹为 `f942c2f9`；不能与 5.1/4.7 旧规则混连。完整结果见[验证记录](docs/releases/5.2.0-validation.md)。
 
 ## 4.7.0 历史测试版说明
 
@@ -35,7 +37,7 @@ Windows 请完整解压 ZIP 后运行 `Orbbound/Orbbound.exe`。轻量包不包�
 
 标题与按钮使用对称空间居中，联机和三种单机共用同平台、同布局档位的下一球组件，并保持飞行、装填和观战阶段的颜色正确。联机时间、延迟、状态与操作分组，对手区按人数和屏幕布局调整。设置仍分四类并实时应用，普通弹层分页、设置详情单滚动，桌面联机保留鼠标与键盘操作。
 
-**4.7.0 历史测试版记录：**当时 52 个文件、574 项共用测试通过。当前 5.1.0 为 58 个文件、619 项通过；当前验收范围见[5.1.0 验证记录](docs/releases/5.1.0-validation.md)。低性能设备、完整 Windows DPI、四台独立实体终端及长时升温矩阵尚未完整验收。
+**4.7.0 历史测试版记录：**当时 52 个文件、574 项共用测试通过。[5.1.0 历史记录](docs/releases/5.1.0-validation.md)与[5.2.0 当前验收范围](docs/releases/5.2.0-validation.md)分别保留；低性能设备、完整 Windows DPI、四台独立实体终端及长时升温矩阵尚未完整验收。
 
 Windows 旧版数据迁移入口现为「设置 → 数据与维护 → 导入旧 Windows 存档」。旧目录 `%APPDATA%/orbbound` 保留，新版数据位于 `%LOCALAPPDATA%/Orbbound`。迁移前关闭旧版，导入前会保留恢复备份；也可导出 JSON 备份用于换机。Android 沿用原签名，可直接覆盖安装保留数据。
 

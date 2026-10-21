@@ -66,6 +66,8 @@
   100% { color: inherit; transform: none; }
 }
 :is(html.windows-v5, html.android-v5).reduce-motion #score-value.v5-score-gain { animation: none; }
+:is(html.windows-v5, html.android-v5).reduce-clear-effects #score-value.v5-score-gain { animation: none; }
+:is(html.windows-v5, html.android-v5).reduce-clear-effects #combo-feedback { animation: none; opacity: 1; }
 @media (prefers-reduced-motion: reduce) {
   :is(html.windows-v5, html.android-v5) #score-value.v5-score-gain { animation: none; }
 }

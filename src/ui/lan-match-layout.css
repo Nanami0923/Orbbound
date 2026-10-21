@@ -1,0 +1,371 @@
+/* The LAN match frame follows the game's existing game-header, game-sidebar,
+   next-card, score-stat, board-wrap and game-container components. */
+.lan-screen.lan-in-game .lan-body {
+  max-width: 1480px;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 4px;
+}
+
+.lan-screen.lan-in-game .lan-body > h1 { display: none; }
+.lan-screen.lan-in-game .lan-content {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  gap: 4px;
+  overflow: hidden;
+}
+
+.lan-match-layout {
+  display: grid;
+  grid-template-columns: minmax(128px, .58fr) minmax(0, 3fr) minmax(168px, .72fr);
+  grid-template-rows: minmax(0, 1fr) auto;
+  align-items: stretch;
+  min-width: 0;
+  min-height: 0;
+  gap: clamp(8px, 1.4vw, 20px);
+}
+
+.lan-self-summary #lan-self-name,
+.lan-self-summary #lan-self-wave {
+  display: block;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lan-self-summary #lan-self-name { flex: 0 1 auto; white-space: nowrap; }
+.lan-self-summary #lan-self-wave { flex: 0 1 auto; white-space: nowrap; }
+
+.lan-network {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+  font-variant-numeric: tabular-nums;
+}
+
+.lan-play-space,
+.lan-game-layout { display: contents; }
+
+.lan-own-column {
+  grid-column: 2;
+  grid-row: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  container-type: size;
+  container-name: lan-board-space;
+  min-width: 0;
+  min-height: 0;
+}
+
+html.windows-v5 .lan-match-layout--windows .lan-own-column > .lan-board-wrap {
+  width: min(100cqw, 84.210526cqh) !important;
+  height: auto !important;
+  max-width: 100%;
+  max-height: none;
+  aspect-ratio: 640 / 760;
+}
+
+.lan-preview-slot {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  min-width: 0;
+  gap: 6px;
+}
+
+.lan-preview-slot > .next-card { flex: 1 1 auto; min-width: 0; }
+.lan-preview-slot > #lan-watch-self { flex: 0 0 auto; max-width: 76px; padding: 6px; font-size: 11px; white-space: normal; }
+
+.lan-opponents {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  min-width: 0;
+  min-height: 0;
+  gap: 6px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.lan-opponent {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  align-items: center;
+  min-width: 0;
+  min-height: 0;
+  padding: 6px;
+  gap: 8px;
+  color: var(--cream);
+  text-align: left;
+  white-space: normal;
+}
+
+.lan-opponent[aria-pressed="true"] {
+  border-color: rgba(131, 205, 181, .5);
+  background: rgba(131, 205, 181, .08);
+}
+
+.lan-opponent > canvas {
+  display: block;
+  width: 52px;
+  height: 61.75px;
+  border-radius: 7px;
+}
+
+.lan-opponent-info { display: grid; min-width: 0; gap: 3px; }
+.lan-opponent-info > strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.lan-opponent-meta { display: flex; flex-wrap: wrap; min-width: 0; gap: 2px 8px; }
+.lan-opponent-meta small { color: var(--muted); font-size: 10px; white-space: nowrap; }
+
+.lan-status-slot {
+  grid-column: 1;
+  grid-row: 2;
+  align-self: start;
+  min-width: 0;
+  min-height: 0;
+}
+
+.lan-attack-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  min-height: 22px;
+  gap: 2px 10px;
+  color: var(--mint);
+  font-size: 11px;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+}
+
+.lan-attack-bar > span { white-space: nowrap; }
+.lan-attack-warning { color: var(--gold); }
+.lan-status-slot [hidden] { display: none !important; }
+
+#lan-pause-request {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: center;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  gap: 8px;
+}
+
+#lan-request-message { color: var(--gold); font-size: 12px; line-height: 1.4; text-align: center; overflow-wrap: anywhere; }
+#lan-pause-request .lan-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
+#lan-pause-request button { min-height: 44px; padding: 6px 10px; font-size: 12px; white-space: normal; }
+
+.lan-controls { display: none; min-width: 0; min-height: 0; }
+.lan-game-notice { margin: 0; color: var(--muted); font-size: 11px; line-height: 18px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lan-observe-canvas { border-radius: var(--board-corner-radius, 24px); }
+.lan-game-overlay { background: rgba(13, 20, 33, .92); pointer-events: auto; }
+.lan-screen .lan-opponent { border-color: rgba(120, 134, 154, .18); border-radius: 12px; background: var(--panel); }
+
+.lan-match-layout--windows .lan-hud-actions > button { text-align: left; }
+.lan-match-layout--windows .lan-watch-slot { display: none; }
+.lan-match-layout--windows .lan-game-notice { grid-column: 2; grid-row: 2; }
+.lan-match-layout--windows .lan-self-summary {
+  display: flex;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: flex-start;
+  gap: 3px;
+}
+.lan-match-layout--windows .lan-self-summary #lan-self-score {
+  font-size: clamp(28px, 3vw, 38px);
+  font-weight: 650;
+  line-height: 1.05;
+}
+.lan-match-layout--windows .lan-time strong {
+  font-size: 21px;
+  font-weight: 650;
+  line-height: 1.15;
+}
+
+@media (max-width: 900px) {
+  .lan-match-layout { grid-template-columns: minmax(112px, .55fr) minmax(0, 2.5fr) minmax(144px, .75fr); gap: 10px; }
+  .lan-opponent { grid-template-columns: 40px minmax(0, 1fr); gap: 6px; }
+  .lan-opponent > canvas { width: 40px; height: 47.5px; }
+}
+
+@media (max-width: 640px) and (orientation: portrait) {
+  .lan-match-layout--windows { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto minmax(0, 1fr); gap: 6px; }
+  .lan-match-layout--windows .lan-match-hud { grid-column: 1; grid-row: 1; }
+  .lan-match-layout--windows .lan-status-slot { grid-column: 1; grid-row: 2; }
+  .lan-match-layout--windows .lan-side { grid-column: 1; grid-row: 3; max-height: 144px; }
+  .lan-match-layout--windows .lan-own-column { grid-column: 1; grid-row: 4; }
+}
+
+/* Android uses the same score, time, preview, board and control classes as solo play. */
+html.android-v5 .lan-screen.lan-in-game .lan-body { max-width: none; }
+html.android-v5 .lan-match-layout--android {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto auto;
+  gap: 4px;
+}
+
+/* Keep the match children in the shared screen grid even when the legacy LAN
+   stylesheet has compact/watch/immersive selectors active. */
+html.android-v5 .lan-match-layout--android .lan-play-space,
+html.android-v5 .lan-match-layout--android .lan-game-layout { display: contents; }
+
+html.android-v5 .lan-match-layout--android .lan-match-hud {
+  grid-column: 1;
+  grid-row: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(64px, .72fr) minmax(78px, .86fr);
+  grid-template-rows: auto;
+  grid-template-areas: "self time preview";
+  align-items: center;
+  min-height: 74px;
+  padding: 0;
+  border: 0;
+  gap: 3px 5px;
+}
+
+html.android-v5 .lan-match-layout--android .lan-self-summary { grid-area: self; min-height: 0; flex-direction: column-reverse; flex-wrap: nowrap; align-content: center; justify-content: center; gap: 4px; }
+html.android-v5 .lan-match-layout--android .lan-self-summary #lan-self-name { order: 3; flex: 0 1 auto; white-space: nowrap; }
+html.android-v5 .lan-match-layout--android .lan-self-summary #lan-self-score { order: 2; }
+html.android-v5 .lan-match-layout--android .lan-self-summary #lan-self-wave { order: 1; flex: 0 1 auto; white-space: nowrap; }
+html.android-v5 .lan-match-layout--android .lan-time { grid-area: time; align-items: flex-end; gap: 0; }
+html.android-v5 .lan-match-layout--android .lan-time #lan-clock {
+  color: var(--cream);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 24px;
+  font-variant-numeric: tabular-nums;
+}
+html.android-v5 .lan-match-layout--android .lan-match-hud > .next-card {
+  grid-area: preview;
+}
+
+html.android-v5 .lan-match-layout--android .lan-self-summary #lan-self-score { font-size: clamp(21px, 6.6vw, 26px); font-weight: 760; line-height: 1.12; }
+html.android-v5 .lan-match-layout--android .lan-hud-actions button { min-width: 44px; min-height: 44px; padding: 5px 8px; font-size: 11px; }
+html.android-v5 .lan-match-layout--android .lan-watch-slot { display: none; }
+html.android-v5 .lan-match-layout--android .lan-android-status-line {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) auto;
+  align-items: center;
+  min-width: 0;
+  min-height: 44px;
+  gap: 4px 6px;
+}
+html.android-v5 .lan-match-layout--android .lan-android-status-line > .lan-network { grid-column: 1; grid-row: 1; font-size: 9px; white-space: nowrap; }
+html.android-v5 .lan-match-layout--android .lan-android-status-line > .lan-attack-bar { grid-column: 2; grid-row: 1; justify-content: flex-start; min-width: 0; font-size: 9px; white-space: normal; overflow-wrap: anywhere; }
+html.android-v5 .lan-match-layout--android .lan-android-status-line > .lan-hud-actions { grid-column: 3; grid-row: 1; justify-self: end; gap: 4px; }
+html.android-v5 .lan-match-layout--android .lan-android-status-line > .lan-watch-slot:has(#lan-watch-self:not([hidden])) { grid-column: 1 / -1; grid-row: 2; display: flex; justify-content: flex-end; }
+html.android-v5 .lan-match-layout--android .lan-android-status-line:has(.lan-watch-slot #lan-watch-self:not([hidden])) { grid-template-rows: minmax(44px, auto) 44px; }
+html.android-v5 .lan-match-layout--android .lan-android-status-line .lan-watch-slot #lan-watch-self { min-width: 112px; min-height: 44px; padding: 7px 12px; }
+
+html.android-v5 .lan-match-layout--android .lan-status-slot { grid-column: 1; grid-row: 2; }
+html.android-v5 .lan-match-layout--android .lan-attack-bar { min-height: 20px; font-size: 10px; gap: 2px 8px; }
+html.android-v5 .lan-match-layout--android .lan-attack-bar > span { white-space: normal; overflow-wrap: anywhere; }
+html.android-v5 .lan-match-layout--android .lan-side { display: contents; }
+html.android-v5 .lan-match-layout--android .lan-preview-slot { display: none; }
+html.android-v5 .lan-match-layout--android .lan-opponents {
+  grid-column: 1;
+  grid-row: 3;
+  grid-template-columns: repeat(var(--lan-opponent-count, 1), minmax(0, 1fr));
+  align-content: stretch;
+  gap: 4px;
+  overflow: visible;
+}
+
+html.android-v5 .lan-match-layout--android .lan-opponent {
+  grid-template-columns: minmax(0, 1fr);
+  align-content: center;
+  min-height: 42px;
+  padding: 5px 6px;
+  gap: 2px;
+}
+
+html.android-v5 .lan-match-layout--android .lan-opponent > canvas { display: none; }
+html.android-v5 .lan-match-layout--android .lan-opponent-info { gap: 1px; }
+html.android-v5 .lan-match-layout--android .lan-opponent-info > strong { color: var(--cream); font-size: 10px; line-height: 1.3; white-space: normal; overflow-wrap: anywhere; }
+html.android-v5 .lan-match-layout--android .lan-opponent-meta { flex-direction: column; gap: 0; }
+html.android-v5 .lan-match-layout--android .lan-opponent-meta small { font-size: 9px; line-height: 1.25; white-space: normal; overflow-wrap: anywhere; }
+html.android-v5 .lan-match-layout--android .lan-own-column { grid-column: 1; grid-row: 4; }
+html.android-v5 .lan-match-layout--android .lan-own-column > .lan-board-wrap {
+  width: min(100cqw, 84.210526cqh) !important;
+  height: auto !important;
+  max-width: 100%;
+  max-height: none;
+  aspect-ratio: 640 / 760;
+}
+html.android-v5 .lan-match-layout--android .lan-controls #lan-fire { font-size: 20px; }
+html.android-v5 .lan-match-layout--android .lan-controls {
+  grid-column: 1;
+  grid-row: 5;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--lan-fire-width, 92px);
+  grid-template-rows: 100px;
+  align-items: stretch;
+  min-height: 100px;
+  margin: 0;
+  gap: 8px;
+}
+
+html.android-v5 .lan-match-layout--android .lan-controls > #lan-turn-left,
+html.android-v5 .lan-match-layout--android .lan-controls > #lan-turn-right { display: none; }
+html.android-v5 .lan-match-layout--android .lan-sliders { grid-column: 1; grid-row: 1; display: grid; grid-template-rows: repeat(2, minmax(44px, 1fr)); gap: 4px; min-width: 0; }
+html.android-v5 .lan-match-layout--android .lan-controls #lan-fire { grid-column: 2; grid-row: 1; min-width: 76px; min-height: 100px; }
+html.android-v5 .lan-screen.lan-swapped .lan-match-layout--android .lan-controls { grid-template-columns: var(--lan-fire-width, 92px) minmax(0, 1fr); }
+html.android-v5 .lan-screen.lan-swapped .lan-match-layout--android .lan-controls #lan-fire { grid-column: 1; }
+html.android-v5 .lan-screen.lan-swapped .lan-match-layout--android .lan-sliders { grid-column: 2; }
+html.android-v5 .lan-match-layout--android .lan-game-notice { grid-column: 1; grid-row: 6; min-width: 0; font-size: 10px; line-height: 1.4; white-space: normal; overflow-wrap: anywhere; }
+html.android-v5 .lan-screen.game-shell--immersive .lan-match-layout--android .lan-controls,
+html.android-v5 .lan-screen.lan-watching .lan-match-layout--android .lan-controls { display: none !important; }
+html.android-v5 .lan-screen.game-shell--immersive .lan-match-layout--android,
+html.android-v5 .lan-screen.lan-watching .lan-match-layout--android { grid-template-rows: auto auto auto minmax(0, 1fr) auto; }
+html.android-v5 .lan-match-layout--android .lan-game-overlay { gap: 8px; padding: 12px; border: 1px solid var(--line); border-radius: 16px; }
+html.android-v5 .lan-match-layout--android .lan-game-overlay strong { font-size: clamp(19px, 6vw, 23px); line-height: 1.3; }
+html.android-v5 .lan-match-layout--android .lan-game-overlay p,
+html.android-v5 .lan-match-layout--android .lan-game-overlay small { font-size: 12px; line-height: 1.5; }
+
+@media (max-height: 600px) {
+  .lan-match-layout { gap: 6px; }
+  .lan-side.game-sidebar { gap: 6px; }
+  .lan-opponents { gap: 4px; }
+  .lan-screen.game-shell--touch { gap: 4px; }
+  html.android-v5 .lan-match-layout--android { gap: 3px; }
+  html.android-v5 .lan-match-layout--android .lan-match-hud { min-height: 74px; padding-block: 0; }
+  html.android-v5 .lan-match-layout--android .lan-opponent { min-height: 36px; padding: 3px 4px; }
+  html.android-v5 .lan-match-layout--android .lan-controls { grid-template-rows: 84px; min-height: 84px; }
+  html.android-v5 .lan-match-layout--android .lan-controls #lan-fire { min-height: 84px; }
+}
+
+@media (max-width: 360px) and (orientation: portrait) {
+  html.android-v5 .lan-match-layout--android .lan-match-hud { grid-template-columns: minmax(0, 1fr) minmax(60px, .72fr) minmax(72px, .86fr); column-gap: 3px; }
+  html.android-v5 .lan-match-layout--android .lan-opponent { padding-inline: 4px; }
+  html.android-v5 .lan-match-layout--android .lan-opponent-info > strong,
+  html.android-v5 .lan-match-layout--android .lan-opponent-meta small { font-size: 9px; }
+}
+
+@media (orientation: landscape) and (max-height: 500px) {
+  html.android-v5 .lan-screen.lan-in-game { padding-top: max(4px, var(--safe-area-top, 0px)); padding-bottom: max(4px, var(--safe-area-bottom, 0px)); }
+  html.android-v5 .lan-match-layout--android {
+    grid-template-columns: minmax(0, 1fr) minmax(248px, .72fr);
+    grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+    gap: 4px 10px;
+  }
+  html.android-v5 .lan-match-layout--android .lan-match-hud { grid-column: 2; grid-row: 1; grid-template-columns: minmax(0, 1fr) 80px minmax(78px, 1fr); grid-template-rows: auto; grid-template-areas: "self time preview"; min-height: 0; padding: 0; }
+  html.android-v5 .lan-match-layout--android .lan-status-slot { grid-column: 2; grid-row: 2; }
+  html.android-v5 .lan-match-layout--android .lan-own-column { grid-column: 1; grid-row: 1 / 6; }
+  html.android-v5 .lan-match-layout--android .lan-opponents { grid-column: 2; grid-row: 4; grid-template-columns: minmax(0, 1fr); max-height: 100%; overflow-y: auto; }
+  html.android-v5 .lan-match-layout--android .lan-opponent { grid-template-columns: 30px minmax(0, 1fr); min-height: 38px; padding: 3px 4px; gap: 4px; }
+  html.android-v5 .lan-match-layout--android .lan-opponent > canvas { display: block; width: 30px; height: 35.625px; }
+  html.android-v5 .lan-match-layout--android .lan-opponent-info > strong,
+  html.android-v5 .lan-match-layout--android .lan-opponent-meta small { font-size: 9px; }
+  html.android-v5 .lan-match-layout--android .lan-opponent-meta { flex-direction: row; gap: 0 4px; }
+  html.android-v5 .lan-match-layout--android .lan-controls { grid-column: 2; grid-row: 3; grid-template-columns: minmax(0, 1fr) var(--lan-fire-width, 92px); grid-template-rows: 100px; align-self: stretch; gap: 6px; min-height: 100px; }
+  html.android-v5 .lan-match-layout--android .lan-controls .lan-sliders { grid-column: 1; grid-row: 1; }
+  html.android-v5 .lan-match-layout--android .lan-controls #lan-fire { grid-column: 2; grid-row: 1; min-height: 100px; }
+  html.android-v5 .lan-match-layout--android .lan-game-notice { grid-column: 2; grid-row: 5; min-width: 0; font-size: 9px; white-space: normal; overflow-wrap: anywhere; }
+}

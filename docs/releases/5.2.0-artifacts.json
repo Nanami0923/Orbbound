@@ -1,0 +1,19 @@
+{
+  "version": "5.2.0",
+  "title": "联机独立随机、统一界面与同步消除动效",
+  "prerelease": true,
+  "artifacts": [
+    {
+      "platform": "Android",
+      "file": "Orbbound-5.2.0-Android.apk",
+      "bytes": 1405727,
+      "sha256": "16eae0929d2c3c571ef8ef4d7bdbfd3b8b5faeb4998071c28e8dda58b808d957"
+    },
+    {
+      "platform": "Windows",
+      "file": "Orbbound-Windows-5.2.0-x64.zip",
+      "bytes": 747405,
+      "sha256": "f4c75c308339e992de30f38a676f71513a8edb691ae6df2b6b3a8313d78c6341"
+    }
+  ]
+}

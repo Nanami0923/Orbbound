@@ -33,11 +33,12 @@ function prepareLoss(snapshot: MatchSnapshot, id: string) {
 }
 
 describe('LAN atomic chain battle', () => {
-  it('starts equal waves with recoverable attack state and no timed descent', () => {
+  it('starts independent waves with recoverable attack state and no timed descent', () => {
     const initial = match();
     const later = advanceMatch(initial, 170000);
     expect(later.players.host.state).toEqual(initial.players.host.state);
-    expect(later.players.guest.state).toEqual(initial.players.host.state);
+    expect(later.players.guest.state).toEqual(initial.players.guest.state);
+    expect(later.players.guest.state).not.toEqual(initial.players.host.state);
     expect(later.players.host.battle).toMatchObject({ chargeRemainder: 0, pendingAttacks: [], appliedRows: 0 });
     expect(isMatchSnapshot(JSON.parse(JSON.stringify(later)))).toBe(true);
     expect(createMatch({ ...config, durationMs: 300000 }).durationMs).toBe(300000);
@@ -162,12 +163,14 @@ describe('LAN atomic chain battle', () => {
   it('uses attack RNG independent of supply and preserves preview and natural pressure', () => {
     const initial = match(); initial.players.host.state.danger = 80;
     const before = initial.players.host.state;
-    const shifted = applyAttackDescent(before, config.seed, 0);
+    const shifted = applyAttackDescent(before, config.seed, 'host', 0);
     expect(shifted).toMatchObject({ danger: 80, rngState: before.rngState, currentColor: before.currentColor, nextColor: before.nextColor, score: before.score, step: before.step, rowOffset: 1 });
     expect(shifted.board[1]).toEqual(before.board[0]);
-    expect(shifted.board[0]).toEqual(applyAttackDescent({ ...before, rngState: 111 }, config.seed, 0).board[0]);
-    expect(shifted.board[0]).not.toEqual(applyAttackDescent(before, config.seed, 1).board[0]);
-    expect(deriveAttackSeed(config.seed, 0)).not.toBe(deriveAttackSeed(config.seed, 1));
+    expect(shifted.board[0]).toEqual(applyAttackDescent({ ...before, rngState: 111 }, config.seed, 'host', 0).board[0]);
+    expect(shifted.board[0]).not.toEqual(applyAttackDescent(before, config.seed, 'host', 1).board[0]);
+    expect(deriveAttackSeed(config.seed, 'host', 0)).not.toBe(deriveAttackSeed(config.seed, 'host', 1));
+    expect(deriveAttackSeed(config.seed, 'host', 0)).not.toBe(deriveAttackSeed(config.seed, 'guest', 0));
+    expect(shifted.board[0]).not.toEqual(applyAttackDescent(before, config.seed, 'guest', 0).board[0]);
     expect(initial.players.host.state.danger).toBe(80);
   });
 

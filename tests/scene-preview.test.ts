@@ -16,7 +16,7 @@ import { createCampaign } from '../src/core/campaign';
 import { DEFAULT_SETTINGS } from '../src/storage/storage';
 import { BOARD_APPEARANCE, boardGeometry } from '../src/render/board-appearance';
 import { cellToPoint } from '../src/core/grid';
-import { V5_CLEAR_MOTION } from '../src/render/clear-motion';
+import { clearOrbPose, V5_CLEAR_MOTION } from '../src/render/clear-motion';
 import type { GameState, Point } from '../src/core/types';
 
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
@@ -27,8 +27,8 @@ function fixture(mode: 'endless' | 'timed' | 'campaign') {
   vi.stubGlobal('window', { matchMedia: () => ({ matches: false }), dispatchEvent: (event: CustomEvent) => { events.push(event); return true; }, localStorage: {
     getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => values.set(key, value), removeItem: (key: string) => values.delete(key),
   } });
-  const scene = new PlayScene(), tweens: Array<{ targets?: unknown; onComplete?: () => void; onUpdate?: () => void; duration?: number; delay?: number }> = [], callbacks: Array<() => void> = [], delays: number[] = [];
-  const graphics = { clear: vi.fn().mockReturnThis(), fillStyle: vi.fn().mockReturnThis(), lineStyle: vi.fn().mockReturnThis(), fillCircle: vi.fn().mockReturnThis(), strokeCircle: vi.fn().mockReturnThis() };
+  const scene = new PlayScene(), tweens: Array<{ targets?: unknown; onComplete?: () => void; onUpdate?: () => void; duration?: number; delay?: number }> = [], callbacks: Array<() => void> = [], delays: number[] = [], timerEvents: object[] = [];
+  const graphics = { clear: vi.fn().mockReturnThis(), fillStyle: vi.fn().mockReturnThis(), lineStyle: vi.fn().mockReturnThis(), fillCircle: vi.fn().mockReturnThis(), strokeCircle: vi.fn().mockReturnThis(), lineBetween: vi.fn().mockReturnThis(), destroy: vi.fn() };
   const createOrb = vi.fn((_color: number, point: Point) => {
     const data = new Map<string, unknown>();
     const orb: Record<string, any> = { x: point.x, y: point.y };
@@ -55,15 +55,15 @@ function fixture(mode: 'endless' | 'timed' | 'campaign') {
     graphics: vi.fn(() => graphics),
   };
   Object.assign(scene, { ready: true, renderBoard: vi.fn(), boardGroup: { x: 0, y: 0, setY: vi.fn() }, drawAim: vi.fn(), flashLanding: vi.fn(), launcherBase: graphics, createOrb, add,
-    tweens: { killAll: vi.fn(), resumeAll: vi.fn(), pauseAll: vi.fn(), add: (config: typeof tweens[number]) => tweens.push(config) },
-    time: { paused: false, removeAllEvents: vi.fn(), clearPendingEvents: vi.fn(), delayedCall: (ms: number, callback: () => void) => { delays.push(ms); callbacks.push(callback); } },
+    tweens: { killAll: vi.fn(), killTweensOf: vi.fn(), resumeAll: vi.fn(), pauseAll: vi.fn(), add: (config: typeof tweens[number]) => tweens.push(config) },
+    time: { paused: false, removeAllEvents: vi.fn(), removeEvent: vi.fn(), clearPendingEvents: vi.fn(), delayedCall: (ms: number, callback: () => void) => { delays.push(ms); callbacks.push(callback); const timer = {}; timerEvents.push(timer); return timer; } },
     statusText: { setText: vi.fn() }, audio: { blip: vi.fn(), setMix: vi.fn() },
   });
   const initial = mode === 'campaign' ? createCampaign(1) : createRound('normal', mode);
   initial.currentColor = 0; initial.nextColor = 1; scene.begin(initial);
   const stateEvents = () => events.filter(event => event.type === 'snood-state').map(event => event.detail);
   const comboEvents = () => events.filter(event => event.type === 'snood-combo').map(event => event.detail as unknown as { count: number; cleared: number });
-  return { scene, tweens, callbacks, delays, createOrb, add, addedTexts, addedCircles, stateEvents, comboEvents };
+  return { scene, tweens, callbacks, delays, timerEvents, createOrb, add, addedTexts, addedCircles, stateEvents, comboEvents };
 }
 
 function enableV5(platform = 'windows-v5'): void {
@@ -136,7 +136,7 @@ it('cannot replay a stale combo after starting another round', () => {
   expect(f.comboEvents()).toEqual([]);
 });
 
-it('starts patterned V5 clones together and lets their 1050 ms tail outlive the old firing lock', () => {
+it('starts patterned V5 clones together and keeps their cosmetic timeline independent of the firing lock', () => {
   enableV5();
   const f = fixture('endless');
   const scene = f.scene as unknown as {
@@ -183,7 +183,8 @@ it('starts patterned V5 clones together and lets their 1050 ms tail outlive the 
   driver.progress = 16 / V5_CLEAR_MOTION.fallMs;
   f.tweens[0].onUpdate!();
   expect(clones[0].setPosition.mock.calls.at(-1)![1]).toBeLessThan(origins[0].y); // Match scatters upward.
-  expect(animatedCopy.setPosition.mock.calls.at(-1)![1]).toBeGreaterThan(origins.at(-1)!.y); // Drop falls immediately.
+  expect(clones[0].setPosition.mock.calls.at(-1)![1]).toBeCloseTo(clearOrbPose({ x: origins[0].x, y: origins[0].y, index: 0, falling: false }, 16).y);
+  expect(animatedCopy.setPosition.mock.calls.at(-1)![1]).toBeCloseTo(clearOrbPose({ x: origins.at(-1)!.x, y: origins.at(-1)!.y, index: 6, falling: true }, 16).y);
   expect(animatedCopy.setPosition).toHaveBeenCalled();
   expect(scene.transient.has(animatedCopy)).toBe(true);
   f.scene.pauseGame();
@@ -234,6 +235,7 @@ it('keeps the real firing lock identical for the same board balls in legacy, V5 
     scene.animateResolution(state, [{ type: 'match', cells: match }, { type: 'drop', cells: drop }]);
     const lockMs = f.delays.at(-1)!;
     f.callbacks.at(-1)!();
+    if (reducedMotion) f.tweens.find(tween => tween.duration === V5_CLEAR_MOTION.reducedMs)?.onComplete?.();
     return { lockMs, ready: f.scene.isReady, liveTransientsAtUnlock: scene.transient.size };
   };
 
@@ -314,7 +316,43 @@ it('shows the V5 score and caption for a 1250 ms total, and the transient keeps 
   expect(f.addedTexts.every(({ object }) => object.destroy.mock.calls.length <= 1)).toBe(true);
 });
 
-it('keeps V5 removal static and particle-free with reduced motion while preserving the visual firing lock', () => {
+it('cleans active V5 score popups and their timers when reduced-effects changes', () => {
+  enableV5();
+  const f = fixture('endless');
+  const scene = f.scene as unknown as {
+    showV5ScorePopup(points: number, label: string): void;
+    transient: Set<{ destroy: () => void }>;
+    activeV5ScorePopups: Set<unknown>;
+    tweens: { killTweensOf: ReturnType<typeof vi.fn> };
+    time: { removeEvent: ReturnType<typeof vi.fn> };
+  };
+
+  scene.showV5ScorePopup(30, '消除 3');
+  const [animatedScore, animatedCaption] = f.addedTexts.map(({ object }) => object);
+  const staleCompletion = f.tweens[0].onComplete!;
+  f.scene.setSettings({ ...DEFAULT_SETTINGS, reducedMotion: true });
+  expect(scene.tweens.killTweensOf).toHaveBeenCalledWith(animatedScore);
+  expect(scene.tweens.killTweensOf).toHaveBeenCalledWith(animatedCaption);
+  expect(animatedScore.destroy).toHaveBeenCalledOnce();
+  expect(animatedCaption.destroy).toHaveBeenCalledOnce();
+  expect(scene.activeV5ScorePopups.size).toBe(0);
+  expect(scene.transient.size).toBe(0);
+  staleCompletion();
+  expect(f.tweens).toHaveLength(1); // A stale completion cannot start the floating fade.
+
+  scene.showV5ScorePopup(40, '消除 4');
+  const [staticScore, staticCaption] = f.addedTexts.slice(-2).map(({ object }) => object);
+  const timer = f.timerEvents.at(-1);
+  f.scene.setSettings({ ...DEFAULT_SETTINGS, reducedMotion: false });
+  expect(scene.time.removeEvent).toHaveBeenCalledWith(timer);
+  expect(staticScore.destroy).toHaveBeenCalledOnce();
+  expect(staticCaption.destroy).toHaveBeenCalledOnce();
+  expect(scene.activeV5ScorePopups.size).toBe(0);
+  f.callbacks.at(-1)!();
+  expect(staticScore.destroy).toHaveBeenCalledOnce();
+});
+
+it('keeps a stationary 320 ms fade and no particles with reduced motion while preserving the visual firing lock', () => {
   enableV5();
   const f = fixture('endless');
   const source = { x: 120, y: 160, getData: () => 0, setAlpha: vi.fn(), setVisible: vi.fn() };
@@ -325,11 +363,64 @@ it('keeps V5 removal static and particle-free with reduced motion while preservi
   Object.assign(f.scene, { renderLauncher: vi.fn(), drawAim: vi.fn() });
   f.scene.setSettings({ ...DEFAULT_SETTINGS, reducedMotion: true });
   scene.animateResolution(previous, [{ type: 'match', cells: [{ row: 0, col: 0 }], points: 10 }]);
-  expect(source.setAlpha).toHaveBeenCalledWith(0);
-  expect(f.createOrb).toHaveBeenCalledTimes(1); // The launcher only; no removal copy is created.
+  expect(source.setVisible).toHaveBeenCalledWith(false);
+  expect(f.createOrb).toHaveBeenCalledTimes(2); // Launcher and visible stationary removal copy.
   expect(f.addedCircles).toHaveLength(0);
-  expect(f.tweens).toHaveLength(0);
+  expect(f.tweens[0].duration).toBe(V5_CLEAR_MOTION.reducedMs);
+  f.tweens[0].targets && ((f.tweens[0].targets as { progress: number }).progress = .5);
+  f.tweens[0].onUpdate!();
+  const removal = f.createOrb.mock.results.at(-1)!.value;
+  expect(removal.setPosition).toHaveBeenLastCalledWith(120, 160);
+  expect(removal.setScale).toHaveBeenLastCalledWith(1);
+  expect(removal.setAlpha).toHaveBeenLastCalledWith(.5 ** 1.15);
   expect(f.delays.at(-1)).toBe(BOARD_APPEARANCE.removal.matchMs + 20);
+});
+
+it('locks an OS-reduced clear to its 320 ms fade when the system preference turns off', () => {
+  enableV5();
+  let osReduced = true;
+  const f = fixture('endless'), state = f.scene.activeState, cell = { row: 0, col: 0 };
+  (window as unknown as { matchMedia: () => { matches: boolean } }).matchMedia = () => ({ matches: osReduced });
+  state.board[cell.row][cell.col] = 0;
+  const runtime = f.scene as unknown as { boardBalls: Map<string, unknown>; phase: string; animateResolution(previous: GameState, events: import('../src/core/types').GameEvent[]): void };
+  runtime.boardBalls = new Map(); runtime.phase = 'RESOLVING';
+  runtime.animateResolution(state, [{ type: 'match', cells: [cell] }]);
+
+  const fade = f.tweens[0], clearCopy = f.createOrb.mock.results.at(-1)!.value, origin = f.createOrb.mock.calls.at(-1)![1];
+  const driver = fade.targets as { progress: number };
+  expect(fade.duration).toBe(V5_CLEAR_MOTION.reducedMs);
+  driver.progress = .5; fade.onUpdate!();
+  expect(clearCopy.setAlpha).toHaveBeenLastCalledWith(.5 ** 1.15);
+  osReduced = false;
+  fade.onUpdate!();
+  expect(clearCopy.setAlpha).toHaveBeenLastCalledWith(.5 ** 1.15);
+  driver.progress = .75; fade.onUpdate!();
+  expect(clearCopy.setAlpha).toHaveBeenLastCalledWith(.25 ** 1.15);
+  expect(clearCopy.setPosition).toHaveBeenLastCalledWith(origin.x, origin.y);
+  fade.onComplete!();
+  expect(clearCopy.destroy).toHaveBeenCalledOnce();
+});
+
+it('applies a user reduced-effects change immediately even if the OS mode changed first', () => {
+  enableV5();
+  let osReduced = false;
+  const f = fixture('endless'), state = f.scene.activeState, cell = { row: 0, col: 0 };
+  (window as unknown as { matchMedia: () => { matches: boolean } }).matchMedia = () => ({ matches: osReduced });
+  state.board[cell.row][cell.col] = 0;
+  const runtime = f.scene as unknown as { boardBalls: Map<string, unknown>; phase: string; animateResolution(previous: GameState, events: import('../src/core/types').GameEvent[]): void; v5Particles: Set<unknown> };
+  runtime.boardBalls = new Map(); runtime.phase = 'RESOLVING';
+  runtime.animateResolution(state, [{ type: 'match', cells: [cell] }]);
+  const clearCopy = f.createOrb.mock.results.at(-1)!.value;
+  expect(runtime.v5Particles.size).toBeGreaterThan(0);
+
+  osReduced = true;
+  f.scene.setSettings({ ...DEFAULT_SETTINGS, reducedMotion: true });
+  expect(runtime.v5Particles.size).toBe(0);
+  expect(clearCopy.setRotation).toHaveBeenLastCalledWith(0);
+  osReduced = false;
+  f.scene.setSettings({ ...DEFAULT_SETTINGS, reducedMotion: false });
+  expect((f.scene as unknown as { transient: Set<unknown> }).transient.has(clearCopy)).toBe(false);
+  expect(clearCopy.destroy).toHaveBeenCalledOnce();
 });
 
 it('destroys active V5 transient visuals when a new round starts', () => {
@@ -344,4 +435,40 @@ it('destroys active V5 transient visuals when a new round starts', () => {
   expect(oldVisuals.every(visual => (visual as any).destroy.mock.calls.length === 1)).toBe(true);
   f.tweens[0].onComplete!();
   expect(f.tweens).toHaveLength(1); // The stale popup does not start its fade on the new round.
+});
+
+it.each(['new round', 'exit'] as const)('cleans active V5 clear layers on %s and ignores stale frames', action => {
+  enableV5();
+  const f = fixture('endless'), state = f.scene.activeState;
+  const cell = { row: 0, col: 0 }, source = {
+    x: 120, y: 160, getData: vi.fn((key: string) => key === 'colorId' ? state.board[0][0] : false),
+    setVisible: vi.fn(), setAlpha: vi.fn(), destroy: vi.fn(), add: vi.fn(),
+  };
+  const scene = f.scene as unknown as {
+    animateResolution(previous: GameState, events: import('../src/core/types').GameEvent[]): void;
+    boardBalls: Map<string, typeof source>; transient: Set<{ destroy: () => void }>;
+    v5Particles: Set<unknown>; v5ParticleInstances: Set<unknown>; activeV5ClearAnimations: Set<unknown>;
+    pauseGame: () => void; persistGame: () => boolean;
+  };
+  scene.boardBalls = new Map([[`${cell.row}:${cell.col}`, source]]);
+  scene.animateResolution(state, [{ type: 'match', cells: [cell], points: 30 }]);
+  const clearCopy = f.createOrb.mock.results.at(-1)!.value;
+  const positionCalls = clearCopy.setPosition.mock.calls.length;
+  const oldVisuals = [...scene.transient];
+  expect(scene.activeV5ClearAnimations.size).toBe(1);
+  expect(scene.v5Particles.size).toBeGreaterThan(0);
+
+  if (action === 'new round') f.scene.begin(createRound('easy', 'endless'));
+  else {
+    scene.pauseGame = vi.fn(); scene.persistGame = vi.fn(() => true);
+    expect(f.scene.abandonGame()).toBe(true);
+  }
+
+  expect(scene.transient.size).toBe(0);
+  expect(scene.v5Particles.size).toBe(0);
+  expect(scene.v5ParticleInstances.size).toBe(0);
+  expect(scene.activeV5ClearAnimations.size).toBe(0);
+  expect(oldVisuals.every(visual => (visual as any).destroy.mock.calls.length === 1)).toBe(true);
+  f.tweens[0].onUpdate!();
+  expect(clearCopy.setPosition).toHaveBeenCalledTimes(positionCalls);
 });

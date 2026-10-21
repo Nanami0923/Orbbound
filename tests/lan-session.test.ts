@@ -132,7 +132,7 @@ describe('LAN two-session integration over an asynchronous serialized transport'
   });
   afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 
-  it('requires both ready and loaded, then starts equal boards despite different local clock origins', async () => {
+  it('requires both ready and loaded, then starts independent boards despite different local clock origins', async () => {
     const game = await lobby(pair(80000));
     game.host.ready(); game.host.start(); expect(game.host.view.phase).toBe('lobby');
     game.guest.ready(); await flush(); game.network.blockedTypes.add('LOADED'); game.host.start(); await flush();
@@ -143,7 +143,9 @@ describe('LAN two-session integration over an asynchronous serialized transport'
     expect(game.host.view.phase).toBe('countdown'); expect(game.guest.view.phase).toBe('countdown');
     await vi.advanceTimersByTimeAsync(51);
     expect(game.host.view.phase).toBe('playing'); expect(game.guest.view.phase).toBe('playing');
-    expect(game.host.view.snapshot!.players.host.state).toEqual(game.guest.view.snapshot!.players.guest.state);
+    expect(game.host.view.snapshot!.players.host.state).toEqual(game.guest.view.snapshot!.players.host.state);
+    expect(game.host.view.snapshot!.players.guest.state).toEqual(game.guest.view.snapshot!.players.guest.state);
+    expect(game.host.view.snapshot!.players.host.state).not.toEqual(game.host.view.snapshot!.players.guest.state);
   });
 
   it('applies both local and guest shots authoritatively, deduplicates retransmitted shots, and clears pending confirmation', async () => {
@@ -199,14 +201,17 @@ describe('LAN two-session integration over an asynchronous serialized transport'
     const game = await start(); game.guest.shoot(0); await flush();
     const oldShot = game.network.last('SHOT').packet;
     const oldId = game.host.view.snapshot!.matchId, oldShots = game.host.view.snapshot!.players.guest.totalShots;
+    const confirmedState = structuredClone(game.host.view.snapshot!.players.guest.state);
     game.network.disconnectAll(); expect(game.host.view.phase).toBe('reconnecting');
     await vi.advanceTimersByTimeAsync(1600); await flush();
     expect(game.guest.view.snapshot!.matchId).toBe(oldId);
     expect(game.guest.view.snapshot!.players.guest.totalShots).toBe(oldShots);
+    expect(game.guest.view.snapshot!.players.guest.state).toEqual(confirmedState);
     game.host.resume(); game.guest.resume(); await flush(); await vi.advanceTimersByTimeAsync(3050);
     const hello = game.network.last('HELLO', game.guestTransport);
     game.network.replay(hello, oldShot); await flush();
     expect(game.host.view.snapshot!.players.guest.totalShots).toBe(oldShots);
+    expect(game.host.view.snapshot!.players.guest.state).toEqual(confirmedState);
     await vi.advanceTimersByTimeAsync(1600); // Logical shot cooldown also freezes during recovery.
     game.guest.shoot(-23000); await flush();
     expect(game.host.view.snapshot!.players.guest.totalShots).toBe(oldShots + 1);
@@ -900,21 +905,21 @@ describe('LAN two-session integration over an asynchronous serialized transport'
     expect(game.host.presentationTime()).toBeLessThan(100); expect(game.guest.presentationTime()).toBeLessThan(100);
   });
 
-  it('rejects the concrete 4.5 rules fingerprint on the unchanged v3 wire before allocating a seat', async () => {
-    expect(LAN_PROTOCOL_VERSION).toBe(3); expect(LAN_CONTENT_HASH).toBe('f942c2f9'); expect(LAN_RULES_HASH).not.toBe('79ab5744');
+  it('rejects the concrete 5.1 rules fingerprint on the unchanged v3 wire before allocating a seat', async () => {
+    expect(LAN_PROTOCOL_VERSION).toBe(3); expect(LAN_CONTENT_HASH).toBe('f942c2f9'); expect(LAN_RULES_HASH).not.toBe('4e2a4139');
     const game = pair(); await game.host.host('房主', '测试', config);
     game.network.blockedTypes.add('HELLO'); await game.guest.join('客人', '127.0.0.1', 42171); await flush();
     const hello = game.network.last('HELLO');
-    game.network.replay(hello, { ...hello.packet, data: { ...hello.packet.data, rulesHash: '79ab5744' } }); await flush();
+    game.network.replay(hello, { ...hello.packet, data: { ...hello.packet.data, rulesHash: '4e2a4139' } }); await flush();
     expect(game.host.view.players).toHaveLength(1);
     expect(game.guest.view.phase).toBe('closed'); expect(game.guest.view.error).toContain('不兼容');
   });
 
-  it('refuses a 4.5 host welcome instead of accepting its old pause rules', async () => {
+  it('refuses a 5.1 host welcome instead of accepting its old pause and random rules', async () => {
     const game = pair(); await game.host.host('房主', '测试', config);
     game.network.blockedTypes.add('WELCOME'); await game.guest.join('客人', '127.0.0.1', 42171); await flush();
     const welcome = game.network.last('WELCOME', game.hostTransport);
-    game.network.replay(welcome, { ...welcome.packet, data: { ...welcome.packet.data, rulesHash: '79ab5744' } }); await flush();
+    game.network.replay(welcome, { ...welcome.packet, data: { ...welcome.packet.data, rulesHash: '4e2a4139' } }); await flush();
     expect(game.guest.view.phase).toBe('closed'); expect(game.guest.view.error).toContain('不兼容');
     expect(game.guest.view.snapshot).toBeUndefined();
   });

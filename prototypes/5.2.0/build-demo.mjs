@@ -1,0 +1,13 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import {fileURLToPath} from 'node:url';
+const folder=path.dirname(fileURLToPath(import.meta.url)),root=path.resolve(folder,'../..');
+const artwork=fs.readFileSync(path.join(root,'src/content/orb-symbol-artwork.ts'),'utf8');
+const paths=Object.fromEntries([...artwork.matchAll(/^  (\d): '([^']+)'/gm)].map(m=>[m[1],m[2]]));
+const theme=fs.readFileSync(path.join(root,'src/content/theme.ts'),'utf8').split('export const ORB_THEMES_V5')[1].split('];')[0];
+const themes=[...theme.matchAll(/id: (\d).*?cssColor: '([^']+)', ink: '([^']+)'/g)].map(m=>({id:Number(m[1]),cssColor:m[2],ink:m[3]}));
+if(Object.keys(paths).length!==6||themes.length!==6)throw Error('Could not extract the six original sphere patterns');
+const model=fs.readFileSync(path.join(folder,'motion-model.mjs'),'utf8').replaceAll('export ','');
+const html=fs.readFileSync(path.join(folder,'shell.html'),'utf8').replace('/*__STYLES__*/',fs.readFileSync(path.join(folder,'style.css'),'utf8')).replace('/*__DATA__*/',`const ORB_DATA=${JSON.stringify({paths,themes})};`).replace('/*__MODEL__*/',model).replace('/*__APP__*/',fs.readFileSync(path.join(folder,'app.js'),'utf8'));
+if(/\/\*__\w+__\*\//.test(html))throw Error('Unreplaced demo placeholder');
+const out=path.join(folder,'Orbbound-5.2.0-motion-demo.html');fs.writeFileSync(out,html);console.log(`Built self-contained demo: ${out} (${Buffer.byteLength(html)} bytes)`);

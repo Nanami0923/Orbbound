@@ -1,6 +1,7 @@
 import { BOARD_GEOMETRY } from '../content/game-config';
 import { updateOrbPreview } from './next-orb-preview';
 import { BOARD_APPEARANCE, drawAimMarkers, drawDangerLine } from '../render/board-appearance';
+import { shouldReduceMotion, systemPrefersReducedMotion } from '../render/motion-preferences';
 import { arenaArtwork, canvasGraphics, drawOrb, makeArtworkCanvas, paintArena, paintLauncherBarrel, paintLauncherBase } from '../render/board-artwork';
 import { boardCanvasSize, boardView, type BoardRole } from '../render/board-view';
 import type { BoardPaintOptions } from './lan-presentation';
@@ -92,6 +93,7 @@ export function bindLanBoard(root: HTMLElement, session: LanSession): () => void
     updateOrbPreview(root.querySelector<HTMLElement>('#lan-next-orb-preview'), drawnState.nextColor);
   }, drawOrb, kind => { gameAudio.blip(kind); if (kind !== 'danger') haptic('match', settings); });
   presentation.reset(session.view.snapshot?.eventSeq ?? 0);
+  presentation.setUserReducedMotion(settings.reducedMotion, systemPrefersReducedMotion());
   const budget = new FrameBudget(); const heldKeys = new Set<number>();
   const governor = new FrameRateGovernor(); governor.setRequested(settings.frameRate);
   let reportStarted = performance.now(), paintedFrames = 0, observationFrames = 0, thumbnailFrames = 0, lastRaf = 0;
@@ -208,7 +210,9 @@ export function bindLanBoard(root: HTMLElement, session: LanSession): () => void
   if (root.classList) syncGameShell(root, { touch, immersive: settings.immersiveMode, mode: session.view.snapshot?.mode ?? 'score' });
   let appliedSettings = snapshotSettings(settings);
   const unsubscribeSettings = subscribeSettings(value => {
-    const changed = settingsEffects(appliedSettings, value); appliedSettings = snapshotSettings(value);
+    const changed = settingsEffects(appliedSettings, value);
+    if (appliedSettings.reducedMotion !== value.reducedMotion) presentation.setUserReducedMotion(value.reducedMotion, systemPrefersReducedMotion());
+    appliedSettings = snapshotSettings(value);
     if (changed.controls || changed.quality) { resetInput(); animation = undefined; }
     settings = value;
     if (changed.frameRate) { governor.setRequested(value.frameRate); budget.reset(); }
@@ -270,8 +274,9 @@ export function bindLanBoard(root: HTMLElement, session: LanSession): () => void
     if (fireButton.textContent !== fireLabel) fireButton.textContent = fireLabel;
     const player = state(), snapshot = session.view.snapshot;
     if (!player || !snapshot) { costs.push(Math.max(0, performance.now() - workStarted)); return; }
+    const reducedMotion = shouldReduceMotion(settings.reducedMotion), reducedSystemMotion = systemPrefersReducedMotion();
     const logicalTime = session.presentationTime();
-    presentation.ingest(session.view.presentationEvents ?? [], snapshot.eventSeq ?? 0, logicalTime); presentation.advance(logicalTime, session.view.selfId);
+    presentation.ingest(session.view.presentationEvents ?? [], snapshot.eventSeq ?? 0, logicalTime); presentation.advance(logicalTime, session.view.selfId, reducedMotion);
     const nextObservation = root.querySelector<HTMLCanvasElement>('#lan-observe-board');
     if (nextObservation !== observationCanvas) {
       if (observationCanvas) { observer.unobserve?.(observationCanvas); settledLayers.delete(observationCanvas); painted.delete(observationCanvas); observedCanvases.delete(observationCanvas); }
@@ -289,7 +294,7 @@ export function bindLanBoard(root: HTMLElement, session: LanSession): () => void
     if (animation && at - animation.start >= animation.duration) { animation = undefined; dirty = true; }
     const paintView = (target: HTMLCanvasElement, playerId: string, role: BoardRole, local: boolean) => {
       const current = snapshot.players[playerId]; if (!current) return;
-      const busy = motionActive && presentation.busyFor(playerId, role !== 'thumbnail'), last = painted.get(target);
+      const busy = motionActive && presentation.busyFor(playerId), last = painted.get(target);
       const changed = !last || last.playerId !== playerId || last.revision !== current.boardRevision || last.board !== current.state.board || last.current !== current.state.currentColor || last.next !== current.state.nextColor
         || last.rowOffset !== (current.state.rowOffset ?? 0) || last.ceilingRow !== (current.state.ceilingRow ?? 0) || last.targets !== current.state.targets
         || last.width !== target.width || last.height !== target.height || last.generation !== visualGeneration || last.busy !== busy;
@@ -297,10 +302,10 @@ export function bindLanBoard(root: HTMLElement, session: LanSession): () => void
       if (!changed && !busy && !predicting && !(local && dirty)) return;
       if (role === 'thumbnail' && last && at - last.at < 50 && last.generation === visualGeneration) return;
       const visibleState = predicting ? animation!.state : current.state;
-      const recoil = predicting && !settings.reducedMotion ? Math.max(0, 1 - (at - animation!.start) / BOARD_APPEARANCE.recoilMs) : 0;
-      presentation.draw(target, playerId, visibleState, logicalTime, role === 'thumbnail' || settings.reducedMotion, local, local ? angle * Math.PI / 180 : undefined,
-        local && !predicting && settings.aimAssist && session.view.phase === 'playing' ? getTrace() : undefined, { role, recoil });
-      if (predicting && !settings.reducedMotion) { const point = pointOnTrace(animation!.trace, (at - animation!.start) / animation!.duration); drawOrb(target.getContext('2d')!, animation!.color, point.x, point.y, BOARD_APPEARANCE.orbRadius * BOARD_APPEARANCE.loadedScale); }
+      const recoil = predicting && !reducedSystemMotion ? Math.max(0, 1 - (at - animation!.start) / BOARD_APPEARANCE.recoilMs) : 0;
+      presentation.draw(target, playerId, visibleState, logicalTime, reducedMotion, local, local ? angle * Math.PI / 180 : undefined,
+        local && !predicting && settings.aimAssist && session.view.phase === 'playing' ? getTrace() : undefined, { role, recoil, disableRecoil: reducedSystemMotion });
+      if (predicting) { const point = pointOnTrace(animation!.trace, (at - animation!.start) / animation!.duration); drawOrb(target.getContext('2d')!, animation!.color, point.x, point.y, BOARD_APPEARANCE.orbRadius * BOARD_APPEARANCE.loadedScale); }
       painted.set(target, { playerId, revision: current.boardRevision, board: current.state.board, current: current.state.currentColor, next: current.state.nextColor,
         rowOffset: current.state.rowOffset ?? 0, ceilingRow: current.state.ceilingRow ?? 0, targets: current.state.targets,
         width: target.width, height: target.height, busy, at, generation: visualGeneration });

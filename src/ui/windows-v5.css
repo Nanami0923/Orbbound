@@ -805,7 +805,8 @@ html.windows-v5 #game-status-label {
   text-align: right;
 }
 
-html.windows-v5 .game-screen .game-container {
+html.windows-v5 .game-screen .game-container,
+html.windows-v5 .lan-screen .lan-board-wrap {
   flex: 0 0 auto;
   width: var(--single-board-width, min(100%, 640px)) !important;
   height: auto !important;
@@ -1385,24 +1386,6 @@ html.windows-v5 .lan-screen .lan-notice {
 html.windows-v5 .lan-screen .lan-winner {
   border-color: rgba(131, 205, 181, 0.34);
   background: rgba(131, 205, 181, 0.08);
-}
-
-html.windows-v5 .lan-screen .lan-game-overlay {
-  background: rgba(13, 20, 33, 0.92);
-}
-
-html.windows-v5 .lan-screen .lan-opponent {
-  border-color: rgba(120, 134, 154, 0.18);
-  background: var(--panel);
-}
-
-html.windows-v5 .lan-screen .lan-opponent[aria-pressed="true"] {
-  border-color: rgba(131, 205, 181, 0.5);
-  background: rgba(131, 205, 181, 0.08);
-}
-
-html.windows-v5 .lan-screen .orb-preview-card {
-  box-shadow: none;
 }
 
 html.windows-v5 .lan-screen .lan-confirm {
