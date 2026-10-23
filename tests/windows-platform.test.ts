@@ -7,8 +7,8 @@ import {usesButtonControls} from '../src/game/input-mode';
 import {PlayScene} from '../src/game/PlayScene';
 vi.mock('phaser',()=>({default:{Scene:class {},AUTO:0,Scale:{FIT:0,CENTER_BOTH:0}}}));
 afterEach(()=>{vi.unstubAllEnvs();vi.unstubAllGlobals();});
-it('each platform version matches its native package metadata',()=>{
- expect(readFileSync('android/app/build.gradle','utf8')).toContain(`versionName "${appManifest.version}"`);
+it('Windows version matches the root and native package metadata',()=>{
+ expect(windowsManifest.version).toBe(appManifest.version);
  expect(readFileSync('windows/app.manifest','utf8')).toContain(`version="${windowsManifest.version}.0"`);
 });
 it('Windows always retains desktop input even on a narrow touch display',()=>{

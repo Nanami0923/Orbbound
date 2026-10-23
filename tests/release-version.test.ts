@@ -3,16 +3,25 @@ import { readFileSync } from 'node:fs';
 import rootPackage from '../package.json';
 import lock from '../package-lock.json';
 import windowsPackage from '../electron/windows-package.json';
+import androidManifest from '../android/version.json';
+import viteConfig from '../vite.config';
+import type { UserConfig } from 'vite';
 
-it('keeps both native packages and the web build on the same release version', () => {
-  const version = rootPackage.version;
-  const [major, minor, patch] = version.split('.').map(Number);
-  expect(lock.version).toBe(version);
-  expect(lock.packages[''].version).toBe(version);
-  expect(windowsPackage.version).toBe(version);
-  const gradle = readFileSync(new URL('../android/app/build.gradle', import.meta.url), 'utf8');
-  expect(gradle.match(/versionName\s+"([^"]+)"/)?.[1]).toBe(version);
-  expect(Number(gradle.match(/versionCode\s+(\d+)/)?.[1])).toBe(major * 10000 + minor * 100 + patch);
+function injectedVersion(mode: string) {
+  const config = viteConfig({ mode, command: 'build' }) as UserConfig;
+  return config.define?.['import.meta.env.VITE_APP_VERSION'];
+}
+
+it('keeps Android on its independent version while Windows and default web stay on the root release', () => {
+  const androidVersion = androidManifest.version;
+  expect(lock.version).toBe(rootPackage.version);
+  expect(lock.packages[''].version).toBe(rootPackage.version);
+  expect(windowsPackage.version).toBe(rootPackage.version);
+
+  expect(injectedVersion('android')).toBe(JSON.stringify(androidVersion));
+  expect(injectedVersion('windows')).toBe(JSON.stringify(windowsPackage.version));
+  expect(injectedVersion('production')).toBe(JSON.stringify(rootPackage.version));
+
   const manifest = readFileSync(new URL('../windows/app.manifest', import.meta.url), 'utf8');
-  expect(manifest).toContain(`assemblyIdentity version="${version}.0"`);
+  expect(manifest).toContain(`assemblyIdentity version="${rootPackage.version}.0"`);
 });

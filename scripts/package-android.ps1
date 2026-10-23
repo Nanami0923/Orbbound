@@ -10,20 +10,31 @@ if (!$SdkPath -and (Test-Path android/local.properties)) {
 if (!(Test-Path "$SdkPath/build-tools/36.0.0/apksigner.bat")) { throw 'Set ANDROID_HOME to an SDK containing build-tools 36.0.0 and platform android-36.' }
 $env:ANDROID_HOME = $SdkPath
 $env:PATH = "$env:JAVA_HOME/bin;$env:PATH"
-$version = (Get-Content package.json -Raw | ConvertFrom-Json).version
-$versionParts = $version.Split('.')
-if ($versionParts.Count -ne 3) { throw 'Android version must use major.minor.patch.' }
-$expectedCode = [int]$versionParts[0] * 10000 + [int]$versionParts[1] * 100 + [int]$versionParts[2]
-$gradleSource = Get-Content android/app/build.gradle -Raw
-$versionNameMatch = [regex]::Match($gradleSource, 'versionName\s+"([^"]+)"')
-$versionCodeMatch = [regex]::Match($gradleSource, 'versionCode\s+(\d+)')
-if (!$versionNameMatch.Success -or !$versionCodeMatch.Success -or $versionNameMatch.Groups[1].Value -ne $version -or [int]$versionCodeMatch.Groups[1].Value -ne $expectedCode) {
-    throw 'Android Gradle versionName/versionCode must match package.json before packaging.'
-}
+$androidVersion = Get-Content android/version.json -Raw | ConvertFrom-Json
+$version = [string]$androidVersion.version
+if ($version -notmatch '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$') { throw 'Android version must use major.minor.patch in android/version.json.' }
+$versionParts = $version.Split('.') | ForEach-Object { [long]$_ }
+$expectedCode = $versionParts[0] * 10000 + $versionParts[1] * 100 + $versionParts[2]
+if ($expectedCode -gt 2100000000) { throw 'Android versionCode exceeds the supported limit.' }
 & npm.cmd run sync:android
 Check-Exit
 & ./android/gradlew.bat -p android assembleRelease
 Check-Exit
+
+$apkOutputDir = Join-Path (Get-Location) 'android/app/build/outputs/apk/release'
+$metadataPath = Join-Path $apkOutputDir 'output-metadata.json'
+if (!(Test-Path -LiteralPath $metadataPath)) { throw 'Gradle release output-metadata.json is missing.' }
+$metadata = Get-Content -LiteralPath $metadataPath -Raw | ConvertFrom-Json
+$elements = @($metadata.elements)
+if ($metadata.artifactType.type -ne 'APK' -or $metadata.variantName -ne 'release' -or $metadata.applicationId -ne 'com.orbbound.game' -or $elements.Count -ne 1) {
+    throw 'Gradle Android release metadata does not describe the expected single release APK.'
+}
+$element = $elements[0]
+if ([string]$element.versionName -ne $version -or [long]$element.versionCode -ne $expectedCode -or $element.outputFile -ne 'app-release-unsigned.apk') {
+    throw 'Gradle Android release metadata version does not match android/version.json.'
+}
+$unsignedApk = Join-Path $apkOutputDir $element.outputFile
+if (!(Test-Path -LiteralPath $unsignedApk)) { throw 'Gradle release APK named in output-metadata.json is missing.' }
 
 # Keep the release identity outside the repository and reuse it for every update.
 $signingDir = Join-Path $env:LOCALAPPDATA 'Orbbound/signing'
@@ -45,11 +56,10 @@ if (!(Test-Path $keyPath)) {
     $env:ORBBOUND_SIGNING_PASSWORD = [Net.NetworkCredential]::new('', $secure).Password
 }
 try {
-    $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
     $outputDir = Join-Path (Get-Location) "最终交付/Android/Orbbound-$version"
     New-Item -ItemType Directory -Force $outputDir | Out-Null
     $apk = Join-Path $outputDir "Orbbound-$version-Android.apk"
-    & "$SdkPath/build-tools/36.0.0/zipalign.exe" -f -p 4 android/app/build/outputs/apk/release/app-release-unsigned.apk "$outputDir/aligned.apk"
+    & "$SdkPath/build-tools/36.0.0/zipalign.exe" -f -p 4 $unsignedApk "$outputDir/aligned.apk"
     Check-Exit
     & "$SdkPath/build-tools/36.0.0/apksigner.bat" sign --ks $keyPath --ks-key-alias orbbound --ks-pass env:ORBBOUND_SIGNING_PASSWORD --key-pass env:ORBBOUND_SIGNING_PASSWORD --out $apk "$outputDir/aligned.apk"
     Check-Exit
