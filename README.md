@@ -1,23 +1,23 @@
 # Orbbound
 
-Android 与 Windows 当前验收候选版为 **5.2.0 prerelease**，稳定正式版保留 **4.3.0**。5.2.0 基于 5.1.0，将联机改为各玩家独立随机棋盘与供球，统一直接消除和连带掉落的 720ms 加速抛物线与渐隐，增加双端粒子，并将联机基础界面对齐本平台其他模式。减少消除效果仍保留 320ms 原位淡出。5.0.0 没有公开发布记录，历史版本与安装包继续保留。
+当前验收候选版：**Android 5.2.1 prerelease / Windows 5.2.0 prerelease**，稳定正式版保留 **4.3.0**。Android 5.2.1 修复部分手机首页退成单列的问题，四个模式固定为 2×2，并收紧窄屏卡片间距。双端继续保留 5.2.0 的联机独立随机棋盘与供球、同步消除粒子和渐隐动效；Windows 本次不更新。5.0.0 没有公开发布记录，历史版本与安装包继续保留。
 
 ## 当前候选与历史下载
 
-[5.2.0 发布页](https://github.com/Nanami0923/Orbbound/releases/tag/v5.2.0) · [Android 5.2.0 APK](https://github.com/Nanami0923/Orbbound/releases/download/v5.2.0/Orbbound-5.2.0-Android.apk) · [Windows 5.2.0 ZIP](https://github.com/Nanami0923/Orbbound/releases/download/v5.2.0/Orbbound-Windows-5.2.0-x64.zip)
+[Android 5.2.1 发布页](https://github.com/Nanami0923/Orbbound/releases/tag/v5.2.1) · [Android 5.2.1 APK](https://github.com/Nanami0923/Orbbound/releases/download/v5.2.1/Orbbound-5.2.1-Android.apk) · [Windows 5.2.0 ZIP](https://github.com/Nanami0923/Orbbound/releases/download/v5.2.0/Orbbound-Windows-5.2.0-x64.zip)
 
 | 平台 | 当前候选 | 验收与产物 | 状态 |
 | --- | --- | --- | --- |
-| Android | 5.2.0 prerelease | [验收记录](docs/releases/5.2.0-validation.md) · [APK 校验清单](docs/releases/5.2.0-artifacts.json) | 覆盖范围与数据保留结果见记录 |
+| Android | 5.2.1 prerelease | [验收记录](docs/releases/5.2.1-validation.md) · [APK 校验清单](docs/releases/5.2.1-artifacts.json) | 首页固定 2×2，覆盖升级数据一致 |
 | Windows | 5.2.0 prerelease | [验收记录](docs/releases/5.2.0-validation.md) · [ZIP 校验清单](docs/releases/5.2.0-artifacts.json) | 原生交互与联机范围见记录 |
 
 所有旧版本保留在对应平台目录内。Windows 1.0.0 的两个不同本地构建按原来源分别保存，不将其视作同一文件。
 
-5.2.0 自动回归 58 个文件、634 项通过；Android JVM 22 项、Windows 原生 125 项通过。正式 Android 原签名覆盖升级后的 5 项数据与升级前逐值一致。实体四人竞分和双设备对战完成自然结算，完整范围见验收记录。
+5.2.1 自动回归 58 个文件、634 项及 49 个浏览器布局场景通过；Android 实机四模式与底部入口打开/返回、原签名覆盖升级通过，现有无尽存档和设置共 2 项逐值一致。详细范围见[5.2.1 验证记录](docs/releases/5.2.1-validation.md)。
 
 历史测试版下载：[Windows 4.7.0 ZIP](https://github.com/Nanami0923/Orbbound/releases/download/v4.7.0/Orbbound-Windows-4.7.0-x64.zip) · [Android 4.7.0 APK](https://github.com/Nanami0923/Orbbound/releases/download/v4.7.0/Orbbound-4.7.0-Android.apk) · [4.7.0 发布页](https://github.com/Nanami0923/Orbbound/releases/tag/v4.7.0)。[4.3.0 稳定正式版](https://github.com/Nanami0923/Orbbound/releases/tag/v4.3.0)继续保留。
 
-[5.2.0 双端更新说明](docs/releases/5.2.0-notes.md) · [Android 更新说明](docs/releases/Android/android-5.2.0-notes.md) · [Windows 更新说明](docs/releases/Windows/windows-5.2.0-notes.md) · [版本历史](docs/releases/版本历史.md)
+[5.2.1 Android 更新说明](docs/releases/5.2.1-notes.md) · [5.2.0 双端更新说明](docs/releases/5.2.0-notes.md) · [Windows 更新说明](docs/releases/Windows/windows-5.2.0-notes.md) · [版本历史](docs/releases/版本历史.md)
 
 5.2.0 的 Windows 原生单局胜利样本为 17 次发射、5,250 分、3 星；失败样本第 22 次发射耗尽。Android 实机分别以完整效果与减少效果完成四发操作，均记录到 3,160 分。同机生产 C# TCP/UDP 与真实会话完成两种模式各 2/3/4 人的重连、暂停和自然结算检查；使用受控加速时钟，不代表完整多设备矩阵。5.2 消息封装仍为 v3，规则指纹为 `7ca7ef0a`，内容指纹为 `f942c2f9`；不能与 5.1/4.7 旧规则混连。完整结果见[验证记录](docs/releases/5.2.0-validation.md)。
 
@@ -72,7 +72,7 @@ npm run package:win
 
 Android 打包需配置 JDK 21 与 Android SDK；签名仍在仓库外的 `%LOCALAPPDATA%/Orbbound/signing`。Windows 运行目录必须完整保留，不能只复制 EXE。
 
-两个打包命令只生成本地文件，不上传。版本号以 `package.json` 为准，与 `electron/windows-package.json`、`windows/app.manifest`、`android/app/build.gradle` 保持一致。Windows 使用系统 .NET Framework C# 编译器；首次构建下载并校验 WebView2 SDK 到忽略目录 `.build/webview2-sdk/`，仅将接口 DLL 和加载器打包，不下载或打包运行环境。
+两个打包命令只生成本地文件，不上传。Android 版本以 `android/version.json` 为准，由 Gradle 推导 versionCode；`sync:android` 使用 `build:android` 注入同一版本。Windows 继续以 `package.json`、`electron/windows-package.json` 和 `windows/app.manifest` 保持一致。Android 单平台发布使用 `node scripts/publish-release.mjs --platform android`，仅上传 APK、校验文件和 Android 产物清单；发布前仍须完成验收及对应源码标签。Windows 使用系统 .NET Framework C# 编译器；首次构建下载并校验 WebView2 SDK 到忽略目录 `.build/webview2-sdk/`，仅将接口 DLL 和加载器打包，不下载或打包运行环境。
 
 ## 导航
 

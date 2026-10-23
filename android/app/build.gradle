@@ -1,5 +1,16 @@
 apply plugin: 'com.android.application'
 
+def androidVersionManifest = new groovy.json.JsonSlurper().parse(rootProject.file('version.json'))
+def androidVersion = androidVersionManifest.version as String
+if (!(androidVersion ==~ /(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)/)) {
+    throw new GradleException("Invalid Android version in android/version.json: ${androidVersion}")
+}
+def androidVersionParts = androidVersion.tokenize('.').collect { it.toInteger() }
+def androidVersionCode = androidVersionParts[0] * 10000 + androidVersionParts[1] * 100 + androidVersionParts[2]
+if (androidVersionCode > 2100000000) {
+    throw new GradleException("Android versionCode exceeds the supported limit: ${androidVersionCode}")
+}
+
 android {
     namespace = "com.orbbound.game"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -7,8 +18,8 @@ android {
         applicationId "com.orbbound.game"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 50200
-        versionName "5.2.0"
+        versionCode androidVersionCode
+        versionName androidVersion
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

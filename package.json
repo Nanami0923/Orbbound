@@ -15,7 +15,8 @@
     "build:win": "tsc --noEmit && vite build --mode windows",
     "dev:win": "vite --mode windows",
     "package:win": "npm run build:win && node scripts/package-win.cjs",
-    "sync:android": "npm run build && cap sync android",
+    "build:android": "tsc --noEmit && vite build --mode android",
+    "sync:android": "npm run build:android && cap sync android",
     "package:android": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-android.ps1"
   },
   "devDependencies": {

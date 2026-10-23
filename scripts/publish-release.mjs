@@ -4,7 +4,13 @@ import {createHash} from 'node:crypto';
 import {basename} from 'node:path';
 
 const repository='Nanami0923/Orbbound';
-const version=JSON.parse(readFileSync('package.json','utf8')).version, tag=`v${version}`;
+const args=process.argv.slice(2);
+const androidOnly=args.length===2 && args[0]==='--platform' && args[1]==='android';
+if(args.length!==0 && !androidOnly)throw Error('Usage: node scripts/publish-release.mjs [--platform android]');
+const rootVersion=JSON.parse(readFileSync('package.json','utf8')).version;
+const androidVersion=JSON.parse(readFileSync('android/version.json','utf8')).version;
+const version=androidOnly?androidVersion:rootVersion, tag=`v${version}`;
+if(!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(version))throw Error(`Invalid release version: ${version}`);
 const credential=spawnSync('git',['credential','fill'],{input:'protocol=https\nhost=github.com\n\n',encoding:'utf8',windowsHide:true,timeout:15000});
 const token=credential.stdout?.split('\n').find(line=>line.startsWith('password='))?.slice(9);
 if(credential.status!==0 || !token)throw Error('GitHub authentication unavailable');
@@ -23,16 +29,20 @@ const remoteCommit=ref.object.type==='tag'?(await api(`git/tags/${ref.object.sha
 if(remoteCommit!==sha)throw Error('Remote release tag does not match local commit');
 const metadata=JSON.parse(readFileSync(`docs/releases/${version}-artifacts.json`,'utf8'));
 if(metadata.version!==version)throw Error('Artifact metadata version mismatch');
+const expectedArtifacts=androidOnly
+  ? [{platform:'Android',file:`Orbbound-${version}-Android.apk`}]
+  : [{platform:'Android',file:`Orbbound-${version}-Android.apk`},{platform:'Windows',file:`Orbbound-Windows-${version}-x64.zip`}];
+const metadataArtifacts=Array.isArray(metadata.artifacts)?metadata.artifacts.map(({platform,file})=>`${platform}:${file}`).sort():[];
+const expectedMetadataArtifacts=expectedArtifacts.map(({platform,file})=>`${platform}:${file}`).sort();
+if(JSON.stringify(metadataArtifacts)!==JSON.stringify(expectedMetadataArtifacts))throw Error(`Artifact metadata must list exactly the ${androidOnly?'Android':'Android and Windows'} release artifacts`);
 const notesBase=`https://github.com/${repository}/blob/${tag}/docs/releases/`;
 const releaseBody=readFileSync(`docs/releases/${version}-notes.md`,'utf8').replace(/\]\(([^)]+)\)/g,(match,href)=>/^[a-z][a-z0-9+.-]*:/i.test(href)||href.startsWith('#')?match:`](${new URL(href,notesBase).href})`);
-const files=[
-  `最终交付/Android/Orbbound-${version}/Orbbound-${version}-Android.apk`,
-  `最终交付/Android/Orbbound-${version}/Orbbound-${version}-Android.apk.sha256`,
-  `最终交付/Windows/Orbbound-Windows-${version}/Orbbound-Windows-${version}-x64.zip`,
-  `最终交付/Windows/Orbbound-Windows-${version}/Orbbound-Windows-${version}-x64.zip.sha256`,
-  `docs/releases/${version}-artifacts.json`,
-];
-for(const file of files.filter(file=>!file.endsWith('.sha256')&&!file.endsWith('.json'))){
+const androidApk=`最终交付/Android/Orbbound-${version}/Orbbound-${version}-Android.apk`;
+const windowsArchive=`最终交付/Windows/Orbbound-Windows-${version}/Orbbound-Windows-${version}-x64.zip`;
+const files=androidOnly
+  ? [androidApk,`${androidApk}.sha256`,`docs/releases/${version}-artifacts.json`]
+  : [androidApk,`${androidApk}.sha256`,windowsArchive,`${windowsArchive}.sha256`,`docs/releases/${version}-artifacts.json`];
+for(const file of files.filter(file=>file.endsWith('.apk')||file.endsWith('.zip'))){
   const bytes=readFileSync(file),hash=createHash('sha256').update(bytes).digest('hex');
   const expected=metadata.artifacts.find(artifact=>artifact.file===basename(file));
   if(!expected||expected.bytes!==bytes.length||expected.sha256!==hash)throw Error(`Local artifact validation failed: ${basename(file)}`);
@@ -53,6 +63,13 @@ for(const file of files){
   if(asset.size!==bytes.length||asset.digest!==`sha256:${hash}`)throw Error(`Uploaded checksum mismatch: ${name}`);
   console.log(`Verified ${name} (${bytes.length} bytes)`);
 }
+// Refuse to publish a draft containing unrelated assets from an earlier attempt.
+const draftAssets=await api(`releases/${release.id}/assets`);
+const expectedAssets=new Map(files.map(file=>[basename(file),readFileSync(file)]));
+if(draftAssets.length!==expectedAssets.size || draftAssets.some(asset=>{
+  const bytes=expectedAssets.get(asset.name);
+  return !bytes || asset.size!==bytes.length || asset.digest!==`sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+}))throw Error('Draft assets must exactly match the selected release files before publication');
 await api(`releases/${release.id}`,'PATCH',{draft:false,prerelease:metadata.prerelease===true,make_latest:metadata.prerelease===true?'false':'true'});
 const published=await api(`releases/tags/${tag}`);
 if(published.draft || published.prerelease!==(metadata.prerelease===true) || published.assets.length!==files.length)throw Error('Published release validation failed');

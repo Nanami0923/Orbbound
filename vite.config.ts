@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite';
 import windowsManifest from './electron/windows-package.json';
-import androidManifest from './package.json';
+import rootPackage from './package.json';
+import androidManifest from './android/version.json';
 
 export default defineConfig(({ mode }) => ({
   base: './',
@@ -11,7 +12,9 @@ export default defineConfig(({ mode }) => ({
     },
   },
   define: {
-    'import.meta.env.VITE_APP_VERSION': JSON.stringify(mode === 'windows' ? windowsManifest.version : androidManifest.version),
+    'import.meta.env.VITE_APP_VERSION': JSON.stringify(
+      mode === 'windows' ? windowsManifest.version : mode === 'android' ? androidManifest.version : rootPackage.version,
+    ),
   },
   build: {
     outDir: mode === 'windows' ? '.build/windows/web' : 'dist',

@@ -1,0 +1,13 @@
+{
+  "version": "5.2.1",
+  "title": "Android 首页固定 2×2 排列",
+  "prerelease": true,
+  "artifacts": [
+    {
+      "platform": "Android",
+      "file": "Orbbound-5.2.1-Android.apk",
+      "bytes": 1405727,
+      "sha256": "b4b11196508363b196e66cf178ebbda75fb4846da41312f630325ac1b66f8fd2"
+    }
+  ]
+}
