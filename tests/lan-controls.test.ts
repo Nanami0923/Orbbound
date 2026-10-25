@@ -20,6 +20,14 @@ class ElementStub extends EventTarget {
   rect = { left: 10, top: 20, right: 330, bottom: 400, width: 320, height: 380 };
   children = new Map<string, ElementStub>();
   dataset: Record<string, string> = {};
+  classes = new Set<string>();
+  classList = {
+    add: (...tokens: string[]) => { for (const token of tokens) this.classes.add(token); },
+    remove: (...tokens: string[]) => { for (const token of tokens) this.classes.delete(token); },
+    contains: (token: string) => this.classes.has(token),
+    toggle: (token: string, force = !this.classes.has(token)) => { if (force) this.classes.add(token); else this.classes.delete(token); return force; },
+  };
+  style = { setProperty: vi.fn() };
   context = new Proxy({ setTransform: vi.fn() }, { get: (target, key) => key in target ? target[key as keyof typeof target] : vi.fn(), set: () => true });
   getBoundingClientRect() { return this.rect; }
   getContext() { return this.context; }
@@ -89,6 +97,11 @@ function commitVisual(game: ReturnType<typeof setup>, playerId: string) {
 function nextPreview(game: ReturnType<typeof setup>) {
   const preview = Object.assign(new ElementStub(), { style: { backgroundColor: '', setProperty: vi.fn() } });
   game.root.children.set('#lan-next-orb-preview', preview); return preview;
+}
+
+function setInfoOpen(game: ReturnType<typeof setup>, open: boolean) {
+  game.root.classList.toggle('lan-info-open', open);
+  game.root.dispatchEvent(new Event('orbbound-lan-info-toggle'));
 }
 
 describe('LAN next-orb presentation preview', () => {
@@ -303,6 +316,55 @@ describe('LAN actual control event lifecycle', () => {
     root.children.set('.lan-confirm', new ElementStub()); frame(100);
     root.children.delete('.lan-confirm'); activeTime(session.view.snapshot.players.host.readyAtMs); frame(500);
     expect(session.shoot).toHaveBeenCalledOnce();
+  });
+
+  it.each([false, true])('releases a captured immersive aim immediately when information opens, with close before release: %s', closeBeforeRelease => {
+    const game = setup();
+    send(game.board, 'pointerdown'); expect(game.board.owner).toBe(1);
+    setInfoOpen(game, true);
+    expect(game.board.owner).toBeNull();
+    if (closeBeforeRelease) setInfoOpen(game, false);
+    send(game.board, 'pointerup'); expect(game.session.shoot).not.toHaveBeenCalled();
+    if (!closeBeforeRelease) setInfoOpen(game, false);
+    send(game.board, 'pointerdown', { pointerId: 2 }); send(game.board, 'pointerup', { pointerId: 2 });
+    expect(game.session.shoot).toHaveBeenCalledOnce();
+  });
+
+  it('clears an existing buffered release even when information opens and closes between render frames', () => {
+    const game = setup();
+    send(game.fire, 'pointerdown'); send(game.board, 'pointerdown'); send(game.board, 'pointerup');
+    game.frame(100);
+    expect(game.session.shoot).toHaveBeenCalledOnce(); expect(game.fire.textContent).toBe('已待发');
+    setInfoOpen(game, true); setInfoOpen(game, false);
+    game.activeTime(game.session.view.snapshot.players.host.readyAtMs); game.frame(900); game.frame(1000);
+    expect(game.session.shoot).toHaveBeenCalledOnce(); expect(game.fire.textContent).toBe('发射 ↑');
+  });
+
+  it('blocks regular fire-button and keyboard activation while information is open and restores both after closing', () => {
+    options.immersive = false;
+    const game = setup(); setInfoOpen(game, true);
+    send(game.fire, 'pointerdown'); send(game.fire, 'click', { detail: 0 }); send(game.windowEvents, 'keydown', { code: 'Space' });
+    expect(game.session.shoot).not.toHaveBeenCalled();
+    setInfoOpen(game, false); send(game.fire, 'pointerdown');
+    expect(game.session.shoot).toHaveBeenCalledOnce();
+    game.activeTime(game.session.view.snapshot.players.host.readyAtMs);
+    send(game.windowEvents, 'keydown', { code: 'Space' }); expect(game.session.shoot).toHaveBeenCalledTimes(2);
+  });
+
+  it('synchronously releases steering captures and clears fine and held motion when information opens', () => {
+    const game = setup();
+    send(game.fine, 'pointerdown', { clientX: 320 });
+    send(game.slider, 'pointerdown', { pointerId: 2, clientX: 170 });
+    send(game.windowEvents, 'keydown', { code: 'ArrowRight' }); game.frame(1); game.frame(101);
+    const angle = game.slider.value;
+    expect(Number(angle)).toBeGreaterThan(1); expect(Number(game.fine.value)).toBeGreaterThan(0);
+    expect(game.fine.owner).toBe(1); expect(game.slider.owner).toBe(2);
+    setInfoOpen(game, true);
+    expect(game.fine.value).toBe('0'); expect(game.fine.owner).toBeNull(); expect(game.slider.owner).toBeNull();
+    setInfoOpen(game, false);
+    send(game.fine, 'pointermove', { clientX: 10 }); send(game.slider, 'pointermove', { pointerId: 2, clientX: 10 });
+    game.frame(201); game.frame(301);
+    expect(game.fine.value).toBe('0'); expect(game.slider.value).toBe(angle);
   });
 
   it('fires one buffered release once authoritative cooldown ends', () => {
