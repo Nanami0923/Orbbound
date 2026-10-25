@@ -103,7 +103,7 @@ export function bindLanBoard(root: HTMLElement, session: LanSession): () => void
   const setAngle = (degrees: number) => { angle = directAimDegrees(degrees); slider.value = String(angle); dirty = true; };
   const state = () => session.view.snapshot?.players[session.view.selfId];
   const settingsOpen = () => document.documentElement?.classList.contains('settings-open') || !document.querySelector?.<HTMLElement>('#modal-root')?.hidden && !!document.querySelector?.<HTMLElement>('#modal-root');
-  const active = () => session.view.phase === 'playing' && !state()?.sealed && !document.hidden && !root.closest('[hidden]') && !root.querySelector('.lan-confirm') && !settingsOpen();
+  const active = () => session.view.phase === 'playing' && !state()?.sealed && !document.hidden && !root.closest('[hidden]') && !root.querySelector('.lan-confirm') && !root.classList?.contains('lan-info-open') && !settingsOpen();
   const canFire = () => active() && !session.view.pendingShot && !!state() && !state()!.sealed
     && session.displayElapsed() < (session.view.snapshot?.durationMs ?? 0)
     && session.displayElapsed() + (session.view.snapshot?.startedAtMs ?? 0) >= state()!.readyAtMs;
@@ -171,6 +171,7 @@ export function bindLanBoard(root: HTMLElement, session: LanSession): () => void
     if (value) { heldKeys.delete(value); direction = [...heldKeys].at(-1) ?? 0; held = 0; }
   }, { signal: abort.signal });
   window.addEventListener('blur', resetInput, { signal: abort.signal });
+  root.addEventListener('orbbound-lan-info-toggle', resetInput, { signal: abort.signal });
   document.addEventListener('visibilitychange', () => { if (document.hidden) resetInput(); }, { signal: abort.signal });
   const opponentCanvases = () => {
     const items = [...(root.querySelectorAll?.<HTMLCanvasElement>('[data-lan-player-board]') ?? [])];

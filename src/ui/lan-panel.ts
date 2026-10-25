@@ -7,6 +7,7 @@ import { readStorage, writeStorage } from '../storage/safe-storage';
 import { escapeText } from './progress-feedback';
 import { bindModalFocus } from './modal-focus';
 import { bindLanBoard } from './lan-board';
+import { bindLanInfoPopover } from './lan-info-popover';
 import { roomEndpoints, copyRoomAddress } from './lan-address';
 import { formatLanScore, lanMatchLayoutMarkup, lanModeName, lanNetworkLabel, lanStatusSummary } from './lan-match-layout';
 import { gameAudio } from '../game/audio';
@@ -18,6 +19,7 @@ import { syncGameShell } from './game-shell';
 import { getKeyboardState, subscribeKeyboardState } from './keyboard-state';
 import './lan.css';
 import './lan-match-layout.css';
+import './lan-info-popover.css';
 
 const escape = (value: unknown) => escapeText(String(value ?? ''));
 export function formatLanDuration(ms: number): string {
@@ -60,6 +62,8 @@ export function installLan(openHome: () => void): { isActive: () => boolean; bac
   let page = 0, helpPage = 0, generation = 0, busy = false, error = '', closing: Promise<void> | undefined;
   let selectedRoomAddress = '', shareKey = '';
   let boardDispose: (() => void) | undefined, unsubscribe: (() => void) | undefined, focusRelease: (() => void) | undefined;
+  let infoPopover: ReturnType<typeof bindLanInfoPopover>;
+  let infoPhase: string | undefined;
   let roomMarkup = '', recordedResult = '', finishResult = '', finishAt = 0, finishCancel: (() => void) | undefined;
   let settingsVisible = false, requestKey = '', pauseMarkup = '', detailsId = '', observeId = '', keyboardField: { label: HTMLElement; marker: Comment; overlay: HTMLElement } | undefined;
   let form = { name: nickname(), room: '', address: readStorage('orbbound-lan-address') ?? '', config: { mode: 'score', difficultyId: 'normal', durationMs: 180000, capacity: 4 } as RoomConfig };
@@ -86,7 +90,7 @@ export function installLan(openHome: () => void): { isActive: () => boolean; bac
   const closeSettings = () => { if (settingsVisible) window.dispatchEvent(new Event('orbbound-close-settings')); };
   function openSettings(): void {
     if (!session || settingsVisible || session.view.forceCloseSettings || !['paused', 'lobby', 'finished'].includes(session.view.phase)) return;
-    settingsVisible = true; session.settingsChanged(true);
+    infoPopover?.close(false); settingsVisible = true; session.settingsChanged(true);
     window.dispatchEvent(new CustomEvent('orbbound-open-settings', { detail: { onClosed: () => {
       settingsVisible = false; session?.settingsChanged(false); render();
     } } }));
@@ -100,6 +104,7 @@ export function installLan(openHome: () => void): { isActive: () => boolean; bac
     startSession(); route = 'choose'; browseTab = 'address'; lobbyPage = 'players'; selectedRoomAddress = ''; page = 0; key = ''; error = ''; render(); q('h1')?.focus();
   };
   const exit = async () => {
+    infoPopover?.dispose(); infoPopover = undefined;
     generation++; busy = false; closeKeyboard(); closeSettings(); finishCancel?.(); finishCancel = undefined; finishResult = ''; finishAt = 0;
     focusRelease?.(); focusRelease = undefined; boardDispose?.(); boardDispose = undefined; unsubscribe?.(); unsubscribe = undefined;
     const previous = session;
@@ -125,6 +130,7 @@ export function installLan(openHome: () => void): { isActive: () => boolean; bac
   const leave = () => { void exit().catch(() => {}); };
   const confirmLeave = () => {
     if (root.hidden) return;
+    if (infoPopover?.close()) return;
     if (root.querySelector('.lan-confirm')) { q<HTMLButtonElement>('#lan-stay')?.click(); return; }
     if (keyboardField) { closeKeyboard(); return; }
     if (settingsVisible) { closeSettings(); return; }
@@ -139,12 +145,21 @@ export function installLan(openHome: () => void): { isActive: () => boolean; bac
     overlay.onkeydown = event => { if (event.key === 'Escape') { event.stopPropagation(); dismiss(); } };
   };
   const base = (title: string, body: string, game = false) => {
+    infoPopover?.dispose(); infoPopover = undefined; infoPhase = undefined;
     closeKeyboard(); roomMarkup = ''; requestKey = ''; pauseMarkup = ''; observeId = ''; shareKey = '';
     focusRelease?.(); focusRelease = undefined; boardDispose?.(); boardDispose = undefined;
     root.classList.toggle('lan-in-game', game);
     const settings = loadSettings(); syncGameShell(root, { touch: usesButtonControls(), immersive: settings.immersiveMode, mode: session?.view.snapshot?.mode ?? 'lan' });
     root.classList.toggle('lan-swapped', settings.controlsSwapped); root.style.setProperty('--lan-fire-width', `${settings.fireSize}px`);
-    root.innerHTML = `<header class="lan-top"><span class="brand-name">ORBBOUND <span class="lan-label">${game ? modeName(session?.view.snapshot?.mode, session?.view.snapshot?.rulesHash) : '局域网 · 2–4 人'}</span></span><button id="lan-exit" class="quiet-button" type="button">${session?.view.snapshot ? '离开房间' : '返回首页'}</button></header><main class="lan-body ${game ? 'lan-wide' : ''}"><h1 tabindex="-1">${title}</h1><div class="lan-content">${body}</div><p id="lan-error" role="alert" class="lan-error"></p></main>`;
+    const exitButton = `<button id="lan-exit" class="quiet-button" type="button">${session?.view.snapshot ? '离开房间' : '返回首页'}</button>`;
+    const androidInfo = game && document.documentElement.classList.contains('android-v5');
+    const topActions = androidInfo ? `<div class="lan-top-actions"><button id="lan-info-toggle" class="quiet-button" type="button" aria-controls="lan-info-panel" aria-expanded="false">联机信息</button>${exitButton}</div>` : exitButton;
+    root.innerHTML = `<header class="lan-top"><span class="brand-name">ORBBOUND <span class="lan-label">${game ? modeName(session?.view.snapshot?.mode, session?.view.snapshot?.rulesHash) : '局域网 · 2–4 人'}</span></span>${topActions}</header><main class="lan-body ${game ? 'lan-wide' : ''}"><h1 tabindex="-1">${title}</h1><div class="lan-content">${body}</div><p id="lan-error" role="alert" class="lan-error"></p></main>`;
+    if (androidInfo) {
+      const layer = q('#lan-info-layer'); if (layer) root.append(layer);
+      text('#lan-info-mode', modeName(session?.view.snapshot?.mode, session?.view.snapshot?.rulesHash));
+      infoPopover = bindLanInfoPopover(root);
+    }
     q('#lan-exit').onclick = confirmLeave;
   };
   const button = (id: string, title: string, primary = false) => `<button id="${id}" class="${primary ? 'primary-button' : 'quiet-button'}" type="button">${title}</button>`;
@@ -262,10 +277,11 @@ export function installLan(openHome: () => void): { isActive: () => boolean; bac
       } else if (nextKey.startsWith('game:')) {
         const others = view.snapshot!.playerIds.filter(id => id !== view.selfId);
         base(modeName(view.snapshot!.mode, view.snapshot!.rulesHash), lanMatchLayoutMarkup(others.map(id => ({ id, name: view.players.find(p => p.id === id)?.name ?? id }))), true);
-        q('#lan-pause').onclick = () => session!.requestPause('pause');
-        q('#lan-settings').onclick = () => { if (view.phase === 'paused') openSettings(); else session!.requestPause('settings'); };
+        q('#lan-pause').onclick = () => { infoPopover?.close(false); session!.requestPause('pause'); };
+        q('#lan-settings').onclick = () => { infoPopover?.close(false); if (view.phase === 'paused') openSettings(); else session!.requestPause('settings'); };
         q('#lan-watch-self').onclick = () => { delete root.dataset.watchPlayer; render(); };
         root.querySelectorAll<HTMLElement>('[data-watch]').forEach(item => { item.onclick = () => {
+          infoPopover?.close(false);
           if (!view.snapshot!.players[view.selfId].sealed) { openObservation(item.dataset.watch!); return; }
           root.dataset.watchPlayer = item.dataset.watch; render();
         }; });
@@ -371,6 +387,8 @@ export function installLan(openHome: () => void): { isActive: () => boolean; bac
   function updateGame(): void {
     const view = session!.view, snapshot = view.snapshot!, self = snapshot.players[view.selfId];
     if (!self) return;
+    if (infoPhase !== undefined && infoPhase !== view.phase || view.pauseRequest && requestKey !== view.pauseRequest.requestId) infoPopover?.close(false);
+    infoPhase = view.phase;
     root.classList.toggle('lan-watching', self.sealed); root.classList.toggle('lan-battle', snapshot.mode === 'battle');
     text('#lan-self-name', `${view.players.find(p => p.id === view.selfId)?.name ?? '你'} · ${self.sealed ? '观战' : '你'}`);
     text('#lan-self-score', formatLanScore(self.score)); text('#lan-self-wave', self.sealed ? '已结束操作' : `第 ${self.waveIndex + 1} 波`);
@@ -434,5 +452,5 @@ export function installLan(openHome: () => void): { isActive: () => boolean; bac
     if ((event.target as HTMLElement | null)?.closest?.('input,select,textarea,button')) return;
     if (shortcutAction(event, loadSettings().shortcuts) === 'settings' && session?.view.snapshot) { event.preventDefault(); if (session.view.phase === 'paused') openSettings(); else session.requestPause('settings'); }
   });
-  return { isActive: () => !root.hidden, back: confirmLeave, foreground: active => session?.foregroundChanged(active) };
+  return { isActive: () => !root.hidden, back: confirmLeave, foreground: active => { if (!active) infoPopover?.close(false); session?.foregroundChanged(active); } };
 }

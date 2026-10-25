@@ -1,0 +1,13 @@
+{
+  "version": "5.2.2",
+  "title": "Android 联机信息浮窗与棋盘上移",
+  "prerelease": true,
+  "artifacts": [
+    {
+      "platform": "Android",
+      "file": "Orbbound-5.2.2-Android.apk",
+      "bytes": 1405727,
+      "sha256": "7bb2df9016625a03d9bd7670ef8dcc070675a50ef077c873a175ad991767e9cc"
+    }
+  ]
+}

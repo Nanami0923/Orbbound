@@ -3,7 +3,7 @@ import { createMatch } from '../src/lan/authority';
 import { LAN_RULES_HASH } from '../src/lan/protocol';
 import { formatLanScore, lanMatchLayoutMarkup, lanModeName, lanNetworkLabel, lanStatusSummary } from '../src/ui/lan-match-layout';
 
-it('puts the single Android next-ball preview beside the portrait HUD and keeps opponents in their own group', () => {
+it('keeps the Android HUD and pause controls visible while placing LAN details in a dismissible floating layer', () => {
   vi.stubGlobal('document', { documentElement: { classList: { contains: (value: string) => value === 'android-v5' } } });
   try {
     const markup = lanMatchLayoutMarkup([{ id: 'guest', name: '朋友' }]);
@@ -12,10 +12,16 @@ it('puts the single Android next-ball preview beside the portrait HUD and keeps 
     const status = markup.slice(markup.indexOf('class="lan-android-status-line"'), markup.indexOf('<div class="lan-game-layout"'));
     expect(status).toContain('class="lan-watch-slot"><button id="lan-watch-self"');
     expect(status).toContain('id="lan-pause"'); expect(status).toContain('id="lan-settings"');
-    expect(status).toContain('id="lan-network" class="lan-network"');
+    expect(status).not.toContain('id="lan-network"');
     expect(markup.match(/id="lan-watch-self"/g)).toHaveLength(1);
     expect(markup.slice(markup.indexOf('<aside'))).not.toContain('id="lan-next-orb-preview"');
-    expect(markup).toContain('class="lan-side game-sidebar" aria-label="其他选手"');
+    expect(markup).toContain('class="lan-side lan-info-opponents" aria-label="其他选手"');
+    const info = markup.slice(markup.indexOf('id="lan-info-layer"'));
+    expect(info).toContain('hidden');
+    expect(info).toContain('role="dialog"');
+    expect(info).toContain('data-lan-info-dismiss');
+    for (const id of ['lan-network', 'lan-status-progress', 'lan-status-defense', 'lan-status-queue', 'lan-other-board', 'lan-notice']) expect(info).toContain(`id="${id}"`);
+    expect(info).not.toContain('id="lan-self-board"');
   } finally { vi.unstubAllGlobals(); }
 });
 
